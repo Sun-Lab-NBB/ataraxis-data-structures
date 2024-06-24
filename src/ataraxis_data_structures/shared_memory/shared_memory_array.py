@@ -5,6 +5,7 @@ from typing import Optional, Tuple, Union
 
 import numpy as np
 from ataraxis_automation.utilities import format_message
+from numpy.typing import NDArray
 
 
 class SharedMemoryArray:
@@ -58,20 +59,74 @@ class SharedMemoryArray:
     def __init__(
         self,
         name: str,
-        shape: tuple,
-        datatype: np.dtype,
+        shape: tuple[int, ...],
+        datatype: np.dtype[
+            np.int8
+            | np.int16
+            | np.int32
+            | np.int64
+            | np.uint8
+            | np.uint16
+            | np.uint32
+            | np.uint64
+            | np.float16
+            | np.float32
+            | np.float64
+        ],
         buffer: Optional[SharedMemory],
     ):
         self._name: str = name
-        self._shape: tuple = shape
-        self._datatype: np.dtype = datatype
+        self._shape: tuple[int, ...] = shape
+        self._datatype: np.dtype[
+            np.int8
+            | np.int16
+            | np.int32
+            | np.int64
+            | np.uint8
+            | np.uint16
+            | np.uint32
+            | np.uint64
+            | np.float16
+            | np.float32
+            | np.float64
+        ] = datatype
         self._buffer: Optional[SharedMemory] = buffer
         self._lock = Lock()
-        self._array: Optional[np.ndarray] = None
+        self._array: Optional[
+            NDArray[
+                np.int8
+                | np.int16
+                | np.int32
+                | np.int64
+                | np.uint8
+                | np.uint16
+                | np.uint32
+                | np.uint64
+                | np.float16
+                | np.float32
+                | np.float64
+            ]
+        ] = None
         self._is_connected: bool = False
 
     @classmethod
-    def create_array(cls, name: str, prototype: np.ndarray) -> "SharedMemoryArray":
+    def create_array(
+        cls,
+        name: str,
+        prototype: NDArray[
+            np.int8
+            | np.int16
+            | np.int32
+            | np.int64
+            | np.uint8
+            | np.uint16
+            | np.uint32
+            | np.uint64
+            | np.float16
+            | np.float32
+            | np.float64
+        ],
+    ) -> "SharedMemoryArray":
         """Uses the input prototype numpy array to create an instance of this class.
 
         Specifically, this method first creates a shared bytes buffer that is sufficiently large to hold the data of the
@@ -103,7 +158,19 @@ class SharedMemoryArray:
 
         # Instantiates a numpy array using the shared memory buffer and copies prototype array data into the shared
         # array instance
-        shared_arr = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
+        shared_arr: NDArray[
+            np.int8
+            | np.int16
+            | np.int32
+            | np.int64
+            | np.uint8
+            | np.uint16
+            | np.uint32
+            | np.uint64
+            | np.float16
+            | np.float32
+            | np.float64
+        ] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
         shared_arr[:] = prototype[:]
 
         # Packages the data necessary to connect to the shared array into the class object.
@@ -120,7 +187,7 @@ class SharedMemoryArray:
         # Returns the instantiated and connected class object to caller.
         return shared_memory_array
 
-    def connect(self):
+    def connect(self) -> None:
         """Connects to the shared memory buffer that stores the array data, allowing to manipulate access and manipulate
          the data through this class.
 
@@ -133,16 +200,32 @@ class SharedMemoryArray:
         self._array = np.ndarray(shape=self._shape, dtype=self._datatype, buffer=self._buffer.buf)
         self._is_connected = True  # Sets the connection flag
 
-    def disconnect(self):
+    def disconnect(self) -> None:
         """Disconnects the class from the shared memory buffer.
 
         This method should be called whenever the process no longer requires shared buffer access.
         """
-        if self._is_connected:
+        if self._buffer is None:
+            pass
+        elif self._is_connected:
             self._buffer.close()
             self._is_connected = False
 
-    def read_data(self, index: int | slice) -> np.ndarray:
+    def read_data(
+        self, index: int | slice
+    ) -> NDArray[
+        np.int8
+        | np.int16
+        | np.int32
+        | np.int64
+        | np.uint8
+        | np.uint16
+        | np.uint32
+        | np.uint64
+        | np.float16
+        | np.float32
+        | np.float64
+    ]:
         """Reads data from the shared memory array at the specified index or slice.
 
         Args:
@@ -157,7 +240,7 @@ class SharedMemoryArray:
             RuntimeError: If the shared memory array has not been connected to by this class instance.
             ValueError: If the input index or slice is invalid.
         """
-        if not self._is_connected:
+        if not self._is_connected or self._array is None:
             custom_error_message = (
                 "Cannot read data as the class is not connected to a shared memory array. Use connect() method to "
                 "connect to the shared memory array."
@@ -173,7 +256,23 @@ class SharedMemoryArray:
                 )
                 raise ValueError(format_message(custom_error_message))
 
-    def write_data(self, index: int | slice, data: np.ndarray) -> None:
+    def write_data(
+        self,
+        index: int | slice,
+        data: NDArray[
+            np.int8
+            | np.int16
+            | np.int32
+            | np.int64
+            | np.uint8
+            | np.uint16
+            | np.uint32
+            | np.uint64
+            | np.float16
+            | np.float32
+            | np.float64
+        ],
+    ) -> None:
         """Writes data to the shared memory array at the specified index or slice.
 
         Args:
@@ -187,7 +286,7 @@ class SharedMemoryArray:
                 datatype of the shared memory array, or if the data cannot fit inside the shared memory array at the
                 specified index or slice.
         """
-        if not self._is_connected:
+        if not self._is_connected or self._array is None:
             custom_error_message = (
                 "Cannot write data as the class is not connected to a shared memory array. Use connect() method to "
                 "connect to the shared memory array."
@@ -214,7 +313,21 @@ class SharedMemoryArray:
                 raise ValueError(format_message(custom_error_message))
 
     @property
-    def datatype(self) -> np.dtype:
+    def datatype(
+        self,
+    ) -> np.dtype[
+        np.int8
+        | np.int16
+        | np.int32
+        | np.int64
+        | np.uint8
+        | np.uint16
+        | np.uint32
+        | np.uint64
+        | np.float16
+        | np.float32
+        | np.float64
+    ]:
         """Returns the datatype of the shared memory array.
 
         Raises:
@@ -244,7 +357,7 @@ class SharedMemoryArray:
         return self._name
 
     @property
-    def shape(self) -> tuple:
+    def shape(self) -> tuple[int, ...]:
         """Returns the shape of the shared memory array.
 
         Raises:
