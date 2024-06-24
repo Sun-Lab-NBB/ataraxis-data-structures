@@ -1,53 +1,6 @@
-# Adopt Me
-**_Note! Remember to delete this section before releasing v1.0.0 to the public! This section contains 
-a set of steps you need to carry out to 'adopt' a project instantiated using this template. Once adopted, this set of
-instructions becomes redundant and is safe to remove._**
-
-**Note!** The instructions below assume that you have used this template to instantiate a new repository. 
-If you are reading this notice from the base pure-python-template repository, make sure you create your own repository 
-from this 
-[template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template)
-first. 
-
-To adopt this project, follow these steps:
-1.  Make sure [miniforge](https://github.com/conda-forge/miniforge) or [miniconda](https://docs.anaconda.com/miniconda/)
-    is installed on your development platform. The author of this section encourages using miniforge to benefit from 
-    the 'mamba' engine and 'conda-forge' default channel.
-2.  Install [tox](https://tox.wiki/en/4.14.2/user_guide.html) into (**_recommended_**) an independent conda 
-    environment or, if you mostly work with lab projects, into the base environment (**_this is not recommended_**).
-    You can use this command from your conda / mamba shell ```mamba install tox``` or ```conda install tox```.
-    Alternatively, you can use ```pip install tox-uv``` to install tox that uses uv instead of pip for maximum runtime 
-    speed.
-3.  Download this repository to your local machine using your preferred method, such as git-cloning.
-4.  Using your shell environment of choice (terminal, zsh, powershell, etc.) ```cd``` into the downloaded project
-    directory. Our adoption pipeline works in the current working directory of your shell and verifies key template 
-    files are present in the directory before running.
-5.  Run ```tox -e adopt``` task and work through the prompts. This task mostly renames the placeholders left through 
-    template project files, which effectively converts a generic template into your desired project.
-6.  Run ```tox -e import-env```. This will automatically discover the '.yml' file for your os among the files stored in 
-    'envs' and install it into your local conda distribution. Generally, this step is not required, but is 
-    **_highly recommended_** for running source code outside our automation pipelines.
-7.  Verify the information in pyproject.toml file. Specifically, modify the project metadata and add any project-wide 
-    dependencies where necessary.
-8.  Look through the files inside the 'docs/source/' hierarchy, especially the 'api.rst' and configure it to work for 
-    your source code.
-9.  Use conda/mamba or pip/uv to add the necessary dependencies to the environment you have imported. Once the 
-    environment is configured, use ```tox -e export-env``` to export the environment to the 'envs' folder. The lab 
-    requires that each project contains a copy of the fully configured conda environment for each of the operating 
-    systems used during development.
-10. Remove this section and adjust the rest of the ReadMe to cover the basics of your project. You will tweak it later
-    as you develop your source code to better depict your project. Most sections of this readme should already match 
-    your project details, so this process is mostly about adding description, usage and maybe additional development 
-    requirements.
-11. Add source code and tests to verify it works as intended... This is where development truly starts. 
-    Run ```tox``` or ```tox --parallel``` before pushing the code back to GitHub to make sure it complies with 
-    our standards. See [tox.ini file](tox.ini) for details on available automation pipelines.
-12. Congratulations! You have successfully adopted a Sun Lab project. Welcome to the family!
----
-
 # ataraxis-data-structures
 
-A short (1–2 line max) description of your library (what essential functionality does it provide?)
+Provides a wide range of non-standard data structures and related data-manipulation methods.
 
 ![PyPI - Version](https://img.shields.io/pypi/v/ataraxis-data-structures)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ataraxis-data-structures)
@@ -61,13 +14,22 @@ ___
 
 ## Detailed Description
 
-A long description (1–2 paragraphs max). Should highlight the specific advantages of the library and may mention how it
-integrates with the broader Ataraxis project (for Ataraxis-related modules).
+This library provides data structures not readily available from standard Python libraries, such as nested dictionaries 
+and shared memory arrays. In addition to these datastructures, it exposes helper-methods to manipulate the data that 
+are also not readily available from standard or common Python libraries.
+
+Unlike many other Ataraxis modules, this library does not have a very well-defined specialization beyond abstractly 
+dealing with data storage, representation and manipulation. More or less anything data-related not found 
+inside standard or popular Python libraries like numpy, scipy, pandas, etc. is a good candidate to be added to this 
+library. It is designed to be updated frequently to scale with the needs of other Ataraxis modules, but it can also be 
+used as a repository of helpful datastructures and methods to use in non-Ataraxis projects.
 ___
 
 ## Features
 
 - Supports Windows, Linux, and OSx.
+- Supports Multiprocessing.
+- Supports 
 - Pure-python API.
 - GPL 3 License.
 
