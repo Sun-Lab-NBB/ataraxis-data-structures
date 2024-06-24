@@ -7,17 +7,17 @@ build-backend = "hatchling.build"
 
 # Project metdata section. Provides the genral ID information about the project.
 [project]
-name = "YOUR-PROJECT-NAME"
+name = "ataraxis-data-structures"
 version = "1.0.0"
 description = "Short description of your project"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [
-    { name = "YOUR_AUTHOR_NAME", email = "YOUR_EMAIL" },
+    { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
 ]
 maintainers = [
-    { name = "YOUR_AUTHOR_NAME", email = "YOUR_EMAIL" },
+    { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
 ]
 
 # The list of keywords that describe your project
@@ -45,12 +45,13 @@ classifiers = [
 # Project-wide dependencies.
 dependencies = [
     "click",
-    "ataraxis-automation",
+    "numpy",
+    "ataraxis-automation==1.0.4",
 ]
 
 [project.urls]
-Homepage = "https://github.com/Sun-Lab-NBB/YOUR-PROJECT-NAME"
-Documentation = "https://YOUR-PROJECT-NAME-api-docs.netlify.app/"
+Homepage = "https://github.com/Sun-Lab-NBB/ataraxis-data-structures"
+Documentation = "https://ataraxis-data-structures-api-docs.netlify.app/"
 
 # Specifies additional build dependencies.
 [project.optional-dependencies]
@@ -93,7 +94,7 @@ exclude = [".github", "recipe"]
 # package stored directly under 'src' directory. This arrangement assumes there is a single 'library' package and
 # nothing else under /src directory.
 [tool.hatch.build.targets.wheel]
-packages = ["src/YOUR_LIBRARY_NAME"]
+packages = ["src/ataraxis_data_structures"]
 
 # Ruff section. This section is used to configure Ruff runtime, which is used by the tox 'lint' command.
 [tool.ruff]
@@ -152,7 +153,7 @@ convention = "google"
 disallow_untyped_defs = true # Enforces function annotation
 warn_unused_ignores = true  # Warns against using 'type: ignore' for packages that have type stubs available.
 exclude = [
-    "YOUR-PROJECT-NAME-\\d+", # Ignores temporary folder created by setuptools when building the sdist
+    "ataraxis-data-structures-\\d+", # Ignores temporary folder created by setuptools when building the sdist
     "venv.*/", # Ignores virtual environments
     "build/", # Ignores the sdist folder
     "dist/", # Ignores the wheel folder

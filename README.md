@@ -45,18 +45,18 @@ To adopt this project, follow these steps:
 12. Congratulations! You have successfully adopted a Sun Lab project. Welcome to the family!
 ---
 
-# YOUR-PROJECT-NAME
+# ataraxis-data-structures
 
 A short (1–2 line max) description of your library (what essential functionality does it provide?)
 
-![PyPI - Version](https://img.shields.io/pypi/v/YOUR-PROJECT-NAME)
-![PyPI - Python Version](https://img.shields.io/pypi/pyversions/YOUR-PROJECT-NAME)
+![PyPI - Version](https://img.shields.io/pypi/v/ataraxis-data-structures)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ataraxis-data-structures)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 ![type-checked: mypy](https://img.shields.io/badge/type--checked-mypy-blue?style=flat-square&logo=python)
-![PyPI - License](https://img.shields.io/pypi/l/YOUR-PROJECT-NAME)
-![PyPI - Status](https://img.shields.io/pypi/status/YOUR-PROJECT-NAME)
-![PyPI - Wheel](https://img.shields.io/pypi/wheel/YOUR-PROJECT-NAME)
+![PyPI - License](https://img.shields.io/pypi/l/ataraxis-data-structures)
+![PyPI - Status](https://img.shields.io/pypi/status/ataraxis-data-structures)
+![PyPI - Wheel](https://img.shields.io/pypi/wheel/ataraxis-data-structures)
 ___
 
 ## Detailed Description
@@ -104,14 +104,14 @@ ___
 
 ### PIP
 
-Use the following command to install the library using PIP: ```pip install YOUR-PROJECT-NAME```
+Use the following command to install the library using PIP: ```pip install ataraxis-data-structures```
 
 ### Conda / Mamba
 
 **_Note. Due to conda-forge contributing process being more nuanced than pip uploads, conda versions may lag behind
 pip and source code distributions._**
 
-Use the following command to install the library using Conda or Mamba: ```conda install YOUR-PROJECT-NAME```
+Use the following command to install the library using Conda or Mamba: ```conda install ataraxis-data-structures```
 ___
 
 ## Usage
@@ -124,7 +124,7 @@ ___
 
 ## API Documentation
 
-See the [API documentation](https://YOUR-PROJECT-NAME-api-docs.netlify.app/) for the
+See the [API documentation](https://ataraxis-data-structures-api-docs.netlify.app/) for the
 detailed description of the methods and classes exposed by components of this library. The documentation also 
 covers any available cli/gui-interfaces (such as benchmarks).
 ___
@@ -189,8 +189,8 @@ To install the development environment for your OS:
     1. **_Preferred Method_**: Install [tox](https://tox.wiki/en/latest/config.html#provision_tox_env) or use another
        environment with already installed tox and call ```tox -e import-env```.
     2. **_Alternative Method_**: Run ```conda env create -f ENVNAME.yml``` or ```mamba env create -f ENVNAME.yml```. 
-       Replace 'ENVNAME.yml' with the name of the environment you want to install (YOUR_ENV_NAME_osx for OSx, 
-       YOUR_ENV_NAME_win for Windows and YOUR_ENV_NAME_lin for Linux).
+       Replace 'ENVNAME.yml' with the name of the environment you want to install (axds_dev_osx for OSx, 
+       axds_dev_win for Windows and axds_dev_lin for Linux).
 
 **Note:** the OSx environment was built against M1 (Apple Silicon) platform and may not work on Intel-based Apple 
 devices.
@@ -199,7 +199,7 @@ ___
 
 ## Authors
 
-- YOUR_AUTHOR_NAME.
+- Ivan Kondratyev.
 ___
 
 ## License
