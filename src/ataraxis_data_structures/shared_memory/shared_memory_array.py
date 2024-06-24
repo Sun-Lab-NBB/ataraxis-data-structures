@@ -4,6 +4,7 @@ from multiprocessing.shared_memory import SharedMemory
 from typing import Optional, Tuple, Union
 
 import numpy as np
+from ataraxis_automation.utilities import format_message
 from numpy.typing import NDArray
 
 
@@ -244,7 +245,7 @@ class SharedMemoryArray:
                 "Cannot read data as the class is not connected to a shared memory array. Use connect() method to "
                 "connect to the shared memory array."
             )
-            raise RuntimeError(format_exception(custom_error_message))
+            raise RuntimeError(format_message(custom_error_message))
 
         with self._lock:
             try:
@@ -253,7 +254,7 @@ class SharedMemoryArray:
                 custom_error_message = (
                     "Invalid index or slice when attempting to read the data from shared memory array."
                 )
-                raise ValueError(format_exception(custom_error_message))
+                raise ValueError(format_message(custom_error_message))
 
     def write_data(
         self,
@@ -290,17 +291,17 @@ class SharedMemoryArray:
                 "Cannot write data as the class is not connected to a shared memory array. Use connect() method to "
                 "connect to the shared memory array."
             )
-            raise RuntimeError(format_exception(custom_error_message))
+            raise RuntimeError(format_message(custom_error_message))
 
         if not isinstance(data, np.ndarray):
             custom_error_message = "Input data must be a numpy array."
-            raise ValueError(format_exception(custom_error_message))
+            raise ValueError(format_message(custom_error_message))
 
         if data.dtype != self._datatype:
             custom_error_message = (
                 f"Input data must have the same datatype as the shared memory array: {self._datatype}."
             )
-            raise ValueError(format_exception(custom_error_message))
+            raise ValueError(format_message(custom_error_message))
 
         with self._lock:
             try:
@@ -309,7 +310,7 @@ class SharedMemoryArray:
                 custom_error_message = (
                     "Input data cannot fit inside the shared memory array at the specified index or slice."
                 )
-                raise ValueError(format_exception(custom_error_message))
+                raise ValueError(format_message(custom_error_message))
 
     @property
     def datatype(
@@ -337,7 +338,7 @@ class SharedMemoryArray:
                 "Cannot retrieve array datatype as the class is not connected to a shared memory array. Use connect() "
                 "method to connect to the shared memory array."
             )
-            raise RuntimeError(format_exception(custom_error_message))
+            raise RuntimeError(format_message(custom_error_message))
         return self._datatype
 
     @property
@@ -352,7 +353,7 @@ class SharedMemoryArray:
                 "Cannot retrieve shared memory buffer name as the class is not connected to a shared memory array. "
                 "Use connect() method to connect to the shared memory array."
             )
-            raise RuntimeError(format_exception(custom_error_message))
+            raise RuntimeError(format_message(custom_error_message))
         return self._name
 
     @property
@@ -367,7 +368,7 @@ class SharedMemoryArray:
                 "Cannot retrieve shared memory array shape as the class is not connected to a shared memory array. "
                 "Use connect() method to connect to the shared memory array."
             )
-            raise RuntimeError(format_exception(custom_error_message))
+            raise RuntimeError(format_message(custom_error_message))
         return self._shape
 
     @property
@@ -377,8 +378,3 @@ class SharedMemoryArray:
         Connection to the shared buffer is required from most class methods to work.
         """
         return self._is_connected
-
-
-def format_exception(exception: str) -> str:
-    """Formats the input exception message string according ot the Ataraxis standards."""
-    return textwrap.fill(exception, width=120, break_long_words=False, break_on_hyphens=False)

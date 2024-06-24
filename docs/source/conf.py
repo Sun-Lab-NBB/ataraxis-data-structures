@@ -5,7 +5,7 @@ import importlib_metadata
 project = 'ataraxis-data-structures'
 # noinspection PyShadowingBuiltins
 copyright = '2024, Ivan Kondratyev & Sun Lab'
-author = 'Ivan Kondratyev'
+authors = ['Ivan Kondratyev (Inkaros)', 'Edwin Chen']
 release = importlib_metadata.version("ataraxis-data-structures")  # Extracts project version from the metadata .toml file.
 
 # -- General configuration ---------------------------------------------------

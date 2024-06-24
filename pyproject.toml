@@ -9,19 +9,20 @@ build-backend = "hatchling.build"
 [project]
 name = "ataraxis-data-structures"
 version = "1.0.0"
-description = "Short description of your project"
+description = "Provides a wide range of non-standard data structures and related data-manipulation methods."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 authors = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
+    { name = "Edwin Chen", email = "ec769@cornell.edu" },
 ]
 maintainers = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
 ]
 
 # The list of keywords that describe your project
-keywords = []
+keywords = ['data-structures', 'data-manipulation', 'nested-dictionary', 'shared-memory']
 
 # Additional classifiers used by PIP to group repositories.
 classifiers = [
@@ -46,7 +47,7 @@ classifiers = [
 dependencies = [
     "click",
     "numpy",
-    "ataraxis-automation==1.0.4",
+    "ataraxis-automation",
 ]
 
 [project.urls]
@@ -81,10 +82,8 @@ dev = [
     "tox-uv",
 ]
 
-# Use this section to expose scripts as short commands callable from the shell. The line below is just an
-# example. Generally, this section is used to expose benchmark and cli/gui-based runtimes.
+# Exposes cli/gui-scripts available through the projects as shell commands.
 [project.scripts]
-# benchmark-module = "YOUR_PROJECT_NAME:benchmark"
 
 # Specifies files that should not be included in the source-code distribution, but are also not part of gitignore.
 [tool.hatch.build.targets.sdist]

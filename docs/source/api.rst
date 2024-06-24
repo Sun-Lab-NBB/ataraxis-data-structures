@@ -4,25 +4,10 @@
 .. Use the examples below to structure your API documentation. Section names are used as sub-directories in the
    index menu. Use appropriate module and automodule extensions as needed to document your code.
 
-Python Module
-=============
+Shared Memory Array
+===================
 
-.. automodule:: ataraxis_data_structures.module_name
+.. automodule:: ataraxis_data_structures.shared_memory.shared_memory_array
    :members:
    :undoc-members:
    :show-inheritance:
-
-CLI Interface
-===============
-
-.. automodule:: ataraxis_data_structures.module_name
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-.. Nesting allows documenting click-options in-addition to the main function docstring. Interface_function is the name
-   of the cli-wrapped function. Interface-name can be the same as function name or the shorthand name defined through
-   pyproject.toml scripts section.
-.. click:: ataraxis_data_structures.module_name:interface_function
-   :prog: interface-name
-   :nested: full
