@@ -1,7 +1,9 @@
 import sys
-import pytest
-import numpy as np
 from multiprocessing import Process
+
+import numpy as np
+import pytest
+
 from ataraxis_data_structures.shared_memory import SharedMemoryArray
 
 
@@ -57,33 +59,41 @@ def test_shared_memory_array():
         disconnected_array.write_data(0, np.array([1]))
 
     # Test reading data with an invalid index, which is expected to fail.
-    with pytest.raises(ValueError,
-                       match="Invalid index or slice when attempting to read the data from shared memory array."):
+    with pytest.raises(
+        ValueError, match="Invalid index or slice when attempting to read the data from shared memory array."
+    ):
         shared_memory_array.read_data(10)
 
     # Test writing data with an invalid datatype, which is expected to fail.
     invalid_datatype = np.array([1.0, 2.0], dtype=np.float32)
-    with pytest.raises(ValueError,
-                       match=f"Input data must have the same datatype as the shared memory array: {prototype.dtype}."):
+    with pytest.raises(
+        ValueError, match=f"Input data must have the same datatype as the shared memory array: {prototype.dtype}."
+    ):
         shared_memory_array.write_data(0, invalid_datatype)
 
     # Test writing data that cannot fit in the shared array, which is expected to fail.
     invalid_shape = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.int32)
-    with pytest.raises(ValueError,
-                       match="Input data cannot fit inside the shared memory array at the specified index or slice."):
+    with pytest.raises(
+        ValueError, match="Input data cannot fit inside the shared memory array at the specified index or slice."
+    ):
         shared_memory_array.write_data(slice(0, 2), invalid_shape)
 
     # Test accessing properties of a disconnected array, which is expected to fail.
-    with pytest.raises(RuntimeError,
-                       match="Cannot retrieve array datatype as the class is not connected to a shared memory array."):
+    with pytest.raises(
+        RuntimeError, match="Cannot retrieve array datatype as the class is not connected to a shared memory array."
+    ):
         # noinspection PyStatementEffect
         disconnected_array.datatype
-    with pytest.raises(RuntimeError,
-                       match="Cannot retrieve shared memory buffer name as the class is not connected to a shared memory array."):
+    with pytest.raises(
+        RuntimeError,
+        match="Cannot retrieve shared memory buffer name as the class is not connected to a shared memory array.",
+    ):
         # noinspection PyStatementEffect
         disconnected_array.name
-    with pytest.raises(RuntimeError,
-                       match="Cannot retrieve shared memory array shape as the class is not connected to a shared memory array."):
+    with pytest.raises(
+        RuntimeError,
+        match="Cannot retrieve shared memory array shape as the class is not connected to a shared memory array.",
+    ):
         # noinspection PyStatementEffect
         disconnected_array.shape
 
@@ -98,14 +108,12 @@ def test_shared_memory_array():
 
     # Create a process to write data to the shared array
     data_to_write = np.array([[10, 20, 30], [40, 50, 60]], dtype=np.int32)
-    write_process = Process(target=write_to_shared_array,
-                            args=(shared_array_2, data_to_write))
+    write_process = Process(target=write_to_shared_array, args=(shared_array_2, data_to_write))
     write_process.start()
     write_process.join()
 
     # Create a process to read data from the shared array
-    read_process = Process(target=read_from_shared_array,
-                           args=(shared_array_2, data_to_write))
+    read_process = Process(target=read_from_shared_array, args=(shared_array_2, data_to_write))
     read_process.start()
     read_process.join()
 
