@@ -11,12 +11,16 @@ Notes:
     stackoverflow or other recursion error is unlikely, it is not impossible. Be sure to check individual function
     docstrings and implementation if you run into recursion-related errors.
 """
+
 from __future__ import annotations
+
+import copy
 import sys
 import traceback
 from dataclasses import asdict
 from types import NoneType
-from typing import Any, Optional, Literal
+from typing import Any, Literal, Optional
+
 import numpy as np
 import yaml as yaml
 from src.utilities.console import (
@@ -24,7 +28,6 @@ from src.utilities.console import (
     augment_exception_message,
 )
 from src.utilities.utils import ensure_list
-import copy
 
 
 class NestedDictionary:
@@ -191,7 +194,7 @@ class NestedDictionary:
                 return error
 
     def convert_key_to_datatype(
-            self, key: Any, datatype: Literal["int", "str", "float", "bool", "NoneType"]
+        self, key: Any, datatype: Literal["int", "str", "float", "bool", "NoneType"]
     ) -> int | str | float | bool | None:
         """Converts the input key to the requested datatype.
 
@@ -245,7 +248,7 @@ class NestedDictionary:
             raise
 
     def convert_variable_path_to_keys(
-            self, variable_path: str | np.ndarray | tuple | list, operation_description: str
+        self, variable_path: str | np.ndarray | tuple | list, operation_description: str
     ) -> tuple:
         """Converts the input variable_path to the tuple of keys, which is the format preferred by all class functions.
 
@@ -397,9 +400,9 @@ class NestedDictionary:
             raise
 
     def extract_nested_variable_paths(
-            self,
-            return_raw: bool = False,
-            multiprocessing: bool = False,
+        self,
+        return_raw: bool = False,
+        multiprocessing: bool = False,
     ) -> tuple[str] | tuple[tuple[Any]] | AtaraxisError:
         """Crawls the nested dictionary and extracts the full path from the top level to each non-dictionary value.
 
@@ -518,10 +521,10 @@ class NestedDictionary:
                 return error
 
     def read_nested_value(
-            self,
-            variable_path: str | tuple | list | np.ndarray,
-            replace_none_equivalents: bool = False,
-            multiprocessing: bool = False,
+        self,
+        variable_path: str | tuple | list | np.ndarray,
+        replace_none_equivalents: bool = False,
+        multiprocessing: bool = False,
     ) -> str | int | float | list | tuple | dict | bool | None | AtaraxisError | ValueConverter | Any:
         """Reads a value from the nested dictionary using the sequence of nested keys (variable path).
 
@@ -636,13 +639,13 @@ class NestedDictionary:
                 return error
 
     def write_nested_value(
-            self,
-            variable_path: str | tuple | list | np.ndarray,
-            value: Any,
-            modify_class_dictionary: bool = True,
-            allow_terminal_overwrite: bool = True,
-            allow_intermediate_overwrite: bool = False,
-            multiprocessing: bool = False,
+        self,
+        variable_path: str | tuple | list | np.ndarray,
+        value: Any,
+        modify_class_dictionary: bool = True,
+        allow_terminal_overwrite: bool = True,
+        allow_intermediate_overwrite: bool = False,
+        multiprocessing: bool = False,
     ) -> NestedDictionary | None | AtaraxisError:
         """Writes the input value to the nested dictionary using a sequence of nested keys (variable_path).
 
@@ -792,12 +795,12 @@ class NestedDictionary:
                 return error
 
     def delete_nested_value(
-            self,
-            variable_path: str | tuple | list | np.ndarray,
-            modify_class_dictionary: bool = True,
-            delete_empty_sections: bool = True,
-            allow_missing: bool = False,
-            multiprocessing: bool = False,
+        self,
+        variable_path: str | tuple | list | np.ndarray,
+        modify_class_dictionary: bool = True,
+        delete_empty_sections: bool = True,
+        allow_missing: bool = False,
+        multiprocessing: bool = False,
     ) -> NestedDictionary | None | AtaraxisError:
         """Deletes the target value from nested dictionary using a sequence of nested keys (variable_path).
 
@@ -860,11 +863,11 @@ class NestedDictionary:
         """
 
         def _inner_delete(
-                traversed_dict: dict,
-                remaining_keys: list,
-                whole_path: tuple | str,
-                delete_empty_directories: bool,
-                missing_ok: bool,
+            traversed_dict: dict,
+            remaining_keys: list,
+            whole_path: tuple | str,
+            delete_empty_directories: bool,
+            missing_ok: bool,
         ) -> None:
             """Inner function that performs the recursive deletion procedure.
 
@@ -1035,11 +1038,11 @@ class NestedDictionary:
                 return error
 
     def find_nested_variable_path(
-            self,
-            target_key: str | int | float | bool | None,
-            search_mode: Literal["terminal_only", "intermediate_only", "all"] = "terminal_only",
-            return_raw: bool = False,
-            multiprocessing: bool = False,
+        self,
+        target_key: str | int | float | bool | None,
+        search_mode: Literal["terminal_only", "intermediate_only", "all"] = "terminal_only",
+        return_raw: bool = False,
+        multiprocessing: bool = False,
     ) -> tuple[tuple | str] | tuple | str | None | AtaraxisError:
         """Extracts the path(s) to the target variable (key) from the input hierarchical dictionary.
 
@@ -1214,10 +1217,10 @@ class NestedDictionary:
                 return error
 
     def convert_all_keys_to_datatype(
-            self,
-            datatype: Literal["str", "int"],
-            modify_class_dictionary: bool = True,
-            multiprocessing: bool = False,
+        self,
+        datatype: Literal["str", "int"],
+        modify_class_dictionary: bool = True,
+        multiprocessing: bool = False,
     ) -> NestedDictionary | None | AtaraxisError:
         """Converts all keys inside the class dictionary to use the input datatype.
 
@@ -1454,22 +1457,22 @@ class ValueConverter:
     """
 
     def __init__(
-            self,
-            allow_bool: bool,
-            allow_string: bool,
-            allow_int: bool,
-            allow_float: bool,
-            allow_none: bool,
-            allow_iterables: bool,
-            allow_string_conversion: bool = False,
-            string_options: Optional[list[str] | tuple[str] | set[str]] = None,
-            string_force_lower: bool = False,
-            number_lower_limit: Optional[int | float] = None,
-            number_upper_limit: Optional[int | float] = None,
-            parse_bool_equivalents: bool = False,
-            parse_none_equivalents: bool = True,
-            parse_number_strings: bool = True,
-            iterable_output_type: Optional[Literal["tuple", "list", "tuple"]] = None,
+        self,
+        allow_bool: bool,
+        allow_string: bool,
+        allow_int: bool,
+        allow_float: bool,
+        allow_none: bool,
+        allow_iterables: bool,
+        allow_string_conversion: bool = False,
+        string_options: Optional[list[str] | tuple[str] | set[str]] = None,
+        string_force_lower: bool = False,
+        number_lower_limit: Optional[int | float] = None,
+        number_upper_limit: Optional[int | float] = None,
+        parse_bool_equivalents: bool = False,
+        parse_none_equivalents: bool = True,
+        parse_number_strings: bool = True,
+        iterable_output_type: Optional[Literal["tuple", "list", "tuple"]] = None,
     ) -> None:
         self.supported_iterables = {"set": set, "tuple": tuple, "list": list}
 
@@ -1553,7 +1556,7 @@ class ValueConverter:
         return id_string
 
     def convert_value(
-            self, value: str | int | float | bool | None | list | tuple | set, multiprocessing: bool = False
+        self, value: str | int | float | bool | None | list | tuple | set, multiprocessing: bool = False
     ) -> str | int | float | bool | None | list | tuple | set | AtaraxisError:
         """Validates the input value and, if needed, converts it to the correct datatype before returning to caller.
 
@@ -1595,7 +1598,7 @@ class ValueConverter:
             # Unconditionally allows standard single python types to pass to the verification step. Also
             # allows most standard python iterables, if class attribute allow_iterables is True.
             if not isinstance(value, (str, int, float, bool, NoneType)) and not (
-                    isinstance(value, (tuple, list, set)) and self.allow_iterables
+                isinstance(value, (tuple, list, set)) and self.allow_iterables
             ):
                 # Produces slightly different error messages for the case where iterables are allowed and when they are
                 # not, but generates an error message whenever the input type is not an acceptable type given class
@@ -2092,9 +2095,9 @@ class YamlConfig:
 
     @classmethod
     def remove_unused_parameters(
-            cls,
-            class_dict: dict,
-            parameter_dict: dict,
+        cls,
+        class_dict: dict,
+        parameter_dict: dict,
     ) -> dict:
         """Removes all elements of the default class instance that are not relevant for the currently active runtime.
 
@@ -2233,7 +2236,7 @@ class YamlConfig:
             # Adds help hint section to the dictionary
             class_dict["addendum"] = {
                 "Help": "Use the README.md file or the API documentation available through the GitHub repository "
-                        "(https://github.com/Inkaros/Ataraxis_Data_Processing) if you need help editing this file"
+                "(https://github.com/Inkaros/Ataraxis_Data_Processing) if you need help editing this file"
             }
 
             try:
@@ -2579,11 +2582,11 @@ class SharedMemoryArray:
     """
 
     def __init__(
-            self,
-            name: str,
-            shape: tuple,
-            datatype: np.dtype,
-            buffer: Optional[SharedMemory],
+        self,
+        name: str,
+        shape: tuple,
+        datatype: np.dtype,
+        buffer: Optional[SharedMemory],
     ):
         self._name: str = name
         self._shape: tuple = shape
