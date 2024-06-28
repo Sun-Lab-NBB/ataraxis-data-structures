@@ -48,6 +48,7 @@ dependencies = [
     "click",
     "numpy",
     "ataraxis-automation",
+    "pydantic",
 ]
 
 [project.urls]
