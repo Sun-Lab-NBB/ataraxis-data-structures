@@ -1,6 +1,6 @@
 from typing import Any, Literal, Optional
 
-from python_models import BoolModel, NoneModel, NumModel, StringModel
+from python_models import BoolModel, NoneModel, NumericConverter, StringModel
 
 
 class PythonDataConverter:
@@ -122,7 +122,7 @@ class PythonDataConverter:
     def validate_value(self, value_to_validate: Any) -> int | float | bool | None | str:
         if self.allow_int | self.allow_float:
             try:
-                num_model = NumModel(
+                num_model = NumericConverter(
                     value=value_to_validate,
                     allow_int=self.allow_int,
                     allow_float=self.allow_float,
