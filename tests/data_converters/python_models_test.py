@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from typing import Union, Optional
-from ataraxis_data_structures.data_converters.python_models import NumericConverter
+from ataraxis_data_structures.data_converters.python_models import NumericConverter, BoolConverter, NoneConverter, StringConverter
 
 
 @pytest.mark.parametrize("config,input_value,expected", [
@@ -177,3 +177,80 @@ def test_numericconverter_config(config):
             assert converter.lower_limit == value
         elif key == "number_upper_limit":
             assert converter.upper_limit == value
+
+# We will now test the BoolConverter class
+@pytest.mark.parametrize("config,input_value,expected", [
+    ({"parse_bool_equivalents": False}, True, True),
+    ({"parse_bool_equivalents": False}, False, False),
+    ({"parse_bool_equivalents": True}, "True", True),
+    ({"parse_bool_equivalents": True}, "False", False),
+    ({"parse_bool_equivalents": True}, "true", True),
+    ({"parse_bool_equivalents": True}, "false", False),
+    ({"parse_bool_equivalents": True}, 1, True),
+    ({"parse_bool_equivalents": True}, 0, False),
+    ({"parse_bool_equivalents": True}, "1", True),
+    ({"parse_bool_equivalents": True}, "0", False),
+    ({"parse_bool_equivalents": True}, 1.0, True),
+    ({"parse_bool_equivalents": True}, 0.0, False),
+
+])
+def test_boolconverter_success(config, input_value, expected):
+    """
+    Verifies correct validation behavior for different configurations of BoolConverter class.
+
+    Evaluates:
+        0 - Conversion of a boolean input to a boolean output, when boolean equivalents are disabled.
+        1 - Conversion of a boolean input to a boolean output, when boolean equivalents are disabled.
+        2 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
+        3 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
+        4 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
+        5 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
+        6 - Conversion of an integer input to a boolean output, when boolean equivalents are enabled.
+        7 - Conversion of an integer input to a boolean output, when boolean equivalents are enabled.
+        8 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
+        9 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
+        10 - Conversion of a float input to a boolean output, when boolean equivalents are enabled.
+        11 - Conversion of a float input to a boolean output, when boolean equivalents are enabled.
+
+    Args:
+        config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
+        input_value: The value passed to the validation function of the configured class instance.
+        expected: The expected output of the validation function.
+    """
+    converter = BoolConverter(**config)
+    assert converter.validate_bool(input_value) == expected
+
+@pytest.mark.parametrize("config,input_value", [
+    ({"parse_bool_equivalents": False}, "True", None),
+    ({"parse_bool_equivalents": False}, "False", None),
+    ({"parse_bool_equivalents": False}, "true", None),
+    ({"parse_bool_equivalents": False}, "false", None),
+    ({"parse_bool_equivalents": False}, 1, None),
+    ({"parse_bool_equivalents": False}, 0, None),
+    ({"parse_bool_equivalents": False}, "1", None),
+    ({"parse_bool_equivalents": False}, "0", None),
+    ({"parse_bool_equivalents": False}, 1.0, None),
+    ({"parse_bool_equivalents": False}, 0.0, None),
+])
+def test_boolconverter_failure(config, input_value):
+    """
+    Verifies correct validation failure behavior for different configurations of BoolConverter class.
+
+    Evaluates:
+        0 - Failure for a string input when boolean equivalents are disabled.
+        1 - Failure for a string input when boolean equivalents are disabled.
+        2 - Failure for a string input when boolean equivalents are disabled.
+        3 - Failure for a string input when boolean equivalents are disabled.
+        4 - Failure for an integer input when boolean equivalents are disabled.
+        5 - Failure for an integer input when boolean equivalents are disabled.
+        6 - Failure for a string input when boolean equivalents are disabled.
+        7 - Failure for a string input when boolean equivalents are disabled.
+        8 - Failure for a float input when boolean equivalents are disabled.
+        9 - Failure for a float input when boolean equivalents are disabled.
+
+    Args:
+        config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
+        input_value: The value passed to the validation function of the configured class instance.
+    """
+    converter = BoolConverter(**config)
+    assert converter.validate_bool(input_value) is None

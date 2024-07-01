@@ -1400,10 +1400,7 @@ class ValueConverter:
         allow_iterables: Use this flag to allow the validated value to be a shallow tuple, list or set. Only supports
             shallow iterables as the algorithm calls the verification function onto each value in the iterable,
             which will fail for any value that is not a string, float, integer, boolean or NoneType.
-        allow_string_conversion: Use this flag to enable converting non-string inputs to strings. Since all supported
-            input values can be converted to strings, this is a dangerous option that has the potential of overriding
-            all verification parameters. It is generally advised to not enable this flag for most use cases.
-            Defaults to False.
+        allow_string_conversion: 
         string_options: Optional. A tuple, list or set of string-options. If provided, all validated strings will be
             checked against the input iterable and only considered valid if the string matches one of the options.
             Set to None to disable string option-limiting. Defaults to None.
