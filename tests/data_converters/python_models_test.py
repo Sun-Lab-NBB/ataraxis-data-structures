@@ -72,7 +72,7 @@ def test_numericconverter_failure(config, input_value):
 
 
 def test_numericconverter_init_validation():
-    """Verifies that NumericConverter initialization method functions as expected and correctly catches invalid inputs,
+    """Verifies that NumericConverter initialization method functions as expected and correctly catches invalid inputs.
     """
     # Tests valid initialization
     converter = NumericConverter(parse_number_strings=True, allow_int=True, number_lower_limit=0)
@@ -212,7 +212,7 @@ def test_boolconverter_success(config, input_value, expected):
         10 - Conversion of a float input to a boolean output, when boolean equivalents are enabled.
         11 - Conversion of a float input to a boolean output, when boolean equivalents are enabled.
 
-    Args:
+    Args:s
         config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
         input_value: The value passed to the validation function of the configured class instance.
         expected: The expected output of the validation function.
@@ -221,16 +221,16 @@ def test_boolconverter_success(config, input_value, expected):
     assert converter.validate_bool(input_value) == expected
 
 @pytest.mark.parametrize("config,input_value", [
-    ({"parse_bool_equivalents": False}, "True", None),
-    ({"parse_bool_equivalents": False}, "False", None),
-    ({"parse_bool_equivalents": False}, "true", None),
-    ({"parse_bool_equivalents": False}, "false", None),
-    ({"parse_bool_equivalents": False}, 1, None),
-    ({"parse_bool_equivalents": False}, 0, None),
-    ({"parse_bool_equivalents": False}, "1", None),
-    ({"parse_bool_equivalents": False}, "0", None),
-    ({"parse_bool_equivalents": False}, 1.0, None),
-    ({"parse_bool_equivalents": False}, 0.0, None),
+    ({"parse_bool_equivalents": False}, "True"),
+    ({"parse_bool_equivalents": False}, "False"),
+    ({"parse_bool_equivalents": False}, "true"),
+    ({"parse_bool_equivalents": False}, "false"),
+    ({"parse_bool_equivalents": False}, 1),
+    ({"parse_bool_equivalents": False}, 0),
+    ({"parse_bool_equivalents": False}, "1"),
+    ({"parse_bool_equivalents": False}, "0"),
+    ({"parse_bool_equivalents": False}, 1.0),
+    ({"parse_bool_equivalents": False}, 0.0),
 ])
 def test_boolconverter_failure(config, input_value):
     """
@@ -254,3 +254,16 @@ def test_boolconverter_failure(config, input_value):
     """
     converter = BoolConverter(**config)
     assert converter.validate_bool(input_value) is None
+
+def test_boolconverter_init_validation():
+    """
+    Verifies that BoolConverter initialization method functions as expected and correctly catches invalid inputs,
+    """
+    # Tests valid initialization
+    converter = BoolConverter(parse_bool_equivalents=True)
+    assert converter.parse_bool_equivalents
+
+    # Tests invalid initialization (relies on pydantic to validate the inputs)
+    with pytest.raises(ValidationError):
+        # noinspection PyTypeChecker
+        BoolConverter(parse_bool_equivalents="not a bool")

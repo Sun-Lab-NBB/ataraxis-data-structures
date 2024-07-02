@@ -228,8 +228,8 @@ class BoolConverter():
         _false_equivalents: Internal use only. Same as true_equivalents, but for boolean False equivalents.
     """   
     
-    _true_equivalents: dict[str | int | float] = {"True", "true", 1, "1", 1.0}    
-    _false_equivalents: dict[str | int | float] = {"False", "false", 0, "0", 0.0}
+    _true_equivalents: set[str | int | float] = {"True", "true", 1, "1", 1.0}    
+    _false_equivalents: set[str | int | float] = {"False", "false", 0, "0", 0.0}
 
     @validate_call()
     def __init__(
@@ -288,10 +288,13 @@ class BoolConverter():
 
         # Otherwise, if the value is a boolean-equivalent string or number and parsing boolean-equivalents is allowed
         # converts it to boolean True or False and returns it to caller
-        if self._parse_bool_equivalents and isinstance(value, (str, int, float)):
+        if self.parse_bool_equivalents:
+            raise ValueError('FFFFFFFFFFFFFFFFFFFFFFFFFFF')
+
+        if self.parse_bool_equivalents and isinstance(value, (str, int, float)):
             # If the value is in the list of true equivalents, returns True.
             if value in self._true_equivalents:
-                value = True
+                return True
             # If the value is in the list of false equivalents, returns False.
             elif value in self._false_equivalents:
                 return False
