@@ -178,21 +178,20 @@ def test_numericconverter_config(config):
         elif key == "number_upper_limit":
             assert converter.upper_limit == value
 
-# We will now test the BoolConverter class
-@pytest.mark.parametrize("config,input_value,expected", [
-    ({"parse_bool_equivalents": False}, True, True),
-    ({"parse_bool_equivalents": False}, False, False),
-    ({"parse_bool_equivalents": True}, "True", True),
-    ({"parse_bool_equivalents": True}, "False", False),
-    ({"parse_bool_equivalents": True}, "true", True),
-    ({"parse_bool_equivalents": True}, "false", False),
-    ({"parse_bool_equivalents": True}, 1, True),
-    ({"parse_bool_equivalents": True}, 0, False),
-    ({"parse_bool_equivalents": True}, "1", True),
-    ({"parse_bool_equivalents": True}, "0", False),
-    ({"parse_bool_equivalents": True}, 1.0, True),
-    ({"parse_bool_equivalents": True}, 0.0, False),
 
+@pytest.mark.parametrize("config,input_value,expected", [
+    ({}, True, True),
+    ({}, False, False),
+    ({}, "True", True),
+    ({}, "False", False),
+    ({}, "true", True),
+    ({}, "false", False),
+    ({}, 1, True),
+    ({}, 0, False),
+    ({}, "1", True),
+    ({}, "0", False),
+    ({}, 1.0, True),
+    ({}, 0.0, False),
 ])
 def test_boolconverter_success(config, input_value, expected):
     """
@@ -267,3 +266,205 @@ def test_boolconverter_init_validation():
     with pytest.raises(ValidationError):
         # noinspection PyTypeChecker
         BoolConverter(parse_bool_equivalents="not a bool")
+
+def test_boolconverter_properties():
+    """
+    Verifies that accessor properties of BoolConverter class function as expected
+    """
+    converter = BoolConverter(parse_bool_equivalents=True)
+    assert converter.parse_bool_equivalents
+
+def test_boolconverter_toggle_methods():
+    """
+    Verifies the functioning of BoolConverter configuration flag toggling methods.
+    """
+    converter = BoolConverter()
+
+    assert not converter.toggle_bool_equivalents()
+    assert not converter.parse_bool_equivalents
+    assert converter.toggle_bool_equivalents()
+    assert converter.parse_bool_equivalents
+
+@pytest.mark.parametrize("config", [
+    {},
+    {"parse_bool_equivalents": True},
+])
+def test_boolconverter_config(config):
+    """
+    Verifies that initializing BoolConverter class using **kwargs config works as expected.
+    """
+    converter = BoolConverter(**config)
+    for key, value in config.items():
+        if key == "parse_bool_equivalents":
+            assert converter.parse_bool_equivalents == value
+
+
+@pytest.mark.parametrize("config,input_value,expected", [
+    ({}, None, None),
+    ({}, "None", None),
+    ({}, "none", None),
+    ({}, "null", None),
+    ({}, "Null", None),
+])
+def test_noneconverter_success(config, input_value, expected):
+    """
+    Verifies correct validation behavior for different configurations of NoneConverter class.
+
+    Evaluates:
+        0 - Conversion of a None input to a None output.
+        1 - Conversion of a string input to a None output.
+        2 - Conversion of a string input to a None output.
+        3 - Conversion of a string input to a None output.
+        4 - Conversion of a string input to a None output.
+        5 - Conversion of a string input to a None output.
+        6 - Conversion of a string input to a None output.
+
+    Args:
+        config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
+        input_value: The value passed to the validation function of the configured class instance.
+        expected: The expected output of the validation function.
+    """
+    converter = NoneConverter(**config)
+    assert converter.validate_none(input_value) == expected
+
+@pytest.mark.parametrize("config,input_value", [
+    ({}, "nil"),
+    ({}, 5),
+    ({}, 5.5),
+    ({}, True),
+    ({}, False),
+    ({"parse_none_equivalents": False}, "None"),
+    ({"parse_none_equivalents": False}, "none"),
+    ({"parse_none_equivalents": False}, "null"),
+    ({"parse_none_equivalents": False}, "NULL"),
+])
+def test_noneconverter_failure(config, input_value):
+    """
+    Verifies correct validation failure behavior for different configurations of NoneConverter class.
+
+    Evaluates:
+        0 - Failure for a string input.
+        1 - Failure for an integer input.
+        2 - Failure for a float input.
+        3 - Failure for a boolean input.
+        4 - Failure for a boolean input.
+        5 - Failure for a string input when None equivalents are disabled.
+        6 - Failure for a string input when None equivalents are disabled.
+        7 - Failure for a string input when None equivalents are disabled.
+        8 - Failure for a string input when None equivalents are disabled.
+
+    Args:
+        config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
+        input_value: The value passed to the validation function of the configured class instance.
+    """
+    converter = NoneConverter(**config)
+    assert converter.validate_none(input_value) is 'None'
+
+def test_noneconverter_init_validation():
+    """
+    Verifies that NoneConverter initialization method functions as expected and correctly catches invalid inputs.
+    """
+    # Tests valid initialization
+    converter = NoneConverter(parse_none_equivalents=True)
+    assert converter.parse_none_equivalents
+
+    # Tests invalid initialization (relies on pydantic to validate the inputs)
+    with pytest.raises(ValidationError):
+        # noinspection PyTypeChecker
+        NoneConverter(parse_none_equivalents="not a bool")
+
+def test_noneconverter_properties():
+    """
+    Verifies that accessor properties of NoneConverter class function as expected
+    """
+    converter = NoneConverter(parse_none_equivalents=True)
+    assert converter.parse_none_equivalents
+
+def test_noneconverter_toggle_methods():
+    """
+    Verifies the functioning of NoneConverter configuration flag toggling methods.
+    """
+    converter = NoneConverter()
+
+    assert not converter.toggle_none_equivalents()
+    assert not converter.parse_none_equivalents
+    assert converter.toggle_none_equivalents()
+    assert converter.parse_none_equivalents
+
+@pytest.mark.parametrize("config", [
+    {},
+    {"parse_none_equivalents": True},
+])
+def test_noneconverter_config(config):
+    """
+    Verifies that initializing NoneConverter class using **kwargs config works as expected.
+    """
+    converter = NoneConverter(**config)
+    for key, value in config.items():
+        if key == "parse_none_equivalents":
+            assert converter.parse_none_equivalents == value
+
+@pytest.mark.parametrize("config,input_value,expected", [
+    # Converter Capabilities
+    ({'allow_string_conversion': True}, 'Spongebob', 'Spongebob'),
+    ({'allow_string_conversion': True}, 5, '5'),
+    ({'allow_string_conversion': True}, 5.5, '5.5'),
+    ({'allow_string_conversion': True}, True, 'True'),
+    ({'allow_string_conversion': True}, False, 'False'),
+    ({'allow_string_conversion': True}, None, 'None'),
+    ({'allow_string_conversion': True, "string_options": ["1", "2"]}, 1, '1'),
+    ({'allow_string_conversion': True, "string_options": ["1", "2"]}, 2, '2'),
+    ({'allow_string_conversion': True, "string_force_lower": True}, 'Spongebob', 'spongebob'),
+    # Validator Capabilities
+    ({}, 'Spongebob', 'Spongebob'),
+    ({'string_options': ['Spongebob', 'Patrick']}, 'Spongebob', 'Spongebob'),
+    ({'string_options': ['Spongebob', 'Patrick']}, 'Patrick', 'Patrick'),
+
+])
+def test_stringconverter_success(config, input_value, expected):
+    """
+    Verifies correct validation behavior for different configurations of StringConverter class.
+    
+    Evaluates:
+        0 - Conversion of a string input to a string output.
+        1 - Conversion of a string input to a string output.
+        2 - Conversion of an integer input to a string output.
+        3 - Conversion of a float input to a string output.
+        4 - Conversion of a boolean input to a string output.
+        5 - Conversion of a boolean input to a string output.
+        6 - Conversion of a None input to a string output.
+        7 - Conversion of an integer input to a string output, using a list of string options.
+        8 - Conversion of an integer input to a string output, using a list of string options.
+        9 - Conversion of a string input to a string output, with forced lower case conversion.
+        10 - Validation of a string input into a string output
+        11 - Validation of a string input into a string output with a list of valid options
+        12 - Validation of a string input into a string output with a list of valid options
+    """
+    converter = StringConverter(**config)
+    assert converter.validate_string(input_value) == expected
+
+@pytest.mark.parametrize("config,input_value", [
+    ({'allow_string_conversion': True, "string_options": ["1", "2"]}, 3),
+    ({'string_options': ['Spongebob', 'Patrick']}, 'Squidward'),
+    ({}, 1),
+    ({}, 1.0),
+    ({}, True),
+    ({}, False),
+    ({}, None),
+])
+def test_stringconverter_failure(config, input_value):
+    """
+    Verifies correct validation failure behavior for different configurations of StringConverter class.
+    
+    Evaluates:
+        0 - Failure for an integer input, when the input is not in the list of valid string options.
+        1 - Failure for a string input, when the input is not in the list of valid string options.
+        2 - Failure for an integer input.
+        3 - Failure for a float input.
+        4 - Failure for a boolean input.
+        5 - Failure for a boolean input.
+        6 - Failure for a None input.
+    """
+    converter = StringConverter(**config)
+    assert converter.validate_string(input_value) is None
+

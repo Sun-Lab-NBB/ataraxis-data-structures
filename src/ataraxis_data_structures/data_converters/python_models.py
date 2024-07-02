@@ -217,7 +217,7 @@ class BoolConverter():
 
     Args:
         parse_bool_equivalents: Determines whether to attempt parsing boolean equivalents other than True or False as 
-            boolean values.
+            boolean values. Defaults to True.
 
     Attributes:
         _parse_bool_equivalents: Use this flag to enable converting supported boolean-equivalent strings to boolean
@@ -234,7 +234,7 @@ class BoolConverter():
     @validate_call()
     def __init__(
             self,
-            parse_bool_equivalents: bool,
+            parse_bool_equivalents: bool = True,
             **kwargs
     ):
         self._parse_bool_equivalents = parse_bool_equivalents
@@ -288,9 +288,6 @@ class BoolConverter():
 
         # Otherwise, if the value is a boolean-equivalent string or number and parsing boolean-equivalents is allowed
         # converts it to boolean True or False and returns it to caller
-        if self.parse_bool_equivalents:
-            raise ValueError('FFFFFFFFFFFFFFFFFFFFFFFFFFF')
-
         if self.parse_bool_equivalents and isinstance(value, (str, int, float)):
             # If the value is in the list of true equivalents, returns True.
             if value in self._true_equivalents:
@@ -302,7 +299,7 @@ class BoolConverter():
         return None
 
 
-class NoneConverter(BaseModel):
+class NoneConverter():
     """
     A factory-like class for validating and converting None values based on a predefined configuration.
 
@@ -311,7 +308,8 @@ class NoneConverter(BaseModel):
     instantiated class.
 
     Args:
-        parse_none_equivalents: Determines whether to attempt parsing None equivalents other than None as None values.
+        parse_none_equivalents: Determines whether to attempt parsing None equivalents other than None as None values. 
+            Defaults to True.
 
     Attributes:
         _parse_none_equivalents: Use this flag to enable converting supported none-equivalent strings to NoneType (None)
@@ -320,12 +318,12 @@ class NoneConverter(BaseModel):
             allowed, these values will be converted to and recognized as None
     """
 
-    _none_equivalents: dict[str] = {"None", "none", "Null", "null"}
+    _none_equivalents: set[str] = {"None", "none", "Null", "null"}
 
     @validate_call()
     def __init__(
         self, 
-        parse_none_equivalents: bool,
+        parse_none_equivalents: bool = True,
         **kwargs
     ):
         self._parse_none_equivalents = parse_none_equivalents
@@ -336,7 +334,7 @@ class NoneConverter(BaseModel):
             setattr(self, f"_{key}", value)
 
     def __repr__(self) -> str:
-        representation_string = f"NoneConverter(parse_none_equivalents={self.parse_none_equivalents})"
+        representation_string = f"NoneConverter(parse_none_equivalents={self._parse_none_equivalents})"
         return representation_string
 
     @property
@@ -384,7 +382,7 @@ class NoneConverter(BaseModel):
             return 'None'
 
 
-class StringConverter(BaseModel):
+class StringConverter():
     """
     A factory-like class for validating and converting string values based on a predefined configuration.
 
@@ -392,26 +390,26 @@ class StringConverter(BaseModel):
     parameters can be altered through setter methods to dynamically adjust the behavior of the instantiated class.
 
     Args:
-        allow_string_conversion: Determines whether to allow converting non-string inputs to strings.
+        allow_string_conversion: Determines whether to allow converting non-string inputs to strings. Defaults to False.
         string_options: Optional. A list of strings that are considered valid string values.
         string_force_lower: Determines whether to force all string values to lowercase.
 
     Attributes:
-        allow_string_conversion: Use this flag to enable converting non-string inputs to strings. Since all supported
+        _allow_string_conversion: Use this flag to enable converting non-string inputs to strings. Since all supported
             input values can be converted to strings, this is a dangerous option that has the potential of overriding
             all verification parameters. It is generally advised to not enable this flag for most use cases.
-            Defaults to False.
-        string_options: Optional. A tuple or list of string-options. If provided, all validated strings will be
+            Defaults to False because this class is too flexible if this flag is raised.
+        _string_options: Optional. A tuple or list of string-options. If provided, all validated strings will be
             checked against the input iterable and only considered valid if the string matches one of the options.
             Set to None to disable string option-limiting. Defaults to None.
-        string_force_lower: Use this flag to force validated string values to be converted to lower-case.
+        _string_force_lower: Use this flag to force validated string values to be converted to lower-case.
             Only used if allow_string is True and only applies to strings. Defaults to False.
     """
 
     @validate_call()
     def __init__(
             self,
-            allow_string_conversion: bool,
+            allow_string_conversion: bool = False,
             string_options: Optional[Union[list[str], tuple[str]]] = None,
             string_force_lower: bool = False,
             **kwargs
