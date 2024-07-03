@@ -142,7 +142,7 @@ class NumericConverter:
         """Sets the upper bound used to determine valid numbers to the input value."""
         self._upper_limit = value
 
-    def validate_number(self, value: Any) -> str | int | None:
+    def validate_value(self, value: Any) -> str | int | None:
         """
         Validates and converts the input value into Python float or integer type, based on the configuration.
 
@@ -264,7 +264,7 @@ class BoolConverter():
         self._parse_bool_equivalents = not self.parse_bool_equivalents
         return self.parse_bool_equivalents
 
-    def validate_bool(self, value: Any) -> bool | None:
+    def validate_value(self, value: Any) -> bool | None:
         """
         Validates and converts the input value into Python boolean type, based on the configuration.
 
@@ -350,7 +350,7 @@ class NoneConverter():
         self._parse_none_equivalents = not self.parse_none_equivalents
         return self.parse_none_equivalents
 
-    def validate_none(self, value: Any) -> None | str:
+    def validate_value(self, value: Any) -> None | str:
         """
         Validates and converts the input value into Python None type, based on the configuration.
 
@@ -472,7 +472,7 @@ class StringConverter():
         self._string_force_lower = not self.string_force_lower
         return self.string_force_lower
 
-    def validate_string(self, value: Any) -> str | None:
+    def validate_value(self, value: Any) -> str | None:
         """
         Validates and converts the input value into Python string type, based on the configuration.
 

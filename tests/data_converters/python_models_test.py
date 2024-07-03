@@ -1,6 +1,5 @@
 import pytest
 from pydantic import ValidationError
-from typing import Union, Optional
 from ataraxis_data_structures.data_converters.python_models import NumericConverter, BoolConverter, NoneConverter, StringConverter
 
 
@@ -39,7 +38,7 @@ def test_numericconverter_success(config, input_value, expected):
        input_value: The value passed to the validation function of the configured class instance.
     """
     converter = NumericConverter(**config)
-    assert converter.validate_number(input_value) == expected
+    assert converter.validate_value(input_value) == expected
 
 
 @pytest.mark.parametrize("config,input_value", [
@@ -68,7 +67,7 @@ def test_numericconverter_failure(config, input_value):
        input_value: The value passed to the validation function of the configured class instance.
     """
     converter = NumericConverter(**config)
-    assert converter.validate_number(input_value) is None
+    assert converter.validate_value(input_value) is None
 
 
 def test_numericconverter_init_validation():
@@ -217,7 +216,7 @@ def test_boolconverter_success(config, input_value, expected):
         expected: The expected output of the validation function.
     """
     converter = BoolConverter(**config)
-    assert converter.validate_bool(input_value) == expected
+    assert converter.validate_value(input_value) == expected
 
 @pytest.mark.parametrize("config,input_value", [
     ({"parse_bool_equivalents": False}, "True"),
@@ -252,7 +251,7 @@ def test_boolconverter_failure(config, input_value):
         input_value: The value passed to the validation function of the configured class instance.
     """
     converter = BoolConverter(**config)
-    assert converter.validate_bool(input_value) is None
+    assert converter.validate_value(input_value) is None
 
 def test_boolconverter_init_validation():
     """
@@ -325,7 +324,7 @@ def test_noneconverter_success(config, input_value, expected):
         expected: The expected output of the validation function.
     """
     converter = NoneConverter(**config)
-    assert converter.validate_none(input_value) == expected
+    assert converter.validate_value(input_value) == expected
 
 @pytest.mark.parametrize("config,input_value", [
     ({}, "nil"),
@@ -358,7 +357,7 @@ def test_noneconverter_failure(config, input_value):
         input_value: The value passed to the validation function of the configured class instance.
     """
     converter = NoneConverter(**config)
-    assert converter.validate_none(input_value) is 'None'
+    assert converter.validate_value(input_value) is 'None'
 
 def test_noneconverter_init_validation():
     """
@@ -441,7 +440,7 @@ def test_stringconverter_success(config, input_value, expected):
         12 - Validation of a string input into a string output with a list of valid options
     """
     converter = StringConverter(**config)
-    assert converter.validate_string(input_value) == expected
+    assert converter.validate_value(input_value) == expected
 
 @pytest.mark.parametrize("config,input_value", [
     ({'allow_string_conversion': True, "string_options": ["1", "2"]}, 3),
@@ -466,5 +465,95 @@ def test_stringconverter_failure(config, input_value):
         6 - Failure for a None input.
     """
     converter = StringConverter(**config)
-    assert converter.validate_string(input_value) is None
+    assert converter.validate_value(input_value) is None
 
+def test_stringconverter_init_validation():
+    """
+    Verifies that StringConverter initialization method functions as expected and correctly catches invalid inputs.
+    """
+    # Tests valid initialization
+    converter = StringConverter(allow_string_conversion=True, string_options=["A", "B"], string_force_lower=True)
+    assert converter.allow_string_conversion
+    assert converter.string_options == ["A", "B"]
+    assert converter.string_force_lower
+
+    # Tests invalid initialization (relies on pydantic to validate the inputs)
+    with pytest.raises(ValidationError):
+        # noinspection PyTypeChecker
+        StringConverter(allow_string_conversion="not a bool")
+    
+    with pytest.raises(ValidationError):
+        # noinspection PyTypeChecker
+        StringConverter(string_options="not a list")
+
+    with pytest.raises(ValidationError):
+        # noinspection PyTypeChecker
+        StringConverter(string_force_lower="not a bool")
+
+def test_stringconverter_properties():
+    """
+    Verifies that accessor properties of StringConverter class function as expected
+    """
+    converter = StringConverter(allow_string_conversion=True, string_options=["A", "B"], string_force_lower=True)
+    assert converter.allow_string_conversion
+    assert converter.string_options == ["A", "B"]
+    assert converter.string_force_lower
+
+def test_stringconverter_toggle_methods():
+    """
+    Verifies the functioning of StringConverter configuration flag toggling methods.
+    """
+    converter = StringConverter()
+
+    assert converter.toggle_string_conversion()
+    assert converter.allow_string_conversion
+    assert not converter.toggle_string_conversion()
+    assert not converter.allow_string_conversion
+
+    assert converter.toggle_string_force_lower()
+    assert converter.string_force_lower
+    assert not converter.toggle_string_force_lower()
+    assert not converter.string_force_lower
+
+def test_stringconverter_setter_methods() -> None:
+    """
+    Verifies the functioning of StringConverter class string options setter method.
+    """
+    converter = StringConverter()
+
+    converter.set_string_options(["A", "B"])
+    assert converter.string_options == ["A", "B"]
+
+    converter.set_string_options(["C", "D"])
+    assert converter.string_options == ["C", "D"]
+
+    converter.set_string_options(None)
+    assert converter.string_options is None
+
+def test_stringconverter_setter_method_errors() -> None:
+    """
+    Verifies the error handling of StringConverter class string options setter method.
+    """
+    converter = StringConverter()
+    with pytest.raises(ValidationError):
+        # noinspection PyTypeChecker
+        converter.set_string_options('Invalid input')
+    
+@pytest.mark.parametrize("config", [
+    {},
+    {"allow_string_conversion": True},
+    {"string_options": ["A", "B"]},
+    {"string_force_lower": True},
+])
+def test_stringconverter_config(config):
+    """
+    Verifies that initializing StringConverter class using **kwargs config works as expected.
+    """
+    converter = StringConverter(**config)
+    for key, value in config.items():
+        if key == "allow_string_conversion":
+            assert converter.allow_string_conversion == value
+        elif key == "string_options":
+            assert converter.string_options == value
+        elif key == "string_force_lower":
+            assert converter.string_force_lower == value
