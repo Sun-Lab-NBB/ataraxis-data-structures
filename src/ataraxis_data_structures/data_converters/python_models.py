@@ -1,5 +1,5 @@
-from typing import Any, Literal, Optional, Union
-from pydantic import BaseModel, field_validator, ValidationError, validate_call
+from typing import Any, Optional, Union
+from pydantic import validate_call
 
 # TODO
 """
@@ -180,7 +180,7 @@ class NumericConverter:
             return None
 
         # Validates the type of the value, making the necessary and allowed conversions, if possible, to pass this step.
-        if isinstance(value, int) and not self._allow_int:
+        if isinstance(value, (int)) and not self._allow_int:
             # If the value is an integer, integers are not allowed and floats are not allowed, returns None.
             if not self._allow_float:
                 return None
@@ -188,7 +188,7 @@ class NumericConverter:
             # Relies on the fact that any integer is float-convertible.
             value = float(value)
 
-        elif isinstance(value, float) and not self._allow_float:
+        elif isinstance(value, (float)) and not self._allow_float:
             # If the value is a float, floats are not allowed, integers are allowed and value is integer-convertible
             # without data-loss, converts it to an integer.
             if value.is_integer() and self._allow_int:

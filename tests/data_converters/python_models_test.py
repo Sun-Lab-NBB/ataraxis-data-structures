@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 from ataraxis_data_structures.data_converters.python_models import NumericConverter, BoolConverter, NoneConverter, StringConverter
+from ataraxis_data_structures.data_converters.numpy_converter import PythonDataConverter
 
 
 @pytest.mark.parametrize("config,input_value,expected", [
@@ -12,7 +13,7 @@ from ataraxis_data_structures.data_converters.python_models import NumericConver
     ({"allow_float": False}, 5.0, 5),
     ({"parse_number_strings": True}, "5.5", 5.5),
     ({"parse_number_strings": True}, "5", 5),
-    ({"number_lower_limit": 0, "number_upper_limit": 10}, 5, 5),
+    ({"number_lower_limit": 0, "number_upper_limit":  10}, 5, 5),
     ({"allow_int": False, "allow_float": True, "number_lower_limit": 0, "number_upper_limit": 10}, 5, 5.0),
     ({"allow_int": True, "allow_float": False, "number_lower_limit": 0, "number_upper_limit": 10}, 5.0, 5),
 ])
@@ -557,3 +558,144 @@ def test_stringconverter_config(config):
             assert converter.string_options == value
         elif key == "string_force_lower":
             assert converter.string_force_lower == value
+
+def test_numpyconverter_init_validation():
+    """
+    Verifies that PythonDataConverter initialization method functions as expected and correctly catches invalid inputs.
+    """
+    # Tests valid initialization
+    converter = PythonDataConverter(
+        validator=NumericConverter(),
+        iterable_output_type="list",
+        filter_failed=True
+    )
+    assert type(converter.validator) == NumericConverter
+    assert converter.iterable_output_type == "list"
+    assert converter.filter_failed
+
+    with pytest.raises(TypeError):
+        # noinspection PyTypeChecker
+        PythonDataConverter(validator="not a validator")
+    
+    with pytest.raises(TypeError):
+        # noinspection PyTypeChecker
+        PythonDataConverter(iterable_output_type="not a string")
+    
+    with pytest.raises(TypeError):
+        # noinspection PyTypeChecker
+        PythonDataConverter(filter_failed="not a bool")
+
+
+def test_numpyconverter_properties():
+    """
+    Verifies that accessor properties of PythonDataConverter class function as expected
+    """
+    converter = PythonDataConverter(
+        validator=NumericConverter(),
+        iterable_output_type="list",
+        filter_failed=True
+    )
+
+    assert converter.validator is not None
+    assert type(converter.validator) == NumericConverter
+    assert converter.iterable_output_type == "list"
+    assert converter.filter_failed
+
+def test_pythonconverter_success():
+    """
+    Verifies correct validation behavior for different configurations of PythonDataConverter class.
+    """
+    converter = PythonDataConverter(
+        validator=NumericConverter(),
+        iterable_output_type="list",
+        filter_failed=True
+    )
+    assert converter.validate_value([5, 5.5, True, False, None, '7.1']) == [5, 5.5, 1, 0, 7.1]
+ 
+    converter = PythonDataConverter(
+        validator=BoolConverter(),
+        iterable_output_type="tuple",
+        filter_failed=True
+    )
+    assert converter.validate_value([5, 5.5, True, False, None, '7.1']) == (True, False)
+
+    converter = PythonDataConverter(
+        validator=StringConverter(),
+        iterable_output_type="tuple",
+        filter_failed=False
+    )
+    assert converter.validate_value([5, 5.5, True, False, None, '7.1']) == (None, None, None, None, None, '7.1')
+
+    converter = PythonDataConverter(
+        validator=NoneConverter(),
+        iterable_output_type="list",
+        filter_failed=False
+    )
+    assert converter.validate_value([5, 5.5, "None", 'Null', None, '7.1']) == ['None', 'None', None, None, None, 'None']
+
+
+def test_pythonconverter_failure():
+    """
+    Verifies correct validation failure behavior for different configurations of PythonDataConverter class.
+    """
+    with pytest.raises(TypeError):
+        # noinspection PyTypeChecker
+        converter = PythonDataConverter(
+            validator=NumericConverter(),
+            iterable_output_type="list",
+            filter_failed=True
+        )
+        value = converter.validate_value({5, 5.5, 'not a number', 'True', 'False', 'None'})
+
+
+def test_pythonconverter_properties():
+    """
+    Verifies that accessor properties of PythonDataConverter class function as expected
+    """
+    converter = PythonDataConverter(
+        validator=NumericConverter(),
+        iterable_output_type="list",
+        filter_failed=True
+    )
+
+    assert type(converter.validator) == NumericConverter
+    assert converter.iterable_output_type == "list"
+    assert converter.filter_failed
+
+def test_pythonconverter_toggle_methods():
+    """
+    Verifies the functioning of PythonDataConverter configuration flag toggling methods.
+    """
+    converter = PythonDataConverter(
+        validator=NumericConverter(),
+        iterable_output_type="list",
+        filter_failed=True
+    )
+
+    assert not converter.toggle_filter_failed()
+    assert not converter.filter_failed
+    assert converter.toggle_filter_failed()
+    assert converter.filter_failed
+
+
+def test_pythonconverter_setter_methods():
+    """
+    Verifies the functioning of PythonDataConverter class validator setter method.
+    """
+    converter = PythonDataConverter(
+        validator=NumericConverter(),
+        iterable_output_type="list",
+        filter_failed=True
+    )
+
+    converter.set_validator(BoolConverter())
+    assert type(converter.validator) == BoolConverter
+
+    converter.set_validator(NoneConverter())
+    assert type(converter.validator) == NoneConverter
+
+    converter.set_validator(StringConverter())
+    assert type(converter.validator) == StringConverter
+
+    converter.set_validator(NumericConverter())
+    assert type(converter.validator) == NumericConverter
