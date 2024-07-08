@@ -65,8 +65,8 @@ class NumericConverter:
         allow_float: bool = True,
         number_lower_limit: Optional[Union[int, float]] = None,
         number_upper_limit: Optional[Union[int, float]] = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         self._parse_strings = parse_number_strings
         self._allow_int = allow_int
         self._allow_float = allow_float
@@ -143,7 +143,7 @@ class NumericConverter:
         """Sets the upper bound used to determine valid numbers to the input value."""
         self._upper_limit = value
 
-    def validate_value(self, value: Any) -> str | int | None:
+    def validate_value(self, value: bool | str | int | float | None) -> float | int | None:
         """
         Validates and converts the input value into Python float or integer type, based on the configuration.
 
@@ -234,7 +234,7 @@ class BoolConverter:
     _false_equivalents: set[str | int | float] = {"False", "false", 0, "0", 0.0}
 
     @validate_call()
-    def __init__(self, parse_bool_equivalents: bool = True, **kwargs):
+    def __init__(self, parse_bool_equivalents: bool = True, **kwargs: Any) -> None:
         self._parse_bool_equivalents = parse_bool_equivalents
 
         # Sets any additional attributes from kwargs. Primarily, this functionality is necessary to support testing,
@@ -262,7 +262,7 @@ class BoolConverter:
         self._parse_bool_equivalents = not self.parse_bool_equivalents
         return self.parse_bool_equivalents
 
-    def validate_value(self, value: Any) -> bool | None:
+    def validate_value(self, value: bool | str | int | float | None) -> bool | None:
         """
         Validates and converts the input value into Python boolean type, based on the configuration.
 
@@ -319,7 +319,7 @@ class NoneConverter:
     _none_equivalents: set[str] = {"None", "none", "Null", "null"}
 
     @validate_call()
-    def __init__(self, parse_none_equivalents: bool = True, **kwargs):
+    def __init__(self, parse_none_equivalents: bool = True, **kwargs: Any) -> None:
         self._parse_none_equivalents = parse_none_equivalents
 
         # Sets any additional attributes from kwargs. Primarily, this functionality is necessary to support testing,
@@ -370,7 +370,7 @@ class NoneConverter:
         # If the input is a pythonic-None-equivalent string and the validator is configured to parse none-equivalent
         # strings, returns None
         elif value in self._none_equivalents and self.parse_none_equivalents:
-            value = None
+            return None
         # If the value is not in the list of None equivalents, returns the string 'None'.
         else:
             return "None"
@@ -406,7 +406,7 @@ class StringConverter:
         allow_string_conversion: bool = False,
         string_options: Optional[Union[list[str], tuple[str]]] = None,
         string_force_lower: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ):
         self._allow_string_conversion = allow_string_conversion
         self._string_options = string_options
@@ -466,7 +466,7 @@ class StringConverter:
         self._string_force_lower = not self.string_force_lower
         return self.string_force_lower
 
-    def validate_value(self, value: Any) -> str | None:
+    def validate_value(self, value: str | bool | int | float | None) -> str | None:
         """
         Validates and converts the input value into Python string type, based on the configuration.
 

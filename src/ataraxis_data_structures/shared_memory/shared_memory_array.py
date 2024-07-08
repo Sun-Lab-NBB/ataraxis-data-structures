@@ -5,6 +5,7 @@ a shared one-dimensional numpy array.
 from typing import Optional, Union, Generator, Any, Iterable
 from multiprocessing import Lock
 from multiprocessing.shared_memory import SharedMemory
+
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_base_utilities import console
