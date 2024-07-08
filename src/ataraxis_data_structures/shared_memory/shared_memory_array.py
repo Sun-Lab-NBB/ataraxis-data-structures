@@ -2,14 +2,14 @@
 a shared one-dimensional numpy array.
 """
 
-from typing import Optional, Union, Generator, Any, Iterable
+from typing import Any, Union, Iterable, Optional, Generator
+from contextlib import contextmanager
 from multiprocessing import Lock
 from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_base_utilities import console
-from contextlib import contextmanager
 
 
 class SharedMemoryArray:

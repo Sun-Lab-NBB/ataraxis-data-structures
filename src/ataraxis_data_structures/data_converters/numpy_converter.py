@@ -323,12 +323,15 @@ class NumpyDataConverter(PythonDataConverter):
         self,
         value_to_convert: int | float | bool | None | str | list | tuple,
     ):
-        signed = {range(-2**7, 2**7): np.int8, range(-2**15, 2**15): np.int16, range(-2**31, 2**31): np.int32, range(-2**63, 2**63): np.int64}
+        signed = {
+            range(-(2**7), 2**7): np.int8,
+            range(-(2**15), 2**15): np.int16,
+            range(-(2**31), 2**31): np.int32,
+            range(-(2**63), 2**63): np.int64,
+        }
         unsigned = {range(2**8): np.uint8, range(2**16): np.uint16, range(2**32): np.uint32, range(2**64): np.uint64}
 
         validated_value = self.python_converter.validate_value(value_to_convert)
-
-        
 
     def numpy_to_python_converter(
         self,
@@ -347,7 +350,7 @@ class NumpyDataConverter(PythonDataConverter):
             | np.bool
             | np.nan
             | np.ndarray
-        )
+        ),
     ):
         if isinstance(value_to_convert, np.ndarray):
             converted_value = value_to_convert.tolist()
@@ -356,4 +359,3 @@ class NumpyDataConverter(PythonDataConverter):
         else:
             return value_to_convert
         return self.python_converter.validate_value(converted_value)
-        
