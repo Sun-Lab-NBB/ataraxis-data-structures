@@ -1,4 +1,5 @@
-from typing import Any, Optional, Union
+from typing import Any, Union, Optional
+
 from pydantic import validate_call
 
 # TODO
@@ -58,13 +59,13 @@ class NumericConverter:
 
     @validate_call()
     def __init__(
-            self,
-            parse_number_strings: bool = True,
-            allow_int: bool = True,
-            allow_float: bool = True,
-            number_lower_limit: Optional[Union[int, float]] = None,
-            number_upper_limit: Optional[Union[int, float]] = None,
-            **kwargs
+        self,
+        parse_number_strings: bool = True,
+        allow_int: bool = True,
+        allow_float: bool = True,
+        number_lower_limit: Optional[Union[int, float]] = None,
+        number_upper_limit: Optional[Union[int, float]] = None,
+        **kwargs,
     ):
         self._parse_strings = parse_number_strings
         self._allow_int = allow_int
@@ -200,14 +201,15 @@ class NumericConverter:
 
         # Validates that the value is in the specified range, if any is provided.
         if (self._lower_limit is not None and value < self._lower_limit) or (
-                self._upper_limit is not None and value > self._upper_limit):
+            self._upper_limit is not None and value > self._upper_limit
+        ):
             return None
 
         # Returns the validated (and, potentially, converted) value.
         return value
 
 
-class BoolConverter():
+class BoolConverter:
     """
     A factory-like class for validating and converting boolean values based on a predefined configuration.
 
@@ -216,7 +218,7 @@ class BoolConverter():
     instantiated class.
 
     Args:
-        parse_bool_equivalents: Determines whether to attempt parsing boolean equivalents other than True or False as 
+        parse_bool_equivalents: Determines whether to attempt parsing boolean equivalents other than True or False as
             boolean values. Defaults to True.
 
     Attributes:
@@ -226,17 +228,13 @@ class BoolConverter():
             boolean-equivalent parsing is allowed, these values will be converted to and recognized as valid boolean
             True values.
         _false_equivalents: Internal use only. Same as true_equivalents, but for boolean False equivalents.
-    """   
-    
-    _true_equivalents: set[str | int | float] = {"True", "true", 1, "1", 1.0}    
+    """
+
+    _true_equivalents: set[str | int | float] = {"True", "true", 1, "1", 1.0}
     _false_equivalents: set[str | int | float] = {"False", "false", 0, "0", 0.0}
 
     @validate_call()
-    def __init__(
-            self,
-            parse_bool_equivalents: bool = True,
-            **kwargs
-    ):
+    def __init__(self, parse_bool_equivalents: bool = True, **kwargs):
         self._parse_bool_equivalents = parse_bool_equivalents
 
         # Sets any additional attributes from kwargs. Primarily, this functionality is necessary to support testing,
@@ -247,15 +245,15 @@ class BoolConverter():
     def __repr__(self) -> str:
         representation_string = f"BoolConverter(parse_bool_equivalents={self.parse_bool_equivalents})"
         return representation_string
-    
-    @property 
+
+    @property
     def parse_bool_equivalents(self) -> bool:
         """
-        Returns True if the class is configured to attempt parsing boolean equivalents other than True or False as boolean 
+        Returns True if the class is configured to attempt parsing boolean equivalents other than True or False as boolean
         values.
         """
         return self._parse_bool_equivalents
-    
+
     def toggle_bool_equivalents(self) -> bool:
         """
         Flips the value of the attribute that determines if parsing boolean equivalents is allowed and returns the
@@ -270,7 +268,7 @@ class BoolConverter():
 
         Notes:
             If parsing boolean equivalents is allowed, the class will attempt to convert any input that matches the
-            predefined equivalents to a boolean value. 
+            predefined equivalents to a boolean value.
 
             Since this class is intended to be used together with other validator classes, when conversion fails for
             any reason, it returns None instead of raising an error. This allows sequentially using multiple 'Model'
@@ -299,7 +297,7 @@ class BoolConverter():
         return None
 
 
-class NoneConverter():
+class NoneConverter:
     """
     A factory-like class for validating and converting None values based on a predefined configuration.
 
@@ -308,7 +306,7 @@ class NoneConverter():
     instantiated class.
 
     Args:
-        parse_none_equivalents: Determines whether to attempt parsing None equivalents other than None as None values. 
+        parse_none_equivalents: Determines whether to attempt parsing None equivalents other than None as None values.
             Defaults to True.
 
     Attributes:
@@ -321,11 +319,7 @@ class NoneConverter():
     _none_equivalents: set[str] = {"None", "none", "Null", "null"}
 
     @validate_call()
-    def __init__(
-        self, 
-        parse_none_equivalents: bool = True,
-        **kwargs
-    ):
+    def __init__(self, parse_none_equivalents: bool = True, **kwargs):
         self._parse_none_equivalents = parse_none_equivalents
 
         # Sets any additional attributes from kwargs. Primarily, this functionality is necessary to support testing,
@@ -341,7 +335,7 @@ class NoneConverter():
     def parse_none_equivalents(self) -> bool:
         """Returns True if the class is configured to attempt parsing None equivalents other than None as None values."""
         return self._parse_none_equivalents
-    
+
     def toggle_none_equivalents(self) -> bool:
         """
         Flips the value of the attribute that determines if parsing None equivalents is allowed and returns the
@@ -356,18 +350,18 @@ class NoneConverter():
 
         Notes:
             If parsing None equivalents is allowed, the class will attempt to convert any input that matches the
-            predefined equivalents to a None value. 
+            predefined equivalents to a None value.
 
             Since this class is intended to be used together with other validator classes, when conversion fails for
-            any reason, it returns the string 'None' instead of raising an error, since the None type is meaningful in this 
-            class. This allows sequentially using multiple 'Model' classes as part of a major DataConverter class to 
+            any reason, it returns the string 'None' instead of raising an error, since the None type is meaningful in this
+            class. This allows sequentially using multiple 'Model' classes as part of a major DataConverter class to
             implement complex conversion hierarchies.
 
         Args:
             value: The value to validate and potentially convert.
 
         Returns:
-            The validated and converted None value, if conversion succeeds. The string 'None', if conversion fails for 
+            The validated and converted None value, if conversion succeeds. The string 'None', if conversion fails for
             any reason.
         """
         # If the input is pythonic None, returns None
@@ -379,10 +373,10 @@ class NoneConverter():
             value = None
         # If the value is not in the list of None equivalents, returns the string 'None'.
         else:
-            return 'None'
+            return "None"
 
 
-class StringConverter():
+class StringConverter:
     """
     A factory-like class for validating and converting string values based on a predefined configuration.
 
@@ -408,11 +402,11 @@ class StringConverter():
 
     @validate_call()
     def __init__(
-            self,
-            allow_string_conversion: bool = False,
-            string_options: Optional[Union[list[str], tuple[str]]] = None,
-            string_force_lower: bool = False,
-            **kwargs
+        self,
+        allow_string_conversion: bool = False,
+        string_options: Optional[Union[list[str], tuple[str]]] = None,
+        string_force_lower: bool = False,
+        **kwargs,
     ):
         self._allow_string_conversion = allow_string_conversion
         self._string_options = string_options
@@ -434,22 +428,22 @@ class StringConverter():
     def allow_string_conversion(self) -> bool:
         """Returns True if the class is configured to allow converting non-string inputs to strings."""
         return self._allow_string_conversion
-    
+
     def toggle_string_conversion(self) -> bool:
         """
-        Flips the value of the attribute that determines if converting non-string inputs to strings is allowed and returns 
+        Flips the value of the attribute that determines if converting non-string inputs to strings is allowed and returns
         the resultant value.
         """
         self._allow_string_conversion = not self.allow_string_conversion
         return self.allow_string_conversion
-    
+
     @property
     def string_options(self) -> list[str] | tuple[str] | None:
         """
         Returns the list of string-options that are considered valid string values.
         """
         return self._string_options
-    
+
     @validate_call()
     def set_string_options(self, value: list[str] | tuple[str] | None) -> None:
         """
@@ -463,7 +457,7 @@ class StringConverter():
         Returns True if the class is configured to force validated string values to be converted to lower-case.
         """
         return self._string_force_lower
-    
+
     def toggle_string_force_lower(self) -> bool:
         """
         Flips the value of the attribute that determines if forcing validated string values to be converted to lower-case is
@@ -526,6 +520,6 @@ class StringConverter():
                 # If the value is not in the options list or if the options list is empty, returns None to indicate
                 # check failure
                 return None
-            
+
         # If option-limiting is not enabled, returns the string value
         return value_lower
