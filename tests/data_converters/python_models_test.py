@@ -9,6 +9,8 @@ from ataraxis_data_structures.data_converters.python_models import (
 )
 from ataraxis_data_structures.data_converters.numpy_converter import PythonDataConverter
 
+# from ataraxis_data_structures.data_converters.numpy_converter import PythonDataConverter
+
 
 @pytest.mark.parametrize(
     "config,input_value,expected",

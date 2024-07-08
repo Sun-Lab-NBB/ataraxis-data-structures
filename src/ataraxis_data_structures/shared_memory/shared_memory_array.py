@@ -2,9 +2,10 @@
 processes through a shared c-buffer.
 """
 
-from typing import Optional, Union
+from typing import Union, Optional
 from multiprocessing import Lock
 from multiprocessing.shared_memory import SharedMemory
+
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_base_utilities import console
@@ -60,25 +61,25 @@ class SharedMemoryArray:
     """
 
     def __init__(
-            self,
-            name: str,
-            shape: tuple[int, ...],
-            datatype: np.dtype[
-                Union[
-                    np.int8,
-                    np.int16,
-                    np.int32,
-                    np.int64,
-                    np.uint8,
-                    np.uint16,
-                    np.uint32,
-                    np.uint64,
-                    np.float16,
-                    np.float32,
-                    np.float64,
-                ]
-            ],
-            buffer: Optional[SharedMemory],
+        self,
+        name: str,
+        shape: tuple[int, ...],
+        datatype: np.dtype[
+            Union[
+                np.int8,
+                np.int16,
+                np.int32,
+                np.int64,
+                np.uint8,
+                np.uint16,
+                np.uint32,
+                np.uint64,
+                np.float16,
+                np.float32,
+                np.float64,
+            ]
+        ],
+        buffer: Optional[SharedMemory],
     ):
         self._name: str = name
         self._shape: tuple[int, ...] = shape
@@ -126,23 +127,23 @@ class SharedMemoryArray:
 
     @classmethod
     def create_array(
-            cls,
-            name: str,
-            prototype: NDArray[
-                Union[
-                    np.int8,
-                    np.int16,
-                    np.int32,
-                    np.int64,
-                    np.uint8,
-                    np.uint16,
-                    np.uint32,
-                    np.uint64,
-                    np.float16,
-                    np.float32,
-                    np.float64,
-                ]
-            ],
+        cls,
+        name: str,
+        prototype: NDArray[
+            Union[
+                np.int8,
+                np.int16,
+                np.int32,
+                np.int64,
+                np.uint8,
+                np.uint16,
+                np.uint32,
+                np.uint64,
+                np.float16,
+                np.float32,
+                np.float64,
+            ]
+        ],
     ) -> "SharedMemoryArray":
         """Creates a SharedMemoryArray class instance using the input prototype numpy array.
 
@@ -250,7 +251,7 @@ class SharedMemoryArray:
             self._is_connected = False
 
     def read_data(
-            self, index: int | slice | tuple[int, ...], *, convert_output: bool = False
+        self, index: int | slice | tuple[int, ...], *, convert_output: bool = False
     ) -> Union[
         NDArray[
             Union[
@@ -334,23 +335,23 @@ class SharedMemoryArray:
             return data
 
     def write_data(
-            self,
-            index: int | slice,
-            data: NDArray[
-                Union[
-                    np.int8,
-                    np.int16,
-                    np.int32,
-                    np.int64,
-                    np.uint8,
-                    np.uint16,
-                    np.uint32,
-                    np.uint64,
-                    np.float16,
-                    np.float32,
-                    np.float64,
-                ]
-            ],
+        self,
+        index: int | slice,
+        data: NDArray[
+            Union[
+                np.int8,
+                np.int16,
+                np.int32,
+                np.int64,
+                np.uint8,
+                np.uint16,
+                np.uint32,
+                np.uint64,
+                np.float16,
+                np.float32,
+                np.float64,
+            ]
+        ],
     ) -> None:
         """Writes data to the shared memory array at the specified index or slice.
 
@@ -389,7 +390,7 @@ class SharedMemoryArray:
 
     @property
     def datatype(
-            self,
+        self,
     ) -> np.dtype[
         np.int8
         | np.int16
@@ -402,7 +403,7 @@ class SharedMemoryArray:
         | np.float16
         | np.float32
         | np.float64
-        ]:
+    ]:
         """Returns the datatype of the shared memory array.
 
         Raises:

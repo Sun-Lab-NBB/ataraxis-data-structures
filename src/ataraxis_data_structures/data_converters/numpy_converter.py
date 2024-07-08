@@ -1,6 +1,7 @@
-from typing import Any, Literal, Optional
+from typing import Any, Union, Literal, Optional
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .python_models import BoolConverter, NoneConverter, StringConverter, NumericConverter
 
@@ -111,10 +112,27 @@ class PythonDataConverter:
             )
         self._validator = new_validator
 
-    def validate_value(self, value_to_validate: Any) -> int | float | bool | None | str | list | tuple:
+    def validate_value(
+        self,
+        value_to_validate: int
+        | float
+        | str
+        | bool
+        | None
+        | list[Union[int, float, bool, str, None]]
+        | tuple[Union[int, float, bool, str, None]],
+    ) -> (
+        int
+        | float
+        | bool
+        | None
+        | str
+        | list[Union[int, float, bool, str, None]]
+        | tuple[int | float | str | None, ...]
+    ):
         try:
-            list_value = PythonDataConverter.ensure_list(value_to_validate)
-            output_iterable = []
+            list_value: list[int | float | str | bool | None] = PythonDataConverter.ensure_list(value_to_validate)
+            output_iterable: list[int | float | str | bool | None] = []
             for value in list_value:
                 value = self._validator.validate_value(value)
                 if self.filter_failed:
@@ -133,7 +151,29 @@ class PythonDataConverter:
             raise TypeError(f"Unable to convert input value to a python list: {e}")
 
     @staticmethod
-    def ensure_list(input_item: str | int | float | tuple | list | np.ndarray) -> list:
+    def ensure_list(
+        input_item: str
+        | int
+        | float
+        | bool
+        | list[Union[int, float, bool, str, None]]
+        | tuple[Union[int, float, bool, str, None]]
+        | NDArray[
+            np.int8
+            | np.int16
+            | np.int32
+            | np.int64
+            | np.uint8
+            | np.uint16
+            | np.uint32
+            | np.uint64
+            | np.float16
+            | np.float32
+            | np.float64
+            | np.bool
+        ]
+        | None,
+    ) -> list[Union[int, float, bool, str, None]]:
         """Checks whether input item is a python list and, if not, converts it to list.
 
         If the item is a list, returns the item unchanged.
@@ -194,9 +234,7 @@ class NumpyDataConverter(PythonDataConverter):
             | np.float16
             | np.float32
             | np.float64
-            | np.float128
             | np.bool
-            | np.str
             | np.nan
             | np.ndarray
         ),
@@ -208,7 +246,7 @@ class NumpyDataConverter(PythonDataConverter):
                 f"Unsupported python_converter class {type(python_converter).__name__} provided when initializing "
                 f"NumpyDataConverter class instance. Must be an instance of PythonDataConverter."
             )
-        if not isinstance(numpy_output_type, (np.int, np.uint, np.float, np.bool, np.str, np.nan, np.ndarray)):
+        if not isinstance(numpy_output_type, (np.int, np.uint, np.float, np.bool, np.nan, np.ndarray)):
             raise TypeError(
                 f"Unsupported output_data_type {numpy_output_type} provided when initializing NumpyDataConverter "
                 f"class instance. Must be a numpy datatype."
@@ -224,6 +262,23 @@ class NumpyDataConverter(PythonDataConverter):
                 f"NumpyDataConverter class instance. Must be one of the supported types: int, float, bool, None, str, "
                 f"list, tuple."
             )
+        if type(python_converter.validator) == StringConverter:
+            raise TypeError(
+                f"Unsupported validator class {type(python_converter.validator).__name__} provided when initializing "
+                f"NumpyDataConverter class instance. Must be one of the supported validator classes: "
+                f"BoolConverter, NoneConverter, NumericConverter."
+            )
+        if not python_converter.validator.filter_failed:
+            raise ValueError(
+                f"Unsupported filter_failed argument {python_converter.validator.filter_failed} provided when "
+                f"initializing NumpyDataConverter class instance. Must be set to True."
+            )
+        if type(python_converter.validator) == NumericConverter:
+            if python_converter.validator.allow_int and python_converter.validator.allow_float:
+                raise ValueError(
+                    f"Unsupported NumericConverter configuration provided when initializing NumpyDataConverter "
+                    f"class instance. Both allow_int and allow_float cannot be set to True."
+                )
 
         self._python_converter = python_converter
         self._output_data_type = numpy_output_type
@@ -249,7 +304,6 @@ class NumpyDataConverter(PythonDataConverter):
         | np.float16
         | np.float32
         | np.float64
-        | np.float128
         | np.bool
         | np.str
         | np.nan
@@ -265,17 +319,41 @@ class NumpyDataConverter(PythonDataConverter):
     def python_output_type(self) -> int | float | bool | None | str | list | tuple:
         return self._python_output_type
 
-    def convert_value(
-        self,
-    ):
-        pass
-
     def python_to_numpy_converter(
         self,
+        value_to_convert: int | float | bool | None | str | list | tuple,
     ):
-        pass
+        signed = {range(-2**7, 2**7): np.int8, range(-2**15, 2**15): np.int16, range(-2**31, 2**31): np.int32, range(-2**63, 2**63): np.int64}
+        unsigned = {range(2**8): np.uint8, range(2**16): np.uint16, range(2**32): np.uint32, range(2**64): np.uint64}
+
+        validated_value = self.python_converter.validate_value(value_to_convert)
+
+        
 
     def numpy_to_python_converter(
         self,
+        value_to_convert: (
+            np.int8
+            | np.int16
+            | np.int32
+            | np.int64
+            | np.uint8
+            | np.uint16
+            | np.uint32
+            | np.uint64
+            | np.float16
+            | np.float32
+            | np.float64
+            | np.bool
+            | np.nan
+            | np.ndarray
+        )
     ):
-        pass
+        if isinstance(value_to_convert, np.ndarray):
+            converted_value = value_to_convert.tolist()
+        elif value_to_convert.size == 1:
+            converted_value = value_to_convert.item()
+        else:
+            return value_to_convert
+        return self.python_converter.validate_value(converted_value)
+        
