@@ -2,27 +2,6 @@ from typing import Any, Union, Optional
 
 from pydantic import validate_call
 
-# TODO
-"""
-1) Refactor the remaining models to match the final factory-like class architecture:
-    a) Replace errors with None returns to indicate validation failures. For None validator, use string 'None', since 
-        None returns are actually meaningful for that class.
-    b) Add properties and setter methods to allow dynamically altering class configuration post-initialization.
-    c) Make all attributes protected to preserve them from accidental end-user modification.
-    d) Add docstrings to class descriptions and all methods. Init arguments should be documented inside main class 
-        docstring.
-    e) Add **kwarg initialization support to init (very useful for testing).
-2) Make sure all aspects of each class are well tested. This includes success and correct error-handling (failure)
-    cases for all conceivable class configurations. This also includes pydantic-assisted init validation via 
-    'validate_call' method. See tests/data_converters_python_models_test.py for examples. Use the same test architecture
-    as this allows running them in-parallel.
-    
-* Most models had to be commented-out as importing the file for testing was running into errors. Go through them one at
-a time and convert + test each until all modules are complete
-
--- I
-"""
-
 
 class NumericConverter:
     """A factory-like class for validating and converting numeric values based on a predefined configuration.
