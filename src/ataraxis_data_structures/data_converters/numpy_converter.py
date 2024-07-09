@@ -222,45 +222,18 @@ class NumpyDataConverter(PythonDataConverter):
     def __init__(
         self,
         python_converter: PythonDataConverter,
-        numpy_output_type: (
-            np.int8
-            | np.int16
-            | np.int32
-            | np.int64
-            | np.uint8
-            | np.uint16
-            | np.uint32
-            | np.uint64
-            | np.float16
-            | np.float32
-            | np.float64
-            | np.bool
-            | np.nan
-            | np.ndarray
-        ),
         output_bit_width: Literal[8, 16, 32, 64, "auto"],
-        python_output_type: int | float | bool | None | str | list | tuple,
+        signed: bool = True,
     ):
         if not isinstance(python_converter, PythonDataConverter):
             raise TypeError(
                 f"Unsupported python_converter class {type(python_converter).__name__} provided when initializing "
                 f"NumpyDataConverter class instance. Must be an instance of PythonDataConverter."
             )
-        if not isinstance(numpy_output_type, (np.int, np.uint, np.float, np.bool, np.nan, np.ndarray)):
-            raise TypeError(
-                f"Unsupported output_data_type {numpy_output_type} provided when initializing NumpyDataConverter "
-                f"class instance. Must be a numpy datatype."
-            )
         if output_bit_width is not None and output_bit_width not in [8, 16, 32, 64, "auto"]:
             raise ValueError(
                 f"Unsupported output_bit_width {output_bit_width} provided when initializing NumpyDataConverter "
                 f"class instance. Must be one of the supported options: 8, 16, 32, 64, 'auto'."
-            )
-        if not isinstance(python_output_type, (int, float, bool, type(None), str, list, tuple)):
-            raise TypeError(
-                f"Unsupported python_output_type {type(python_output_type).__name__} provided when initializing "
-                f"NumpyDataConverter class instance. Must be one of the supported types: int, float, bool, None, str, "
-                f"list, tuple."
             )
         if type(python_converter.validator) == StringConverter:
             raise TypeError(
@@ -280,82 +253,140 @@ class NumpyDataConverter(PythonDataConverter):
                     f"class instance. Both allow_int and allow_float cannot be set to True."
                 )
 
+        self._signed = signed
         self._python_converter = python_converter
-        self._output_data_type = numpy_output_type
         self._output_bit_width = output_bit_width
-        self._python_output_type = python_output_type
 
     @property
     def python_converter(self) -> PythonDataConverter:
         return self._python_converter
 
     @property
-    def output_data_type(
-        self,
-    ) -> (
-        np.int8
-        | np.int16
-        | np.int32
-        | np.int64
-        | np.uint8
-        | np.uint16
-        | np.uint32
-        | np.uint64
-        | np.float16
-        | np.float32
-        | np.float64
-        | np.bool
-        | np.str
-        | np.nan
-        | np.ndarray
-    ):
-        return self._output_data_type
+    def converter(self) -> PythonDataConverter:
+        return self._python_converter
 
     @property
     def output_bit_width(self) -> Literal[8, 16, 32, 64, "auto"]:
         return self._output_bit_width
 
     @property
-    def python_output_type(self) -> int | float | bool | None | str | list | tuple:
-        return self._python_output_type
+    def signed(self) -> bool:
+        return self._signed
+
+    def toggle_signed(self) -> bool:
+        self._signed = not self._signed
+        return self._signed
+
+    def set_output_bit_width(self, new_output_bit_width: Literal[8, 16, 32, 64, "auto"]) -> None:
+        if new_output_bit_width not in [8, 16, 32, 64, "auto"]:
+            raise ValueError(
+                f"Unsupported output_bit_width {new_output_bit_width} provided when setting NumpyDataConverter "
+                f"output_bit_width. Must be one of the supported options: 8, 16, 32, 64, 'auto'."
+            )
+        self._output_bit_width = new_output_bit_width
+
+    def set_python_converter(self, new_python_converter: PythonDataConverter) -> None:
+        if not isinstance(new_python_converter, PythonDataConverter):
+            raise TypeError(
+                f"Unsupported python_converter class {type(new_python_converter).__name__} provided when setting "
+                f"NumpyDataConverter python_converter. Must be an instance of PythonDataConverter."
+            )
+        self._python_converter = new_python_converter
 
     def python_to_numpy_converter(
         self,
         value_to_convert: int | float | bool | None | str | list | tuple,
     ):
-        signed = {
-            range(-(2**7), 2**7): np.int8,
-            range(-(2**15), 2**15): np.int16,
-            range(-(2**31), 2**31): np.int32,
-            range(-(2**63), 2**63): np.int64,
-        }
-        unsigned = {range(2**8): np.uint8, range(2**16): np.uint16, range(2**32): np.uint32, range(2**64): np.uint64}
+        signed = [np.int8, np.int16, np.int32, np.int64]
+        unsigned = [np.uint8, np.uint16, np.uint32, np.uint64]
+        float_sign = ["Error", np.float16, np.float32, np.float64]
 
         validated_value = self.python_converter.validate_value(value_to_convert)
+        validated_list = PythonDataConverter.ensure_list(validated_value)
+        temp = []
+
+        try:
+            for value in validated_value:
+                if self._output_bit_width == "auto" and isinstance(value, (int, float)):
+                    min_dtype = np.min_scalar_type_signed_or_unsigned(value)
+                    numpy_value = np.array(value, dtype=self.datatype)[0] if min_dtype != np.inf else np.inf
+                elif isinstance(value, (int, float)):
+                    width_list = float_sign if type(value) == float else (signed if self._signed else unsigned)
+                    index_map = {8: 0, 16: 1, 32: 2, 64: 3}
+
+                    if width_list[index_map[self._output_bit_width]] == "Error":
+                        raise ValueError(f"Unsupported output_bit_width {self._output_bit_width} for float values.")
+
+                    datatype = width_list[index_map[self._output_bit_width]]
+                    numpy_value = np.array(value, dtype=datatype) if np.can_cast(value, datatype) else np.inf
+
+                # Handle bools and None
+                elif type(value) == bool:
+                    numpy_value = np.bool(value)
+                elif value is None:
+                    numpy_value = np.nan
+                temp.append(numpy_value)
+            return np.array(temp)
+        except Exception as e:
+            raise ValueError(f"Unable to convert input value to a numpy datatype: {e}")
 
     def numpy_to_python_converter(
         self,
-        value_to_convert: (
-            np.int8
-            | np.int16
-            | np.int32
-            | np.int64
-            | np.uint8
-            | np.uint16
-            | np.uint32
-            | np.uint64
-            | np.float16
-            | np.float32
-            | np.float64
-            | np.bool
-            | np.nan
-            | np.ndarray
-        ),
+        value_to_convert: Union[
+            np.int8,
+            np.int16,
+            np.int32,
+            np.int64,
+            np.uint8,
+            np.uint16,
+            np.uint32,
+            np.uint64,
+            np.float16,
+            np.float32,
+            np.float64,
+            np.bool,
+            np.nan,
+            np.ndarray
+        ],
     ):
         if isinstance(value_to_convert, np.ndarray):
             converted_value = value_to_convert.tolist()
-        elif value_to_convert.size == 1:
+        elif value_to_convert.ndim == 0:
             converted_value = value_to_convert.item()
         else:
             return value_to_convert
         return self.python_converter.validate_value(converted_value)
+
+    def min_scalar_type_signed_or_unsigned(self, value):
+        """
+        Returns the minimum scalar type to represent `value` with the desired signedness.
+
+        Parameters:
+        - value: The input value to be checked.
+        - signed: If True, return a signed dtype. If False, return an unsigned dtype.
+
+        Returns:
+        - A NumPy dtype object.
+        """
+        # Determine the smallest scalar type that can represent the value
+        dtype = np.min_scalar_type(value)
+
+        # If the current dtype already matches the signed/unsigned preference, return it
+        if (np.issubdtype(dtype, np.signedinteger) and self._signed) or (
+            np.issubdtype(dtype, np.unsignedinteger) and not self._signed
+        ):
+            return dtype
+
+        # Define the hierarchy of integer types
+        signed_types = [np.int8, np.int16, np.int32, np.int64]
+        unsigned_types = [np.uint8, np.uint16, np.uint32, np.uint64]
+
+        # Choose the appropriate hierarchy
+        types = signed_types if self._signed else unsigned_types
+
+        # Find the smallest dtype that can accommodate the value
+        for t in types:
+            if np.can_cast(value, t):
+                return t
+
+        raise OverflowError(f"Value {value} is too large to be represented by a NumPy integer type.")
