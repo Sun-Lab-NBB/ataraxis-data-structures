@@ -161,9 +161,9 @@ class YamlConfig:
 
     @classmethod
     def remove_unused_parameters(
-            cls,
-            class_dict: dict,
-            parameter_dict: dict,
+        cls,
+        class_dict: dict,
+        parameter_dict: dict,
     ) -> dict:
         """Removes all elements of the default class instance that are not relevant for the currently active runtime.
 
@@ -302,7 +302,7 @@ class YamlConfig:
             # Adds help hint section to the dictionary
             class_dict["addendum"] = {
                 "Help": "Use the README.md file or the API documentation available through the GitHub repository "
-                        "(https://github.com/Inkaros/Ataraxis_Data_Processing) if you need help editing this file"
+                "(https://github.com/Inkaros/Ataraxis_Data_Processing) if you need help editing this file"
             }
 
             try:

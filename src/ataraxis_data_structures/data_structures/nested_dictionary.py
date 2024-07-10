@@ -5,7 +5,6 @@ from typing import Any, Literal, Optional
 
 import numpy as np
 import yaml as yaml
-from ..standalone_methods.data_manipulation_methods import ensure_list
 
 
 class NestedDictionary:
@@ -172,7 +171,7 @@ class NestedDictionary:
                 return error
 
     def convert_key_to_datatype(
-            self, key: Any, datatype: Literal["int", "str", "float", "bool", "NoneType"]
+        self, key: Any, datatype: Literal["int", "str", "float", "bool", "NoneType"]
     ) -> int | str | float | bool | None:
         """Converts the input key to the requested datatype.
 
@@ -226,7 +225,7 @@ class NestedDictionary:
             raise
 
     def convert_variable_path_to_keys(
-            self, variable_path: str | np.ndarray | tuple | list, operation_description: str
+        self, variable_path: str | np.ndarray | tuple | list, operation_description: str
     ) -> tuple:
         """Converts the input variable_path to the tuple of keys, which is the format preferred by all class functions.
 
@@ -378,9 +377,9 @@ class NestedDictionary:
             raise
 
     def extract_nested_variable_paths(
-            self,
-            return_raw: bool = False,
-            multiprocessing: bool = False,
+        self,
+        return_raw: bool = False,
+        multiprocessing: bool = False,
     ) -> tuple[str] | tuple[tuple[Any]] | AtaraxisError:
         """Crawls the nested dictionary and extracts the full path from the top level to each non-dictionary value.
 
@@ -499,10 +498,10 @@ class NestedDictionary:
                 return error
 
     def read_nested_value(
-            self,
-            variable_path: str | tuple | list | np.ndarray,
-            replace_none_equivalents: bool = False,
-            multiprocessing: bool = False,
+        self,
+        variable_path: str | tuple | list | np.ndarray,
+        replace_none_equivalents: bool = False,
+        multiprocessing: bool = False,
     ) -> str | int | float | list | tuple | dict | bool | None | AtaraxisError | ValueConverter | Any:
         """Reads a value from the nested dictionary using the sequence of nested keys (variable path).
 
@@ -617,13 +616,13 @@ class NestedDictionary:
                 return error
 
     def write_nested_value(
-            self,
-            variable_path: str | tuple | list | np.ndarray,
-            value: Any,
-            modify_class_dictionary: bool = True,
-            allow_terminal_overwrite: bool = True,
-            allow_intermediate_overwrite: bool = False,
-            multiprocessing: bool = False,
+        self,
+        variable_path: str | tuple | list | np.ndarray,
+        value: Any,
+        modify_class_dictionary: bool = True,
+        allow_terminal_overwrite: bool = True,
+        allow_intermediate_overwrite: bool = False,
+        multiprocessing: bool = False,
     ) -> NestedDictionary | None | AtaraxisError:
         """Writes the input value to the nested dictionary using a sequence of nested keys (variable_path).
 
@@ -773,12 +772,12 @@ class NestedDictionary:
                 return error
 
     def delete_nested_value(
-            self,
-            variable_path: str | tuple | list | np.ndarray,
-            modify_class_dictionary: bool = True,
-            delete_empty_sections: bool = True,
-            allow_missing: bool = False,
-            multiprocessing: bool = False,
+        self,
+        variable_path: str | tuple | list | np.ndarray,
+        modify_class_dictionary: bool = True,
+        delete_empty_sections: bool = True,
+        allow_missing: bool = False,
+        multiprocessing: bool = False,
     ) -> NestedDictionary | None | AtaraxisError:
         """Deletes the target value from nested dictionary using a sequence of nested keys (variable_path).
 
@@ -841,11 +840,11 @@ class NestedDictionary:
         """
 
         def _inner_delete(
-                traversed_dict: dict,
-                remaining_keys: list,
-                whole_path: tuple | str,
-                delete_empty_directories: bool,
-                missing_ok: bool,
+            traversed_dict: dict,
+            remaining_keys: list,
+            whole_path: tuple | str,
+            delete_empty_directories: bool,
+            missing_ok: bool,
         ) -> None:
             """Inner function that performs the recursive deletion procedure.
 
@@ -1016,11 +1015,11 @@ class NestedDictionary:
                 return error
 
     def find_nested_variable_path(
-            self,
-            target_key: str | int | float | bool | None,
-            search_mode: Literal["terminal_only", "intermediate_only", "all"] = "terminal_only",
-            return_raw: bool = False,
-            multiprocessing: bool = False,
+        self,
+        target_key: str | int | float | bool | None,
+        search_mode: Literal["terminal_only", "intermediate_only", "all"] = "terminal_only",
+        return_raw: bool = False,
+        multiprocessing: bool = False,
     ) -> tuple[tuple | str] | tuple | str | None | AtaraxisError:
         """Extracts the path(s) to the target variable (key) from the input hierarchical dictionary.
 
@@ -1195,10 +1194,10 @@ class NestedDictionary:
                 return error
 
     def convert_all_keys_to_datatype(
-            self,
-            datatype: Literal["str", "int"],
-            modify_class_dictionary: bool = True,
-            multiprocessing: bool = False,
+        self,
+        datatype: Literal["str", "int"],
+        modify_class_dictionary: bool = True,
+        multiprocessing: bool = False,
     ) -> NestedDictionary | None | AtaraxisError:
         """Converts all keys inside the class dictionary to use the input datatype.
 

@@ -1,3 +1,9 @@
+"""This module contains miscellaneous data manipulation methods that either abstract away common operations to reduce
+boilerplate code or provide functionality not commonly available from popular Python libraries.
+
+See the API documentation for the description of the methods offered through this module.
+"""
+
 import numpy as np
 from numpy.typing import NDArray
 from typing import Any, Literal, Generator, Iterable
@@ -9,25 +15,52 @@ from ataraxis_base_utilities import console
 def ensure_list(
     input_item: str | int | float | bool | None | np.generic | NDArray[Any] | tuple[Any, ...] | list[Any] | set[Any],
 ) -> list[Any]:
-    """Checks whether input item is a Python list and, if not, converts it to list.
+    """Ensures that the input object is returned as a list.
 
-    If the item is a list, returns the item unchanged.
+    If the object is not already a list, attempts to convert it into a list. If the object is a list, returns the
+    object unchanged.
+
+    Notes:
+        This function makes no attempt to further validate object data or structure outside of making sure it is
+        returned as a list. This means that objects like multidimensional numpy arrays will be returned as nested
+        lists and returned lists may contain non-list objects.
+
+        Numpy arrays are fully converted into python types when passing through this function. That is, individual
+        data-values will be converted from numpy-scalar to the nearest python-scalar types before being written to a
+        list.
 
     Args:
-        input_item: The variable to be made into / preserved as a Python list.
+        input_item: The object to be converted into / preserved as a Python list.
 
     Returns:
-        A Python list that contains all items inside the input_item variable.
+        A Python list that contains input_item data. If the input_item was a scalar, it is wrapped into a list object.
+        If the input_item was an iterable, it is converted into list.
 
     Raises:
-        TypeError: If the input item is not of a supported type.
+        TypeError: If the input object cannot be converted or wrapped into a list.
     """
-    if isinstance(input_item, list):
-        return input_item
-    if isinstance(input_item, (tuple, set, np.ndarray)):
-        return list(input_item)
+    # Scalars are added to a list and returned as a one-item lists. Scalars are handled first to avoid clashing with
+    # iterable types.
     if np.isscalar(input_item) or input_item is None:  # Covers Python scalars and NumPy scalars
         return [input_item]
+    # Numpy arrays are processed based on their dimensionality. This has to dow tih the fact that zero-dimensional
+    # numpy arrays are interpreted as scalars by some numpy methods and as array by others.
+    if isinstance(input_item, np.ndarray):
+        # 1+-dimensional arrays are processed via tolist(), which correctly casts them to Python list format.
+        if input_item.ndim > 0:
+            return input_item.tolist()
+        else:
+            # 0-dimensional arrays are essentially scalars, so the data is popped out via item() and is wrapped
+            # into a list.
+            return [input_item.item()]
+    # Lists are returned as-is, without any further modification.
+    if isinstance(input_item, list):
+        return input_item
+    # Iterable types are converted via list() method.
+    if isinstance(input_item, Iterable):
+        return list(input_item)
+
+    # Catch-all type error to execute if the input is
     raise TypeError(
         f"Unable to convert input item to a Python list, as items of type {type(input_item).__name__} "
         f"are not supported."
@@ -52,17 +85,26 @@ def chunk_iterable(
 
     Raises:
         TypeError: If 'iterable' is not of a correct type.
+        ValueError: If 'chunk_size' value is below 1.
 
     Returns:
         Chunks of the input iterable (as a tuple) or NumPy array, containing at most chunk_size elements.
     """
     if not isinstance(iterable, (np.ndarray, list, tuple)):
         message: str = (
-            f"Unsupported iterable type encountered when chunking iterable. Expected a list, tuple or numpy array, "
+            f"Unsupported 'iterable' type encountered when chunking iterable. Expected a list, tuple or numpy array, "
             f"but encountered {iterable} of type {type(iterable).__name__}."
         )
         console.error(message=message, error=TypeError)
         raise TypeError(message)  # Fallback, should not be reachable
+
+    if chunk_size < 1:
+        message = (
+            f"Unsupported 'chunk_size' value encountered when chunking iterable. Expected a positive non-zero value, "
+            f"but encountered {chunk_size}."
+        )
+        console.error(message=message, error=ValueError)
+        raise ValueError(message)  # Fallback, should not be reachable
 
     # Chunking is performed along the first dimension for both NumPy arrays and Python sequences.
     # This preserves array dimensionality within chunks for NumPy arrays.
@@ -110,8 +152,8 @@ def check_condition(
 
     if condition_operator not in operators:
         message: str = (
-            f"Unsupported operator symbol '{condition_operator}' encountered when checking condition, use one of the "
-            f"supported operators {','.join(operators.keys())}."
+            f"Unsupported operator symbol ({condition_operator}) encountered when checking condition, use one of the "
+            f"supported operators {', '.join(operators.keys())}."
         )
         console.error(message=message, error=KeyError)
         raise KeyError(message)  # Fallback, should not be reachable

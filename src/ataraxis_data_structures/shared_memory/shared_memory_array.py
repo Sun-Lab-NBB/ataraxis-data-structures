@@ -2,6 +2,7 @@
 a shared one-dimensional numpy array.
 """
 
+from copy import copy
 from typing import Any, Union, Iterable, Optional, Generator
 from contextlib import contextmanager
 from multiprocessing import Lock
@@ -112,7 +113,7 @@ class SharedMemoryArray:
         if not isinstance(prototype, np.ndarray):
             message = (
                 f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object '{name}'. "
-                f"Expected a flat (one-dimensional) numpy ndarray but instead encountered {type(prototype)}."
+                f"Expected a flat (one-dimensional) numpy ndarray but instead encountered {type(prototype).__name__}."
             )
             console.error(message=message, error=TypeError)
             raise TypeError(message)  # Safety fallback, should not be reachable
@@ -220,7 +221,7 @@ class SharedMemoryArray:
                     f"instance. Expected a tuple with 1 or 2 elements (start and stop), but instead encountered "
                     f"a tuple with {len(index)} elements."
                 )
-                console.error(message=message, error=RuntimeError)
+                console.error(message=message, error=ValueError)
                 raise ValueError(message)  # Safety fallback, should not be reachable
 
     @contextmanager
@@ -241,6 +242,68 @@ class SharedMemoryArray:
                 yield
         else:
             yield
+
+    def _verify_indices(self, start: int, stop: Optional[int]) -> tuple[int, Optional[int]]:
+        """Converts start and stop indices used to slice the shared numpy array to positive values (if needed) and
+        verifies them against array boundaries.
+
+        This function handles both positive and negative indices, as well as None values.
+
+        Args:
+            start: The starting index of the slice. Can be positive or negative.
+            stop: The ending index of the slice. Can be positive, negative, or None.
+
+        Returns:
+            A tuple of (start, stop) indices, where start is always an int and stop can be int or None.
+
+        Raises:
+            ValueError: If start index is larger than the stop index after both are converted to positive numbers
+            IndexError: If either of the two indices is outside the array boundaries.
+        """
+        array_length = self.shape[0]
+
+        # Saves initial start and stop index values to be used in error messages
+        initial_start = copy(start)
+        initial_stop = copy(stop)
+
+        # Converts negative start index to positive
+        if start < 0:
+            start = array_length + start
+
+        # Converts negative stop index to positive if it's not None. Uses < 1 here because stop normally cannot be 0
+        # when it is valid. When stop is 0, this likely means it was produced from a single -1 (-1 + 1 = 0).
+        if stop is not None and stop < 1:
+            stop = array_length + stop
+
+        # Checks if start is within bounds
+        if start < 0 or start >= array_length:
+            message = (
+                f"Unable to retrieve the data from {self.name} SharedMemoryArray class instance using start index "
+                f"{initial_start}. The index is outside the valid start index range ({0}:{array_length - 1})."
+            )
+            console.error(message=message, error=IndexError)
+            raise IndexError(message)
+
+        # Checks if stop is within bounds if it's not None
+        if stop is not None and (stop < 1 or stop > array_length):
+            message = (
+                f"Unable to retrieve the data from {self.name} SharedMemoryArray class instance using stop index "
+                f"{initial_stop}. The index is outside the valid stop index range ({1}:{array_length})."
+            )
+            console.error(message=message, error=IndexError)
+            raise IndexError(message)
+
+        # Ensures start is not greater than stop (if stop is not None)
+        if stop is not None and start > stop:
+            message = (
+                f"Invalid pair of slice indices encountered when manipulating data of the {self.name} "
+                f"SharedMemoryArray class instance. The start index ({initial_start}) is greater than the end index "
+                f"({initial_stop}), which is not allowed."
+            )
+            console.error(message=message, error=ValueError)
+            raise ValueError(message)
+
+        return start, stop
 
     def read_data(
         self, index: int | tuple[int, int], *, convert_output: bool = False, with_lock: bool = True
@@ -267,7 +330,8 @@ class SharedMemoryArray:
         Raises:
             RuntimeError: If the class instance is not connected to a shared memory buffer.
             ValueError: If the input index tuple contains an invalid number of elements to parse it as slice start and
-                stop values.
+                stop values. If using slice indices and start index is greater than stop index after indices are
+                converted to positive numbers (this is done internally, input indices can be negative).
             IndexError: If the input index or slice is outside the array boundaries.
         """
 
@@ -291,26 +355,13 @@ class SharedMemoryArray:
         else:
             message = (
                 f"Unable to read data from {self.name} SharedMemoryArray class instance. Expected an integer index or "
-                f"a tuple of two integers, but encountered {index} of type {type(index)} instead."
+                f"a tuple of two integers, but encountered '{index}' of type {type(index).__name__} instead."
             )
             console.error(message=message, error=ValueError)
             raise ValueError(message)  # Safety fallback, should not be reachable
 
-        # Ensures that the input index or slice to read is within the boundaries of the array and raises IndexError
-        # caught below if this is false. This overrides the default numpy behavior that implicitly caps the slicing at
-        # the boundary of the array.
-        message = (
-            f"Unable to index the array data using {index} of type {type(index)} when attempting to read data "
-            f"from {self.name} SharedMemoryArray class instance. The index or slice is outside the retrievable array "
-            f"indices range ({0}:{self._array.shape[0] - 1})."
-        )
-        if abs(start) > self._array.shape[0]:
-            console.error(message=message, error=IndexError)
-            raise IndexError(message)  # Safety fallback, should not be reachable
-        elif stop is not None:
-            if abs(stop) > self._array.shape[0]:
-                console.error(message=message, error=IndexError)
-                raise IndexError(message)  # Safety fallback, should not be reachable
+        # Converts both indices to be positive and verifies that they are within the array boundaries and not malformed
+        start, stop = self._verify_indices(start, stop)
 
         # Extracts the requested data. The data is copied locally to prevent any modifications to the underlying
         # array object.
@@ -322,15 +373,15 @@ class SharedMemoryArray:
         # Determines whether the data can be returned as a scalar or iterable and whether it needs to be converted to
         # Python datatype or returned as numpy datatype.
         if convert_output:
-            if isinstance(data, np.ndarray):
+            if data.size != 1:
                 out_list: list[Any] = data.tolist()
                 return out_list
             else:
                 return data.item()
-        elif data.size == 1:
-            return data.astype(dtype=data.dtype)
-        else:
+        elif data.size != 1:
             return data
+        else:
+            return data[0]
 
     def write_data(
         self,
@@ -357,7 +408,8 @@ class SharedMemoryArray:
             RuntimeError: If the class instance is not connected to a shared memory buffer.
             ValueError: If the input index tuple contains an invalid number of elements to parse it as slice start and
                 stop values. If the method is unable to convert the input data into the array format or if writing data
-                to the array fails.
+                to the array fails. If using slice indices and start index is greater than stop index after indices are
+                converted to positive numbers (this is done internally, input indices can be negative).
             IndexError: If the input index or slice is outside the array boundaries.
         """
         # Ensures the class is connected to the shared memory buffer
@@ -380,26 +432,13 @@ class SharedMemoryArray:
         else:
             message = (
                 f"Unable to write data to {self.name} SharedMemoryArray class instance. Expected an integer index or "
-                f"a tuple of two integers, but encountered {index} of type {type(index)} instead."
+                f"a tuple of two integers, but encountered '{index}' of type {type(index).__name__} instead."
             )
             console.error(message=message, error=ValueError)
             raise ValueError(message)  # Safety fallback, should not be reachable
 
-        # Ensures that the input index or slice to read is within the boundaries of the array and raises IndexError
-        # caught below if this is false. This overrides the default numpy behavior that implicitly caps the slicing at
-        # the boundary of the array.
-        message = (
-            f"Unable to index the array data using {index} of type {type(index)} when attempting to write data "
-            f"to {self.name} SharedMemoryArray class instance. The index or slice is outside the addressable "
-            f"array indices range ({0}:{self._array.shape[0] - 1})."
-        )
-        if abs(start) > self._array.shape[0]:
-            console.error(message=message, error=IndexError)
-            raise IndexError(message)  # Safety fallback, should not be reachable
-        elif stop is not None:
-            if abs(stop) > self._array.shape[0]:
-                console.error(message=message, error=IndexError)
-                raise IndexError(message)  # Safety fallback, should not be reachable
+        # Converts both indices to be positive and verifies that they are within the array boundaries and not malformed
+        start, stop = self._verify_indices(start, stop)
 
         # If the input data is not a numpy array, converts it to the numpy array using the same datatype as the one
         # used by the shared memory array

@@ -1,43 +1,120 @@
+"""Contains tests for functions stored in the standalone_methods package."""
+
+import re
+import textwrap
 import pytest
+import operator
 import numpy as np
 from typing import Any
-from src.ataraxis_data_structures.standalone_methods.data_manipulation_methods import (
-    ensure_list, chunk_iterable, check_condition, find_closest_indices,
-    find_event_boundaries, compare_nested_tuples
+from ataraxis_data_structures.standalone_methods import (
+    ensure_list,
+    chunk_iterable,
+    check_condition,
+    find_closest_indices,
+    find_event_boundaries,
+    compare_nested_tuples,
 )
 
 
-@pytest.mark.parametrize("input_item, expected", [
-    ([1, 2, 3], [1, 2, 3]),
-    ((1, 2, 3), [1, 2, 3]),
-    ({1, 2, 3}, [1, 2, 3]),
-    (np.array([1, 2, 3]), [1, 2, 3]),
-    (1, [1]),
-    (1.0, [1.0]),
-    ("a", ["a"]),
-    (True, [True]),
-    (None, [None]),
-    (np.int32(1), [1]),
-])
+def error_format(message: str) -> str:
+    """Formats the input message to match the default Console format and escapes it using re, so that it can be used to
+    verify raised exceptions.
+
+    This method is used to set up pytest 'match' clauses to verify raised exceptions.
+
+    Args:
+        message: The message to format and escape, according to standard Ataraxis testing parameters.
+
+    Returns:
+        Formatted and escape message that can be used as the 'match' argument of pytest.raises() method.
+    """
+    return re.escape(textwrap.fill(message, width=120, break_long_words=False, break_on_hyphens=False))
+
+
+# noinspection PyRedundantParentheses
+@pytest.mark.parametrize(
+    "input_item, expected",
+    [
+        ([1, 2, 3], [1, 2, 3]),
+        ((1, 2, 3), [1, 2, 3]),
+        ({1, 2, 3}, [1, 2, 3]),
+        ([1], [1]),
+        ((1), [1]),
+        ({1}, [1]),
+        (np.array([1, 2, 3]), [1, 2, 3]),
+        (np.array([[1, 2, 3], [4, 5, 6]]), [[1, 2, 3], [4, 5, 6]]),
+        (np.array([1]), [1]),
+        (1, [1]),
+        (1.0, [1.0]),
+        ("a", ["a"]),
+        (True, [True]),
+        (None, [None]),
+        (np.int32(1), [1]),
+    ],
+)
 def test_ensure_list(input_item: Any, expected: list) -> None:
-    assert ensure_list(input_item) == expected
+    """Verifies the functioning of the ensure_list() method for all supported scenarios.
+
+    Tests the following inputs:
+        - 0 multi-item lists
+        - 1 multi-item tuples
+        - 2 multi-item sets
+        - 3 one-item lists
+        - 4 one-item tuples
+        - 5 one-item sets
+        - 6 one-dimensional numpy arrays
+        - 7 multidimensional numpy arrays
+        - 9 zero-dimensional numpy arrays
+        - 7 ints
+        - 8 floats
+        - 9 strings
+        - 10 bools
+        - 11 Nones
+        - 12 Numpy scalars
+    """
+    output = ensure_list(input_item)
+    # Checks output value
+    assert output == expected
+    # Checks output type
+    assert type(output) is type(expected)
 
 
 def test_ensure_list_error() -> None:
-    with pytest.raises(TypeError, match="Unable to convert input item to a Python list"):
+    """Verifies that ensure_list() correctly handles unsupported input types."""
+    message = (
+        f"Unable to convert input item to a Python list, as items of type {type(object()).__name__} "
+        f"are not supported."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
         ensure_list(object())
 
 
-@pytest.mark.parametrize("iterable, chunk_size, expected", [
-    ([1, 2, 3, 4, 5], 2, [(1, 2), (3, 4), (5,)]),
-    (np.array([1, 2, 3, 4, 5]), 2, [np.array([1, 2]), np.array([3, 4]), np.array([5])]),
-    ((1, 2, 3, 4, 5), 3, [(1, 2, 3), (4, 5)]),
-])
-def test_chunk_iterable(iterable: Any, chunk_size: int, expected: list) -> None:
-    result = list(chunk_iterable(iterable, chunk_size))
-    assert len(result) == len(expected)
-    for r, e in zip(result, expected):
+# noinspection PyRedundantParentheses
+@pytest.mark.parametrize(
+    "input_iterable, chunk_size, expected_chunks",
+    [
+        ([1, 2, 3, 4, 5], 2, [(1, 2), (3, 4), (5,)]),
+        (np.array([1, 2, 3, 4, 5]), 2, [np.array([1, 2]), np.array([3, 4]), np.array([5])]),
+        ((1, 2, 3, 4, 5), 3, [(1, 2, 3), (4, 5)]),
+    ],
+)
+def test_chunk_iterable(input_iterable, chunk_size: int, expected_chunks) -> None:
+    """Verifies the functioning of the chunk_iterable() method for various input types and chunk sizes.
+
+    Tests the following scenarios:
+        - 0 List input with even chunks and a remainder
+        - 1 NumPy array input with even chunks and a remainder
+        - 2 Tuple input with uneven chunks
+    """
+    # Returns a generator that can be iterated to obtain successive chunks
+    result = list(chunk_iterable(input_iterable, chunk_size))
+
+    # Verifies that the obtained number of chunks matches expectation
+    assert len(result) == len(expected_chunks)
+
+    # Verifies that the individual chunks match expected chunks
+    for r, e in zip(result, expected_chunks):
         if isinstance(r, np.ndarray):
             assert np.array_equal(r, e)
         else:
@@ -45,17 +122,63 @@ def test_chunk_iterable(iterable: Any, chunk_size: int, expected: list) -> None:
 
 
 def test_chunk_iterable_error() -> None:
-    with pytest.raises(TypeError, match="Unsupported iterable type encountered when chunking iterable"):
-        list(chunk_iterable(1, 2))
+    """Verifies that chunk_iterable() correctly handles unsupported iterables types and chunk_size values."""
+    message: str = (
+        f"Unsupported 'iterable' type encountered when chunking iterable. Expected a list, tuple or numpy array, "
+        f"but encountered {1} of type {type(1).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        list(chunk_iterable(iterable=1, chunk_size=2))
+
+    message = (
+        f"Unsupported 'chunk_size' value encountered when chunking iterable. Expected a positive non-zero value, "
+        f"but encountered {-4}."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        list(chunk_iterable(iterable=[1, 2, 3], chunk_size=-4))
 
 
-@pytest.mark.parametrize("checked_value, condition_value, condition_operator, expected", [
-    (5, 3, ">", True),
-    ([1, 2, 3], 2, "<=", (True, True, False)),
-    (np.array([1, 2, 3]), 2, "<", np.array([True, False, False])),
-    (np.int32(5), 3, ">=", np.bool_(True)),
-])
+@pytest.mark.parametrize(
+    "checked_value, condition_value, condition_operator, expected",
+    [
+        (5, 3, ">", True),
+        (5, 3, "<", False),
+        (5, 5, ">=", True),
+        (5, 5, "<=", True),
+        (5, 5, "==", True),
+        (5, 3, "!=", True),
+        ([1, 2, 3], 2, ">", (False, False, True)),
+        ([1, 2, 3], 2, "<", (True, False, False)),
+        ([1, 2, 3], 2, ">=", (False, True, True)),
+        ([1, 2, 3], 2, "<=", (True, True, False)),
+        ([1, 2, 3], 2, "==", (False, True, False)),
+        ([1, 2, 3], 2, "!=", (True, False, True)),
+        (np.array([1, 2, 3]), 2, ">", np.array([False, False, True])),
+        (np.array([1, 2, 3]), 2, "<", np.array([True, False, False])),
+        (np.array([1, 2, 3]), 2, ">=", np.array([False, True, True])),
+        (np.array([1, 2, 3]), 2, "<=", np.array([True, True, False])),
+        (np.array([1, 2, 3]), 2, "==", np.array([False, True, False])),
+        (np.array([1, 2, 3]), 2, "!=", np.array([True, False, True])),
+        (np.int32(5), 3, ">", np.bool_(True)),
+        (np.int32(5), 3, "<", np.bool_(False)),
+        (np.int32(5), 5, ">=", np.bool_(True)),
+        (np.int32(5), 5, "<=", np.bool_(True)),
+        (np.int32(5), 5, "==", np.bool_(True)),
+        (np.int32(5), 3, "!=", np.bool_(True)),
+    ],
+)
 def test_check_condition(checked_value: Any, condition_value: Any, condition_operator: str, expected: Any) -> None:
+    """Verifies the functioning of the check_condition() method for all supported operators and various input types.
+
+    Tests the following scenarios:
+        - 0-5: Python scalar comparisons with all operators (>, <, >=, <=, ==, !=)
+        - 6-11: List comparisons with all operators
+        - 12-17: NumPy array comparisons with all operators
+        - 18-23: NumPy scalar comparisons with all operators
+
+    For each input type (Python scalar, list, NumPy array, NumPy scalar), all six supported operators are tested:
+    '>', '<', '>=', '<=', '==', '!='.
+    """
     # noinspection PyTypeChecker
     result = check_condition(checked_value, condition_value, condition_operator)
     if isinstance(result, np.ndarray):
@@ -65,20 +188,42 @@ def test_check_condition(checked_value: Any, condition_value: Any, condition_ope
 
 
 def test_check_condition_error() -> None:
-    with pytest.raises(KeyError, match="Unsupported operator symbol"):
+    """Verifies that check_condition() correctly handles invalid operators and unsupported input types."""
+
+    # Stores supported operators
+    operators = {
+        ">": operator.gt,
+        "<": operator.lt,
+        ">=": operator.ge,
+        "<=": operator.le,
+        "==": operator.eq,
+        "!=": operator.ne,
+    }
+
+    message = (
+        f"Unsupported checked_value ({object()}) type ({type(object()).__name__}) encountered when "
+        f"checking condition. See API documentation / function signature for supported types."
+    )
+
+    with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
-        check_condition(1, 1, "invalid")
-
-    with pytest.raises(TypeError, match="Unsupported checked_value"):
-        # noinspection PyTypeChecker
-        check_condition(object(), 1, ">")
+        check_condition(checked_value=object(), condition_value=1, condition_operator=">")
 
 
-@pytest.mark.parametrize("target_array, source_array, expected", [
-    ([1, 5, 10], [2, 4, 6, 8], (0, 1, 3)),
-    (np.array([1, 5, 10]), np.array([2, 4, 6, 8]), np.array([0, 1, 3])),
-])
+@pytest.mark.parametrize(
+    "target_array, source_array, expected",
+    [
+        ([1, 5, 10], [2, 4, 6, 8], (0, 1, 3)),
+        (np.array([1, 5, 10]), np.array([2, 4, 6, 8]), np.array([0, 1, 3])),
+    ],
+)
 def test_find_closest_indices(target_array: Any, source_array: Any, expected: Any) -> None:
+    """Verifies the functioning of the find_closest_indices() method for list and NumPy array inputs.
+
+    Tests the following scenarios:
+        - 0 List inputs
+        - 1 NumPy array inputs
+    """
     result = find_closest_indices(target_array, source_array)
     if isinstance(result, np.ndarray):
         assert np.array_equal(result, expected)
@@ -86,19 +231,32 @@ def test_find_closest_indices(target_array: Any, source_array: Any, expected: An
         assert result == expected
 
 
-@pytest.mark.parametrize("trace, make_offsets_exclusive, allow_no_events, expected", [
-    ([0, 1, 1, 0, 1, 1, 1, 0], True, True, ((1, 3), (4, 7))),
-    ([0, 1, 1, 0, 1, 1, 1, 0], False, True, ((1, 2), (4, 6))),
-    ([0, 0, 0], True, True, ()),
-])
-def test_find_event_boundaries(trace: Any, make_offsets_exclusive: bool, allow_no_events: bool,
-                               expected: tuple) -> None:
-    result = find_event_boundaries(trace, make_offsets_exclusive=make_offsets_exclusive,
-                                   allow_no_events=allow_no_events)
+@pytest.mark.parametrize(
+    "trace, make_offsets_exclusive, allow_no_events, expected",
+    [
+        ([0, 1, 1, 0, 1, 1, 1, 0], True, True, ((1, 3), (4, 7))),
+        ([0, 1, 1, 0, 1, 1, 1, 0], False, True, ((1, 2), (4, 6))),
+        ([0, 0, 0], True, True, ()),
+    ],
+)
+def test_find_event_boundaries(
+    trace: Any, make_offsets_exclusive: bool, allow_no_events: bool, expected: tuple
+) -> None:
+    """Verifies the functioning of the find_event_boundaries() method for various input scenarios.
+
+    Tests the following scenarios:
+        - 0 Multiple events with exclusive offsets
+        - 1 Multiple events with non-exclusive offsets
+        - 2 No events, allowed
+    """
+    result = find_event_boundaries(
+        trace, make_offsets_exclusive=make_offsets_exclusive, allow_no_events=allow_no_events
+    )
     assert result == expected
 
 
 def test_find_event_boundaries_error() -> None:
+    """Verifies that find_event_boundaries() correctly handles invalid inputs and disallowed no-event scenarios."""
     with pytest.raises(ValueError, match="Unsupported NumPy array 'trace' input detected"):
         find_event_boundaries(np.array([[1, 2], [3, 4]]))
 
@@ -106,17 +264,29 @@ def test_find_event_boundaries_error() -> None:
         find_event_boundaries([0, 0, 0], allow_no_events=False)
 
 
-@pytest.mark.parametrize("x, y, expected", [
-    (((1, 2), (3, 4)), ((1, 2), (3, 4)), True),
-    (((1, 2), (3, 4)), ((1, 2), (3, 5)), False),
-    ((('a', 'b'), ('c',)), (('a', 'b'), ('c',)), True),
-    ((('a', 'b'), ('c',)), (('a', 'b'), ('d',)), False),
-])
+@pytest.mark.parametrize(
+    "x, y, expected",
+    [
+        (((1, 2), (3, 4)), ((1, 2), (3, 4)), True),
+        (((1, 2), (3, 4)), ((1, 2), (3, 5)), False),
+        ((("a", "b"), ("c",)), (("a", "b"), ("c",)), True),
+        ((("a", "b"), ("c",)), (("a", "b"), ("d",)), False),
+    ],
+)
 def test_compare_nested_tuples(x: tuple, y: tuple, expected: bool) -> None:
+    """Verifies the functioning of the compare_nested_tuples() method for various nested tuple scenarios.
+
+    Tests the following scenarios:
+        - 0 Identical nested tuples with numbers
+        - 1 Different nested tuples with numbers
+        - 2 Identical nested tuples with strings and different inner tuple lengths
+        - 3 Different nested tuples with strings and different inner tuple lengths
+    """
     assert compare_nested_tuples(x, y) == expected
 
 
 def test_compare_nested_tuples_error() -> None:
+    """Verifies that compare_nested_tuples() correctly handles non-tuple inputs."""
     with pytest.raises(TypeError, match="Unsupported type encountered when comparing tuples"):
         # noinspection PyTypeChecker
         compare_nested_tuples([1, 2], (1, 2))
