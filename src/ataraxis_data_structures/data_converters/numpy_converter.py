@@ -1,10 +1,10 @@
-from typing import Any, Union, Literal, Optional
+from typing import Any, Iterable, Union, Literal, Optional
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .python_models import BoolConverter, NoneConverter, StringConverter, NumericConverter
-
+from ataraxis_base_utilities import console
 
 class PythonDataConverter:
     """
@@ -138,7 +138,7 @@ class PythonDataConverter:
                 if self.filter_failed:
                     if type(self.validator) == NoneConverter and value is "None":
                         continue
-                    elif value is None:
+                    elif value is None and type(self.validator) != NoneConverter:
                         continue
                 output_iterable.append(value)
 
@@ -152,63 +152,58 @@ class PythonDataConverter:
 
     @staticmethod
     def ensure_list(
-        input_item: str
-        | int
-        | float
-        | bool
-        | list[Union[int, float, bool, str, None]]
-        | tuple[Union[int, float, bool, str, None]]
-        | NDArray[
-            np.int8
-            | np.int16
-            | np.int32
-            | np.int64
-            | np.uint8
-            | np.uint16
-            | np.uint32
-            | np.uint64
-            | np.float16
-            | np.float32
-            | np.float64
-            | np.bool
-        ]
-        | None,
-    ) -> list[Union[int, float, bool, str, None]]:
-        """Checks whether input item is a python list and, if not, converts it to list.
+        input_item: str | int | float | bool | None | np.generic | NDArray[Any] | tuple[Any, ...] | list[Any] | set[Any],
+    ) -> list[Any]:
+        """Ensures that the input object is returned as a list.
 
-        If the item is a list, returns the item unchanged.
+        If the object is not already a list, attempts to convert it into a list. If the object is a list, returns the
+        object unchanged.
+
+        Notes:
+            This function makes no attempt to further validate object data or structure outside of making sure it is
+            returned as a list. This means that objects like multidimensional numpy arrays will be returned as nested
+            lists and returned lists may contain non-list objects.
+
+            Numpy arrays are fully converted into python types when passing through this function. That is, individual
+            data-values will be converted from numpy-scalar to the nearest python-scalar types before being written to a
+            list.
 
         Args:
-            input_item: The variable to be made into / preserved as a python list.
+            input_item: The object to be converted into / preserved as a Python list.
 
         Returns:
-            A python list that contains all items inside the input_item variable.
+            A Python list that contains input_item data. If the input_item was a scalar, it is wrapped into a list object.
+            If the input_item was an iterable, it is converted into list.
 
         Raises:
-            TypeError: If the input item is not of a supported type.
-            Exception: If an unexpected error is encountered.
-
+            TypeError: If the input object cannot be converted or wrapped into a list.
         """
-        if input_item is not None and not isinstance(input_item, (str, int, float, bool, tuple, list, np.ndarray)):
-            raise TypeError(
-                f"Unsupported input item type {type(input_item).__name__} provided to ensure_list function. "
-                f"Supported types are: str, int, float, bool, tuple, list, np.ndarray."
-            )
-
-        try:
-            if isinstance(input_item, list):
-                return input_item
-            elif isinstance(input_item, (tuple, set, np.ndarray)):
-                return list(input_item)
-            elif isinstance(input_item, (str, int, float, bool, type(None))):
-                return [input_item]
+        # Scalars are added to a list and returned as a one-item lists. Scalars are handled first to avoid clashing with
+        # iterable types.
+        if np.isscalar(input_item) or input_item is None:  # Covers Python scalars and NumPy scalars
+            return [input_item]
+        # Numpy arrays are processed based on their dimensionality. This has to dow tih the fact that zero-dimensional
+        # numpy arrays are interpreted as scalars by some numpy methods and as array by others.
+        if isinstance(input_item, np.ndarray):
+            # 1+-dimensional arrays are processed via tolist(), which correctly casts them to Python list format.
+            if input_item.ndim > 0:
+                return input_item.tolist()
             else:
-                raise TypeError(
-                    f"Unable to convert input item to a python list, as items of type {type(input_item).__name__} are not "
-                    f"supported."
-                )
-        except Exception as e:
-            raise TypeError(f"Unable to convert the input item {input_item} to a python list.")
+                # 0-dimensional arrays are essentially scalars, so the data is popped out via item() and is wrapped
+                # into a list.
+                return [input_item.item()]
+        # Lists are returned as-is, without any further modification.
+        if isinstance(input_item, list):
+            return input_item
+        # Iterable types are converted via list() method.
+        if isinstance(input_item, Iterable):
+            return list(input_item)
+
+    # Catch-all type error to execute if the input is
+        raise TypeError(
+            f"Unable to convert input item to a Python list, as items of type {type(input_item).__name__} "
+            f"are not supported."
+        )
 
 
 class NumpyDataConverter(PythonDataConverter):
@@ -241,9 +236,9 @@ class NumpyDataConverter(PythonDataConverter):
                 f"NumpyDataConverter class instance. Must be one of the supported validator classes: "
                 f"BoolConverter, NoneConverter, NumericConverter."
             )
-        if not python_converter.validator.filter_failed:
+        if not python_converter.filter_failed:
             raise ValueError(
-                f"Unsupported filter_failed argument {python_converter.validator.filter_failed} provided when "
+                f"Unsupported filter_failed argument {python_converter.filter_failed} provided when "
                 f"initializing NumpyDataConverter class instance. Must be set to True."
             )
         if type(python_converter.validator) == NumericConverter:
@@ -305,30 +300,36 @@ class NumpyDataConverter(PythonDataConverter):
         validated_list = PythonDataConverter.ensure_list(validated_value)
         temp = []
 
-        try:
-            for value in validated_value:
-                if self._output_bit_width == "auto" and isinstance(value, (int, float)):
-                    min_dtype = np.min_scalar_type_signed_or_unsigned(value)
-                    numpy_value = np.array(value, dtype=self.datatype)[0] if min_dtype != np.inf else np.inf
-                elif isinstance(value, (int, float)):
-                    width_list = float_sign if type(value) == float else (signed if self._signed else unsigned)
-                    index_map = {8: 0, 16: 1, 32: 2, 64: 3}
+        for value in validated_list:
+            if self._output_bit_width == "auto" and isinstance(value, (int, float)):
+                min_dtype = self.min_scalar_type_signed_or_unsigned(value)
+                numpy_value = np.array(value, dtype=min_dtype)
+                                            
+            elif isinstance(value, (int, float)):
+                width_list = float_sign if type(value) == float else (signed if self._signed else unsigned)
+                index_map = {8: 0, 16: 1, 32: 2, 64: 3}
 
+                try:
                     if width_list[index_map[self._output_bit_width]] == "Error":
                         raise ValueError(f"Unsupported output_bit_width {self._output_bit_width} for float values.")
+                except Exception as e:
+                    raise ValueError(f"Unable to convert input value to a numpy datatype: {e}")
 
-                    datatype = width_list[index_map[self._output_bit_width]]
-                    numpy_value = np.array(value, dtype=datatype) if np.can_cast(value, datatype) else np.inf
+                datatype = width_list[index_map[self._output_bit_width]]
 
-                # Handle bools and None
-                elif type(value) == bool:
-                    numpy_value = np.bool(value)
-                elif value is None:
-                    numpy_value = np.nan
-                temp.append(numpy_value)
-            return np.array(temp)
-        except Exception as e:
-            raise ValueError(f"Unable to convert input value to a numpy datatype: {e}")
+                try:
+                    numpy_value = datatype(value)
+                except Exception as e:
+                    numpy_value = np.inf
+
+            # Handle bools and None
+            elif type(value) == bool:
+                numpy_value = np.bool(value)
+            elif value is None:
+                numpy_value = np.nan
+            temp.append(numpy_value)
+        return np.array(temp) if len(temp) > 1 else temp[0]
+            
 
     def numpy_to_python_converter(
         self,
@@ -346,16 +347,25 @@ class NumpyDataConverter(PythonDataConverter):
             np.float64,
             np.bool,
             np.nan,
+            np.inf,
             np.ndarray
         ],
     ):
+
         if isinstance(value_to_convert, np.ndarray):
-            converted_value = value_to_convert.tolist()
-        elif value_to_convert.ndim == 0:
-            converted_value = value_to_convert.item()
-        else:
-            return value_to_convert
-        return self.python_converter.validate_value(converted_value)
+            temp = []
+            for i in range(len(value_to_convert)):
+                if np.isnan(value_to_convert[i]) or np.isinf(value_to_convert[i]):
+                    temp.append(None)
+                else: 
+                    temp.append(value_to_convert[i].item())
+            
+            validated = self.python_converter.validate_value(temp)
+            return validated[0] if len(validated) == 1 else validated
+        if np.isnan(value_to_convert) or np.isinf(value_to_convert):
+            return None
+        return self.python_converter.validate_value(np.array(value_to_convert).item(0))
+        
 
     def min_scalar_type_signed_or_unsigned(self, value):
         """
@@ -378,15 +388,25 @@ class NumpyDataConverter(PythonDataConverter):
             return dtype
 
         # Define the hierarchy of integer types
-        signed_types = [np.int8, np.int16, np.int32, np.int64]
-        unsigned_types = [np.uint8, np.uint16, np.uint32, np.uint64]
+        signed_types = [
+        (np.int8, -2**7, 2**7-1),
+        (np.int16, -2**15, 2**15-1),
+        (np.int32, -2**31, 2**31-1),
+        (np.int64, -2**63, 2**63-1)
+        ]
+        unsigned_types = [
+            (np.uint8, 0, 2**8-1),
+            (np.uint16, 0, 2**16-1),
+            (np.uint32, 0, 2**32-1),
+            (np.uint64, 0, 2**64-1)
+        ]
 
         # Choose the appropriate hierarchy
         types = signed_types if self._signed else unsigned_types
 
         # Find the smallest dtype that can accommodate the value
-        for t in types:
-            if np.can_cast(value, t):
+        for t, min_val, max_val in types:
+            if min_val <= value <= max_val:
                 return t
 
         raise OverflowError(f"Value {value} is too large to be represented by a NumPy integer type.")

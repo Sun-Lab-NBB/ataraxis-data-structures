@@ -663,16 +663,6 @@ def test_pythonconverter_success():
     assert converter.validate_value([5, 5.5, "None", "Null", None, "7.1"]) == ["None", "None", None, None, None, "None"]
 
 
-def test_pythonconverter_failure():
-    """
-    Verifies correct validation failure behavior for different configurations of PythonDataConverter class.
-    """
-    with pytest.raises(TypeError):
-        # noinspection PyTypeChecker
-        converter = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
-        value = converter.validate_value({5, 5.5, "not a number", "True", "False", "None"})
-
-
 def test_pythonconverter_properties():
     """
     Verifies that accessor properties of PythonDataConverter class function as expected
@@ -720,18 +710,43 @@ def test_numpyconverter_init_validation():
     Verifies that NumpyDataConverter initialization method functions as expected and correctly catches invalid inputs.
     """
     # Tests valid initialization
-    validator = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
+    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert type(converter.validator) is PythonDataConverter
+    assert type(converter.converter) is PythonDataConverter
     assert converter.output_bit_width == "auto"
     assert converter.signed
+
+    with pytest.raises(TypeError):
+        # noinspection PyTypeChecker
+        NumpyDataConverter(python_converter="not a validator", output_bit_width="auto")
+    
+    with pytest.raises(ValueError):
+        # noinspection PyTypeChecker
+        NumpyDataConverter(python_converter=validator, output_bit_width="not a string")
+    
+    validator = PythonDataConverter(validator=StringConverter(), iterable_output_type="list", filter_failed=True)
+    with pytest.raises(TypeError):
+        # noinspection PyTypeChecker
+        NumpyDataConverter(python_converter=validator, output_bit_width="auto")
+    
+    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=False)
+    with pytest.raises(ValueError):
+        # noinspection PyTypeChecker
+        NumpyDataConverter(python_converter=validator, output_bit_width="auto")
+
+    validator = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
+    with pytest.raises(ValueError):
+        # noinspection PyTypeChecker
+        NumpyDataConverter(python_converter=validator, output_bit_width=8)
+
+
 
 
 def test_numpyconverter_setters():
     """
     Verifies the functioning of NumpyDataConverter class validator setter method.
     """
-    validator = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
+    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
 
     converter.set_output_bit_width(8)
@@ -757,26 +772,72 @@ def test_numpyconverter_setters():
     converter.set_python_converter(
         PythonDataConverter(validator=BoolConverter(), iterable_output_type="list", filter_failed=True)
     )
-    assert type(converter.validator) is PythonDataConverter
+    assert type(converter.converter) is PythonDataConverter
 
 
 def test_numpyconverter_success():
     """
     Verifies correct validation behavior for different configurations of NumpyDataConverter class.
     """
-    validator = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
+    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert np.array_equal(
-        converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]), np.array([5, 5.5, 1, 0, 7.1])
+        converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]), np.array([5, 1, 0])
     )
+    converter.set_output_bit_width(8)
+    converter.toggle_signed()
+    assert np.array_equal(
+        converter.python_to_numpy_converter([2**4, 2**5, 2**6, 2**7, 2**8, 2**9]), np.array([16, 32, 64, 128, np.inf, np.inf])
+    )
+    value = converter.python_to_numpy_converter(2**6)
+    assert isinstance(value, np.uint8)
 
     validator = PythonDataConverter(validator=BoolConverter(), iterable_output_type="tuple", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert np.array_equal(converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]), np.array([1, 0]))
 
-    validator = PythonDataConverter(validator=NoneConverter(), iterable_output_type="list", filter_failed=False)
+    validator = PythonDataConverter(validator=NoneConverter(), iterable_output_type="list", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert np.array_equal(
         converter.python_to_numpy_converter([5, 5.5, "None", "Null", None, "7.1"]),
-        np.array(["None", "None", None, None, None, "None"]),
+        np.array([np.nan, np.nan, np.nan]), equal_nan=True
     )
+
+    # Numpy to Python conversion
+    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
+    converter = NumpyDataConverter(validator, output_bit_width="auto")
+    assert converter.numpy_to_python_converter(np.array([5, 1, 0])) == [5, 1, 0]
+    assert converter.numpy_to_python_converter(np.int_(5.0)) == 5
+
+    validator = PythonDataConverter(validator=BoolConverter(), iterable_output_type="tuple", filter_failed=True)
+    converter = NumpyDataConverter(validator, output_bit_width="auto")
+    assert converter.numpy_to_python_converter(np.array([1, 0])) == (True, False)
+    assert converter.numpy_to_python_converter(np.int_(1)) == True
+    assert converter.numpy_to_python_converter(np.bool_(True)) == True
+
+    validator = PythonDataConverter(validator=NoneConverter(), iterable_output_type="list", filter_failed=True)
+    converter = NumpyDataConverter(validator, output_bit_width="auto")
+    assert converter.numpy_to_python_converter(np.array([np.nan, np.nan, np.nan])) == [None, None, None]
+    assert converter.numpy_to_python_converter(np.nan) is None
+    assert converter.numpy_to_python_converter(np.inf) is None
+
+def test_numpyconverter_failure():
+    """
+    Verifies correct validation failure behavior for different configurations of NumpyDataConverter class.
+    """
+    with pytest.raises(ValueError):
+        validator = PythonDataConverter(validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True)
+        converter = NumpyDataConverter(validator, output_bit_width=8)
+        converter.python_to_numpy_converter([5.5, 6.0])
+
+
+def test_numpyconverter_properties():
+    """
+    Verifies that accessor properties of NumpyDataConverter class function as expected
+    """
+    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
+    converter = NumpyDataConverter(validator, output_bit_width="auto")
+
+    assert type(converter.converter) is PythonDataConverter
+    assert converter.output_bit_width == "auto"
+    assert converter.signed
