@@ -3,15 +3,12 @@
 import re
 import textwrap
 import pytest
-import operator
 import numpy as np
 from typing import Any
 from ataraxis_data_structures.standalone_methods import (
     ensure_list,
     chunk_iterable,
     check_condition,
-    find_closest_indices,
-    find_event_boundaries,
     compare_nested_tuples,
 )
 
@@ -107,7 +104,7 @@ def test_chunk_iterable(input_iterable, chunk_size: int, expected_chunks) -> Non
         - 1 NumPy array input with even chunks and a remainder
         - 2 Tuple input with uneven chunks
     """
-    # Returns a generator that can be iterated to obtain successive chunks
+    # Returns a generator that can be iterated to get successive chunks
     result = list(chunk_iterable(input_iterable, chunk_size))
 
     # Verifies that the obtained number of chunks matches expectation
@@ -188,18 +185,7 @@ def test_check_condition(checked_value: Any, condition_value: Any, condition_ope
 
 
 def test_check_condition_error() -> None:
-    """Verifies that check_condition() correctly handles invalid operators and unsupported input types."""
-
-    # Stores supported operators
-    operators = {
-        ">": operator.gt,
-        "<": operator.lt,
-        ">=": operator.ge,
-        "<=": operator.le,
-        "==": operator.eq,
-        "!=": operator.ne,
-    }
-
+    """Verifies that check_condition() correctly handles invalid unsupported input types."""
     message = (
         f"Unsupported checked_value ({object()}) type ({type(object()).__name__}) encountered when "
         f"checking condition. See API documentation / function signature for supported types."
@@ -208,60 +194,6 @@ def test_check_condition_error() -> None:
     with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
         check_condition(checked_value=object(), condition_value=1, condition_operator=">")
-
-
-@pytest.mark.parametrize(
-    "target_array, source_array, expected",
-    [
-        ([1, 5, 10], [2, 4, 6, 8], (0, 1, 3)),
-        (np.array([1, 5, 10]), np.array([2, 4, 6, 8]), np.array([0, 1, 3])),
-    ],
-)
-def test_find_closest_indices(target_array: Any, source_array: Any, expected: Any) -> None:
-    """Verifies the functioning of the find_closest_indices() method for list and NumPy array inputs.
-
-    Tests the following scenarios:
-        - 0 List inputs
-        - 1 NumPy array inputs
-    """
-    result = find_closest_indices(target_array, source_array)
-    if isinstance(result, np.ndarray):
-        assert np.array_equal(result, expected)
-    else:
-        assert result == expected
-
-
-@pytest.mark.parametrize(
-    "trace, make_offsets_exclusive, allow_no_events, expected",
-    [
-        ([0, 1, 1, 0, 1, 1, 1, 0], True, True, ((1, 3), (4, 7))),
-        ([0, 1, 1, 0, 1, 1, 1, 0], False, True, ((1, 2), (4, 6))),
-        ([0, 0, 0], True, True, ()),
-    ],
-)
-def test_find_event_boundaries(
-    trace: Any, make_offsets_exclusive: bool, allow_no_events: bool, expected: tuple
-) -> None:
-    """Verifies the functioning of the find_event_boundaries() method for various input scenarios.
-
-    Tests the following scenarios:
-        - 0 Multiple events with exclusive offsets
-        - 1 Multiple events with non-exclusive offsets
-        - 2 No events, allowed
-    """
-    result = find_event_boundaries(
-        trace, make_offsets_exclusive=make_offsets_exclusive, allow_no_events=allow_no_events
-    )
-    assert result == expected
-
-
-def test_find_event_boundaries_error() -> None:
-    """Verifies that find_event_boundaries() correctly handles invalid inputs and disallowed no-event scenarios."""
-    with pytest.raises(ValueError, match="Unsupported NumPy array 'trace' input detected"):
-        find_event_boundaries(np.array([[1, 2], [3, 4]]))
-
-    with pytest.raises(RuntimeError, match="Unable to find any event boundaries"):
-        find_event_boundaries([0, 0, 0], allow_no_events=False)
 
 
 @pytest.mark.parametrize(
@@ -287,6 +219,12 @@ def test_compare_nested_tuples(x: tuple, y: tuple, expected: bool) -> None:
 
 def test_compare_nested_tuples_error() -> None:
     """Verifies that compare_nested_tuples() correctly handles non-tuple inputs."""
-    with pytest.raises(TypeError, match="Unsupported type encountered when comparing tuples"):
+
+    message = (
+        f"Unsupported type encountered when comparing tuples. Either x ({type([1, 2]).__name__}) or y "
+        f"({type((1, 2)).__name__}) is not a tuple."
+    )
+
+    with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
-        compare_nested_tuples([1, 2], (1, 2))
+        compare_nested_tuples(x=[1, 2], y=(1, 2))

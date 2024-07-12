@@ -1,6 +1,12 @@
 """This module contains miscellaneous data manipulation methods that either abstract away common operations to reduce
 boilerplate code or provide functionality not commonly available from popular Python libraries.
 
+Methods from this module largely belong to two groups. The first group is for 'convenience' methods. These methods
+typically abstract away template code that is readily available from Python or common libraries (a good example is the
+ensure_list() method). Another set of methods, such as compare_nested_tuples() method, provides novel functionality
+not readily available from other libraries. Both groups of methods are useful for a wide range of data-related
+applications.
+
 See the API documentation for the description of the methods offered through this module.
 """
 
@@ -8,7 +14,6 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import Any, Literal, Generator, Iterable
 import operator
-from scipy.ndimage import find_objects, label  # type: ignore
 from ataraxis_base_utilities import console
 
 
@@ -34,12 +39,12 @@ def ensure_list(
 
     Returns:
         A Python list that contains input_item data. If the input_item was a scalar, it is wrapped into a list object.
-        If the input_item was an iterable, it is converted into list.
+        If the input_item was iterable, it is converted into a list.
 
     Raises:
         TypeError: If the input object cannot be converted or wrapped into a list.
     """
-    # Scalars are added to a list and returned as a one-item lists. Scalars are handled first to avoid clashing with
+    # Scalars are added to a list and returned as a one-item list. Scalars are handled first to avoid clashing with
     # iterable types.
     if np.isscalar(input_item) or input_item is None:  # Covers Python scalars and NumPy scalars
         return [input_item]
@@ -72,7 +77,7 @@ def chunk_iterable(
 ) -> Generator[tuple[Any, ...] | NDArray[Any], None, None]:
     """Yields successive chunk_size-sized chunks from the input iterable or NumPy array.
 
-    This function supports lists, tuples and NumPy arrays, including multidimensional arrays. For NumPy arrays, it
+    This function supports lists, tuples, and NumPy arrays, including multidimensional arrays. For NumPy arrays, it
     maintains the original data type and dimensionality, returning NumPy array chunks. For other iterables, it
     returns tuple chunks.
 
@@ -120,9 +125,9 @@ def check_condition(
 ) -> bool | np.bool_ | NDArray[np.bool_] | tuple[bool, ...]:
     """Checks the input value against the condition value, using requested condition operator.
 
-    Can take tuples, lists and numpy arrays as checked_value, in which case the condition_value is applied element-wise
-    and the result is an array (for numpy inputs) or tuple (for Python iterables) of boolean values that communicates
-    the result of the operation.
+    Can take tuples, lists, and numpy arrays as checked_value, in which case the condition_value is applied
+    element-wise, and the result is an array (for numpy inputs) or tuple (for Python iterables) of boolean values that
+    communicates the result of the operation.
 
     Currently, only supports simple mathematical operators, but this may be extended in the future.
 
@@ -181,119 +186,12 @@ def check_condition(
         raise TypeError(message)  # Fallback, should not be reachable
 
 
-def find_closest_indices(
-    target_array: NDArray[Any] | list[Any] | tuple[Any, ...], source_array: NDArray[Any] | list[Any] | tuple[Any, ...]
-) -> NDArray[Any] | tuple[Any, ...]:
-    """For every value inside target_array, finds the closest values (based on magnitude) in source_array and returns
-    their indices.
-
-    This effectively maps target_array onto source_array, in a manner analogous to numpy.where() method, except it
-    works for arrays rather than single conditions and without list comprehension (so, in pure numpy).
-
-    Args:
-        target_array: The numpy array, list or tuple that contains the values to be mapped to source_array.
-        source_array: The numpy array, list or tuple to which target array values are mapped.
-
-    Returns:
-        A numpy array that stores the positional indices of the mapped array-values in the source_array, if both inputs
-        were numpy arrays. Otherwise, converts the array into a tuple before returning it to caller.
-    """
-    # Converts inputs to numpy arrays if they aren't already
-    target = np.asarray(target_array)
-    source = np.asarray(source_array)
-
-    # Reshapes target_array for broadcasting (turns it into a column vector)
-    target = target.reshape(-1, 1)
-
-    # Computes the differences between each target value and all source values
-    differences: NDArray[Any] = np.abs(source - target)
-    index_mappings: NDArray[Any] = np.argmin(differences, axis=1)
-
-    # Returns the indices that resulted in minimum differences for each array. If at least one of the inputs was not a
-    # numpy array, returns the result as a tuple. Otherwise, returns it as a numpy array
-    if not isinstance(target_array, np.ndarray) or not isinstance(source_array, np.ndarray):
-        return tuple(index_mappings.tolist())
-    else:
-        return index_mappings
-
-
-def find_event_boundaries(
-    trace: NDArray[Any] | list[int | float] | tuple[int | float, ...],
-    *,
-    make_offsets_exclusive: bool = True,
-    allow_no_events: bool = True,
-) -> tuple[tuple[int, int], ...]:
-    """Finds onset and offset indices for each event in the input trace.
-
-    Assumes the input trace has been binarized prior to calling this function. Uses scipy.signal.label internally,
-    so any value above 0 will be labeled as signal and processed accordingly.
-
-    This function is a domain-converter that turns continuous traces into tuples of event coordinates along the trace
-    axis.
-
-    Args:
-        trace: The numpy array, list, or tuple to search through.
-        make_offsets_exclusive: A toggle that determines whether offset indices will be set to the last HIGH (1) value
-            of each event or to the first LOW (0) value after the event.
-        allow_no_events: Determines whether to raise an error or to return an empty tuple if no events are discovered.
-            This flag allows to flexibly handles use cases where discovering no events indicates a critical problem and
-            cases where this is a valid outcome.
-
-    Returns:
-        A tuple of two-integer tuples that contain the onset (first integer) and offset (second integer) indices for
-        each event that satisfies the conditions.
-
-    Raises:
-        RuntimeError: If the function does not find any event boundaries in the input trace and this result is not
-            allowed.
-        ValueError: If the input trace is not 1-dimensional.
-    """
-    # Converts input to numpy array if it's not already
-    if not isinstance(trace, np.ndarray):
-        trace = np.asarray(trace)
-
-    if trace.ndim != 1:
-        message: str = (
-            f"Unsupported NumPy array 'trace' input detected when finding event boundaries. Currently, only "
-            f"1-dimensional numpy arrays are supported. Instead, encountered an array with shape '{trace.shape}' and"
-            f"dimensionality '{trace.ndim}'"
-        )
-        console.error(message=message, error=ValueError)
-        raise ValueError(message)  # Fallback, should not be reachable
-
-    # Binarizes the trace
-    binary_trace = (trace > 0).astype(int)
-
-    # Labels the events
-    labeled_trace, num_events = label(binary_trace)
-
-    # If no events are discovered and this is allowed, returns an empty tuple.
-    if num_events == 0 and allow_no_events:
-        return tuple()
-    elif num_events == 0:
-        message = (
-            f"Unable to find any event boundaries in the input trace. Either the input trace has not been binarized "
-            f"or it contains no discoverable events."
-        )
-        console.error(message=message, error=RuntimeError)
-        raise RuntimeError(message)  # Fallback, should not be reachable
-
-    # Finds objects (events)
-    events = find_objects(labeled_trace)
-
-    # Extracts boundaries as a list of tuples.
-    boundaries = [(int(event[0].start), int(event[0].stop + int(make_offsets_exclusive) - 1)) for event in events]
-
-    # Returns extracted event boundaries as a tuple of tuples
-    return tuple(boundaries)
-
-
 def compare_nested_tuples(x: tuple[Any, ...], y: tuple[Any, ...]) -> bool:
     """Compares two input one-level nested tuples and returns True if all elements in one tuple are equal to the other.
 
     This function is primarily designed to be used for assertion testing, in place of the numpy array_equal function
-    whenever the two compared tuples are not immediately convertible to numpy 2D array. This is true for tuples that use
-    mixed datatype elements (1 and "1") and elements with irregular shapes (tuple of tuple with inner tuples having
+    whenever the two compared tuples are not immediately convertible to a numpy 2D array. This is true for tuples that
+    use mixed datatype elements (1 and "1") and elements with irregular shapes (tuple of tuple with inner tuples having
     different number of elements).
 
     Notes:
@@ -315,11 +213,11 @@ def compare_nested_tuples(x: tuple[Any, ...], y: tuple[Any, ...]) -> bool:
     if not isinstance(x, tuple) or not isinstance(y, tuple):
         message = (
             f"Unsupported type encountered when comparing tuples. Either x ({type(x).__name__}) or y "
-            f"({type(x).__name__}) is not a tuple."
+            f"({type(y).__name__}) is not a tuple."
         )
         console.error(message=message, error=TypeError)
         raise TypeError(message)  # Fallback, should not be reachable
 
     # Optimized check to short-fail on length mismatch and also as soon as any mismatched element is found to
-    # speed-up failure case return times
+    # speed up failure case return times
     return len(x) == len(y) and all(subtuple1 == subtuple2 for subtuple1, subtuple2 in zip(x, y))

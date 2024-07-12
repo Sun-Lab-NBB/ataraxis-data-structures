@@ -1,5 +1,9 @@
 """This module contains the SharedMemoryArray class that allows moving data between multiple Python processes through
 a shared one-dimensional numpy array.
+
+SharedMemoryArray works by creating multiple numpy array instances, one per each process, that share the same data
+buffer. It is equipped with the necessary mechanisms to ensure thread- and process-safe data manipulation and functions
+as an alternative to Queue objects.
 """
 
 from copy import copy
@@ -34,7 +38,7 @@ class SharedMemoryArray:
         garbage-collected via appropriate commands.
 
     Args:
-        name: The descriptive name to use for the shared memory array. Names are used by the OS to identify shared
+        name: The descriptive name to use for the shared memory array. The OS uses names to identify shared
             memory objects and have to be unique.
         shape: The shape of the shared numpy array.
         datatype: The datatype of the shared numpy array.
@@ -268,12 +272,12 @@ class SharedMemoryArray:
 
         # Converts negative start index to positive
         if start < 0:
-            start = array_length + start
+            start += array_length
 
         # Converts negative stop index to positive if it's not None. Uses < 1 here because stop normally cannot be 0
         # when it is valid. When stop is 0, this likely means it was produced from a single -1 (-1 + 1 = 0).
         if stop is not None and stop < 1:
-            stop = array_length + stop
+            stop += array_length
 
         # Checks if start is within bounds
         if start < 0 or start >= array_length:
@@ -366,7 +370,7 @@ class SharedMemoryArray:
         # Extracts the requested data. The data is copied locally to prevent any modifications to the underlying
         # array object.
         data: NDArray[Any]
-        # Depending on the value of the 'with_lock' argument, this either acquires a Lock or runs without lock.
+        # Depending on the value of the 'with_lock' argument, this either acquires a Lock or runs without a lock.
         with self._optional_lock(with_lock=with_lock):
             data = self._array[start:stop].copy()
 
@@ -407,7 +411,7 @@ class SharedMemoryArray:
         Raises:
             RuntimeError: If the class instance is not connected to a shared memory buffer.
             ValueError: If the input index tuple contains an invalid number of elements to parse it as slice start and
-                stop values. If the method is unable to convert the input data into the array format or if writing data
+                stop values. If the method is unable to convert the input data into the array format, or if writing data
                 to the array fails. If using slice indices and start index is greater than stop index after indices are
                 converted to positive numbers (this is done internally, input indices can be negative).
             IndexError: If the input index or slice is outside the array boundaries.

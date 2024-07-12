@@ -1,9 +1,10 @@
+"""Contains tests for SharedMemoryArray class and related methods, stored in the shared_memory package."""
+
 import pytest
 import re
 import textwrap
 import numpy as np
 from multiprocessing import Process
-from multiprocessing.shared_memory import SharedMemory
 from ataraxis_data_structures import SharedMemoryArray
 
 
@@ -138,11 +139,11 @@ def test_read_data(request, array_fixture, buffer_name, index, convert, expected
         - Verifying correct return types for all scenarios
     """
 
-    # Uses the test-specific fixture to obtain the prototype array and instantiate the SMA instance
+    # Uses the test-specific fixture to get the prototype array and instantiate the SMA instance
     sample_array = request.getfixturevalue(array_fixture)
     sma = SharedMemoryArray.create_array(buffer_name, sample_array)
 
-    # Reads data using test-specific parameters for index and conversion flag
+    # Reads data using test-specific parameters for the index and conversion flag
     result = sma.read_data(index=index, convert_output=convert)
 
     # Verifies that the value returned by the test matches expectation
@@ -180,11 +181,11 @@ def test_read_data(request, array_fixture, buffer_name, index, convert, expected
         ("float_array", "test_write_data_float_5", (-3, -1), [30.3, 40.4], [30.3, 40.4]),
         ("float_array", "test_write_data_float_6", 0, np.float64(15.5), 15.5),
         (
-                "float_array",
-                "test_write_data_float_7",
-                (0, 5),
-                np.array([1.1, 2.2, 3.3, 4.4, 5.5]),
-                [1.1, 2.2, 3.3, 4.4, 5.5],
+            "float_array",
+            "test_write_data_float_7",
+            (0, 5),
+            np.array([1.1, 2.2, 3.3, 4.4, 5.5]),
+            [1.1, 2.2, 3.3, 4.4, 5.5],
         ),
         # Boolean array tests
         ("bool_array", "test_write_data_bool_1", 0, False, False),
@@ -194,11 +195,11 @@ def test_read_data(request, array_fixture, buffer_name, index, convert, expected
         ("bool_array", "test_write_data_bool_5", (-3, -1), [False, True], [False, True]),
         ("bool_array", "test_write_data_bool_6", 0, np.bool_(True), True),
         (
-                "bool_array",
-                "test_write_data_bool_7",
-                (0, 5),
-                np.array([False, True, False, True, False]),
-                [False, True, False, True, False],
+            "bool_array",
+            "test_write_data_bool_7",
+            (0, 5),
+            np.array([False, True, False, True, False]),
+            [False, True, False, True, False],
         ),
         # String array tests
         ("string_array", "test_write_data_string_1", 0, "x", "x"),
@@ -208,11 +209,11 @@ def test_read_data(request, array_fixture, buffer_name, index, convert, expected
         ("string_array", "test_write_data_string_5", (-3, -1), ["y", "z"], ["y", "z"]),
         ("string_array", "test_write_data_string_6", 0, np.str_("m"), "m"),
         (
-                "string_array",
-                "test_write_data_string_7",
-                (0, 5),
-                np.array(["v", "w", "x", "y", "z"]),
-                ["v", "w", "x", "y", "z"],
+            "string_array",
+            "test_write_data_string_7",
+            (0, 5),
+            np.array(["v", "w", "x", "y", "z"]),
+            ["v", "w", "x", "y", "z"],
         ),
     ],
 )
@@ -230,7 +231,7 @@ def test_write_data(request, array_fixture, buffer_name, index, data, expected):
         - Writing using Python native types and numpy types
         - Verifying correct data writing for all scenarios
     """
-    # Uses the test-specific fixture to obtain the prototype array and instantiate the SMA object.
+    # Uses the test-specific fixture to get the prototype array and instantiate the SMA object.
     sample_array = request.getfixturevalue(array_fixture)
     sma = SharedMemoryArray.create_array(buffer_name, sample_array)
 
@@ -271,11 +272,11 @@ def test_create_array_error():
     """Verifies error handling in the SharedMemoryArray class create_array() method.
 
     Tested configurations:
-        - 0: Attempting to create an array with an invalid prototype (list instead of numpy array)
+        - 0: Attempting to create an array with an invalid prototype (list instead of a numpy array)
         - 1: Attempting to create an array with a multidimensional numpy array
         - 2: Attempting to create an array with a name that already exists
     """
-    # Tests with invalid prototype type
+    # Tests with an invalid prototype type
     message = (
         f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object 'test_error'. "
         f"Expected a flat (one-dimensional) numpy ndarray but instead encountered {type([1, 2, 3]).__name__}."
@@ -284,7 +285,7 @@ def test_create_array_error():
         # noinspection PyTypeChecker
         SharedMemoryArray.create_array(name="test_error", prototype=[1, 2, 3])
 
-    # Tests with multidimensional array
+    # Tests with a multidimensional array
     multi_dim_array = np.array([[1, 2], [3, 4]])
     message = (
         f"Invalid 'prototype' array shape encountered when creating SharedMemoryArray object 'test_error_2'. "
@@ -351,7 +352,7 @@ def test_read_data_error(int_array):
     with pytest.raises(ValueError, match=error_format(message)):
         sma.read_data((3, 2))
 
-    # Tests reading from disconnected array
+    # Tests reading from a disconnected array
     sma.disconnect()
     message = (
         f"Unable to access the data stored in the test_read_error SharedMemoryArray instance, as the class is not "
@@ -360,7 +361,7 @@ def test_read_data_error(int_array):
     with pytest.raises(RuntimeError, match=error_format(message)):
         sma.read_data(0)
 
-    # Tests invalid index type
+    # Tests invalid index type input
     sma.connect()
     message = (
         f"Unable to read data from test_read_error SharedMemoryArray class instance. Expected an integer index or "
@@ -428,7 +429,7 @@ def test_write_data_error(int_array):
     with pytest.raises(ValueError, match=error_format(message)):
         sma.write_data((3, 2), [1, 2])
 
-    # Tests writing invalid data type
+    # Tests writing an invalid data type
     message = (
         f"Unable write data to test_write_error SharedMemoryArray class instance with index 0. Encountered "
         f"the following error when converting the data to the array datatype (int32) and writing it "
@@ -437,7 +438,7 @@ def test_write_data_error(int_array):
     with pytest.raises(ValueError, match=error_format(message)):
         sma.write_data(0, "invalid_data")
 
-    # Tests writing to disconnected array
+    # Tests writing to a disconnected array
     sma.disconnect()
     message = (
         f"Unable to access the data stored in the test_write_error SharedMemoryArray instance, as the class is not "
@@ -446,7 +447,7 @@ def test_write_data_error(int_array):
     with pytest.raises(RuntimeError, match=error_format(message)):
         sma.write_data(0, 10)
 
-    # Tests invalid index type
+    # Tests invalid an index type
     sma.connect()
     message = (
         f"Unable to write data to test_write_error SharedMemoryArray class instance. Expected an integer index or "
@@ -524,7 +525,7 @@ def test_cross_process_read_write():
     p.start()
     p.join()
 
-    # Verifies that the data written by the other process is accessible from main process
+    # Verifies that the data written by the other process is accessible from the main process
     assert sma.read_data(2) == 42
 
 
