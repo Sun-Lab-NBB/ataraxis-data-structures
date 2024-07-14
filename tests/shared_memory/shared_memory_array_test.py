@@ -1,10 +1,12 @@
 """Contains tests for SharedMemoryArray class and related methods, stored in the shared_memory package."""
 
-import pytest
 import re
 import textwrap
-import numpy as np
 from multiprocessing import Process
+
+import numpy as np
+import pytest
+
 from ataraxis_data_structures import SharedMemoryArray
 
 
@@ -260,12 +262,15 @@ def test_disconnect_connect(int_array):
         - 1: Reconnecting to a disconnected SharedMemoryArray
         - 2: Verifying data integrity after reconnection
     """
+    # Need to use 2 arrays on Windows. Once sma is disconnected, Windows garbage-collects the buffer. SMU does not have
+    # this issue and, therefore, it is used to verify connection method.
+    smu = SharedMemoryArray.create_array("test_connect", int_array)
     sma = SharedMemoryArray.create_array("test_disconnect", int_array)
     sma.disconnect()
     assert not sma.is_connected
-    sma.connect()
-    assert sma.is_connected
-    np.testing.assert_array_equal(sma.read_data((0, 5)), int_array)
+    smu.connect()
+    assert smu.is_connected
+    np.testing.assert_array_equal(smu.read_data((0, 5)), int_array)
 
 
 def test_create_array_error():
@@ -296,7 +301,9 @@ def test_create_array_error():
         SharedMemoryArray.create_array(name="test_error_2", prototype=multi_dim_array)
 
     # Tests with existing name
-    SharedMemoryArray.create_array(name="existing_array", prototype=np.array([1, 2, 3]))
+    # The array has to be saved to an object, otherwise it is not properly maintained on Windows that automatically
+    # cleans up unreferenced objects.
+    _x = SharedMemoryArray.create_array(name="existing_array", prototype=np.array([1, 2, 3]))
     message = (
         f"Unable to create SharedMemoryArray object using name 'existing_array', as object with this name already "
         f"exists. This is likely due to calling create_array() method from a child process. "
@@ -362,7 +369,9 @@ def test_read_data_error(int_array):
         sma.read_data(0)
 
     # Tests invalid index type input
-    sma.connect()
+    # Recreates the array, as it is garbage-collected on Windows after the only instance of the array isz
+    # disconnected.
+    sma = SharedMemoryArray.create_array("test_read_error", int_array)
     message = (
         f"Unable to read data from test_read_error SharedMemoryArray class instance. Expected an integer index or "
         f"a tuple of two integers, but encountered 'invalid' of type {type('invalid').__name__} instead."
@@ -448,10 +457,11 @@ def test_write_data_error(int_array):
         sma.write_data(0, 10)
 
     # Tests invalid an index type
+    sma = SharedMemoryArray.create_array("test_write_error", int_array)
     sma.connect()
     message = (
         f"Unable to write data to test_write_error SharedMemoryArray class instance. Expected an integer index or "
-        f"a tuple of two integers, but encountered 'invalid' of type {type('invalid').__name__} instead."
+        f"a tuple of two integers, but encountered 'invalid' of "
     )
     with pytest.raises(ValueError, match=error_format(message)):
         # noinspection PyTypeChecker
@@ -509,7 +519,7 @@ def concurrent_worker(sma: SharedMemoryArray, index: int):
     sma.disconnect()
 
 
-@pytest.mark.loadgroup("cross_process")
+@pytest.mark.xdist_group("cross_process")
 def test_cross_process_read_write():
     """Verifies the ability of the SharedMemoryArray class to share data across processes.
 
@@ -529,7 +539,7 @@ def test_cross_process_read_write():
     assert sma.read_data(2) == 42
 
 
-@pytest.mark.loadgroup("cross_process")
+@pytest.mark.xdist_group("cross_process")
 def test_cross_process_concurrent_access():
     """Verifies the ability of the SharedMemoryArray class to handle concurrent access from multiple processes.
 

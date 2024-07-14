@@ -10,10 +10,11 @@ applications.
 See the API documentation for the description of the methods offered through this module.
 """
 
+from typing import Any, Literal, Iterable, Generator
+import operator
+
 import numpy as np
 from numpy.typing import NDArray
-from typing import Any, Literal, Generator, Iterable
-import operator
 from ataraxis_base_utilities import console
 
 
@@ -52,9 +53,10 @@ def ensure_list(
     # numpy arrays are interpreted as scalars by some numpy methods and as array by others.
     if isinstance(input_item, np.ndarray):
         # 1+-dimensional arrays are processed via tolist(), which correctly casts them to Python list format.
-        if input_item.ndim > 0:
-            return input_item.tolist()
-        else:
+        if input_item.size > 1 and input_item.ndim >= 1:
+            output_list: list[Any] = input_item.tolist()
+            return output_list
+        elif input_item.size == 1:
             # 0-dimensional arrays are essentially scalars, so the data is popped out via item() and is wrapped
             # into a list.
             return [input_item.item()]
@@ -64,12 +66,15 @@ def ensure_list(
     # Iterable types are converted via list() method.
     if isinstance(input_item, Iterable):
         return list(input_item)
-
-    # Catch-all type error to execute if the input is
-    raise TypeError(
-        f"Unable to convert input item to a Python list, as items of type {type(input_item).__name__} "
-        f"are not supported."
-    )
+    else:
+        # Catch-all type error to execute if the input is not supported.
+        message = (
+            f"Unable to convert input item to a Python list, as items of type {type(input_item).__name__} "
+            f"are not supported."
+        )
+        console.error(message=message, error=TypeError)
+        # This is just to appease mypy.
+        raise TypeError(message)  # pragma: no cover
 
 
 def chunk_iterable(
@@ -101,7 +106,6 @@ def chunk_iterable(
             f"but encountered {iterable} of type {type(iterable).__name__}."
         )
         console.error(message=message, error=TypeError)
-        raise TypeError(message)  # Fallback, should not be reachable
 
     if chunk_size < 1:
         message = (
@@ -109,7 +113,6 @@ def chunk_iterable(
             f"but encountered {chunk_size}."
         )
         console.error(message=message, error=ValueError)
-        raise ValueError(message)  # Fallback, should not be reachable
 
     # Chunking is performed along the first dimension for both NumPy arrays and Python sequences.
     # This preserves array dimensionality within chunks for NumPy arrays.
@@ -161,7 +164,6 @@ def check_condition(
             f"supported operators {', '.join(operators.keys())}."
         )
         console.error(message=message, error=KeyError)
-        raise KeyError(message)  # Fallback, should not be reachable
 
     op = operators[condition_operator]
 
@@ -183,7 +185,8 @@ def check_condition(
             f"checking condition. See API documentation / function signature for supported types."
         )
         console.error(message=message, error=TypeError)
-        raise TypeError(message)  # Fallback, should not be reachable
+        # This is just to appease mypy.
+        raise TypeError(message)  # pragma: no cover
 
 
 def compare_nested_tuples(x: tuple[Any, ...], y: tuple[Any, ...]) -> bool:
@@ -216,7 +219,6 @@ def compare_nested_tuples(x: tuple[Any, ...], y: tuple[Any, ...]) -> bool:
             f"({type(y).__name__}) is not a tuple."
         )
         console.error(message=message, error=TypeError)
-        raise TypeError(message)  # Fallback, should not be reachable
 
     # Optimized check to short-fail on length mismatch and also as soon as any mismatched element is found to
     # speed up failure case return times

@@ -3,12 +3,13 @@ manipulating dictionary keys and values through a path-based interface.
 
 The primary advantage of NestedDictionary class is that it simplifies working with python nested dictionaries without
 having a-priori knowledge of their structure. In turn, this is helpful when writing pipelines that should work for a
-wide range of under-specified dictionary layouts.
+wide range of under-specified dictionary layouts. Additionally, even for cases where dictionary layout is known, many
+methods of the class conveniently simplify complex operations like replacing the datatype of all dictionary keys.
 """
 
 import copy
 from types import NoneType
-from typing import Any, Literal, Optional
+from typing import Any, Type, Literal, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -58,9 +59,9 @@ class NestedDictionary:
         TypeError: If input arguments are not of the supported type.
     """
 
-    def __init__(self, seed_dictionary: Optional[dict] = None, path_delimiter: str = ".") -> None:
+    def __init__(self, seed_dictionary: Optional[dict[Any, Any]] = None, path_delimiter: str = ".") -> None:
         # Stores supported key datatypes
-        self._valid_datatypes: tuple = ("int", "str", "float", "NoneType")
+        self._valid_datatypes: tuple[str, str, str, str] = ("int", "str", "float", "NoneType")
 
         # Verifies input variable types
         if not isinstance(seed_dictionary, (dict, NoneType)):
@@ -69,7 +70,6 @@ class NestedDictionary:
                 f"encountered '{type(seed_dictionary).__name__}' instead."
             )
             console.error(message=message, error=TypeError)
-            raise TypeError(message)  # Fallback, should not be reachable
 
         elif not isinstance(path_delimiter, str):
             message = (
@@ -77,11 +77,10 @@ class NestedDictionary:
                 f"encountered '{type(path_delimiter).__name__}' instead."
             )
             console.error(message=message, error=TypeError)
-            raise TypeError(message)  # Fallback, should not be reachable
 
         # Sets class attributes:
         # Initial dictionary object
-        self._nested_dictionary: dict
+        self._nested_dictionary: dict[Any, Any]
         if seed_dictionary is not None:
             self._nested_dictionary = seed_dictionary  # If it is provided, uses seed dictionary
         else:
@@ -132,7 +131,6 @@ class NestedDictionary:
                 f"encountered '{type(new_delimiter).__name__}' instead."
             )
             console.error(message=message, error=TypeError)
-            raise TypeError(message)  # Fallback, should not be reachable
 
         self._path_delimiter = new_delimiter
 
@@ -151,7 +149,7 @@ class NestedDictionary:
         """
         # Discovers and extracts the paths to all terminal variables in the dictionary in raw format
         # (unique, preferred).
-        path_keys: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)
+        path_keys: tuple[str] | tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)
 
         # Initializes an empty set to store unique key datatypes
         unique_types: set[str] = set()
@@ -186,16 +184,15 @@ class NestedDictionary:
                 converted to the requested datatype.
         """
         # Matches datatype names to their respective classes using a shallow dictionary to improve the code layout below
-        datatypes: dict = {
+        datatypes: dict[str, Type[str | float | int]] = {
             "str": str,
             "int": int,
             "float": float,
-            "NoneType": None,
         }
 
         # If datatype is in 'datatypes', and it is not a NoneType, indexes the class out of storage and uses it to
         # convert the key to requested datatype
-        if datatype in datatypes and datatype != "NoneType":
+        if datatype != "NoneType" and datatype in datatypes:
             return datatypes[datatype](key)
         # NoneType datatype is returned as None regardless of the key value
         elif datatype == "NoneType":
@@ -207,7 +204,8 @@ class NestedDictionary:
                 f"datatype. Select one of the supported datatypes: {self._valid_datatypes}."
             )
             console.error(message=message, error=ValueError)
-            raise ValueError(message)  # Fallback, should not be reachable
+            # This is just to appease mypy.
+            raise ValueError(message)  # pragma: no cover
 
     def _convert_variable_path_to_keys(
         self, variable_path: str | NDArray[Any] | tuple[Any, ...] | list[Any]
@@ -252,7 +250,6 @@ class NestedDictionary:
                     f"with a valid key."
                 )
                 console.error(message=message, error=ValueError)
-                raise ValueError(message)  # Fallback, should not be reachable
 
             # Additionally, ensures that the string path is accompanied by a valid terminal delimiter value, works
             # equally well for None and any unsupported string options
@@ -265,17 +262,20 @@ class NestedDictionary:
                     f"({self._valid_datatypes})."
                 )
                 console.error(message=message, error=ValueError)
-                raise ValueError(message)  # Fallback, should not be reachable
 
             # Splits the string path into keys using clas delimiter
             string_keys: list[str] = variable_path.split(self._path_delimiter)
 
             # Pops the only supported key datatype name out of the storage set to be used below.
-            target_dtype = self._key_datatypes.pop()
+            # Deepcopy is used to protect the _key_datatypes attribute from being modified.
+            target_dtype = copy.deepcopy(self._key_datatypes).pop()
 
             # This will raise a ValueError if the conversion fails
-            # noinspection PyTypeChecker
-            keys = [self._convert_key_to_datatype(key=key, datatype=target_dtype) for key in string_keys]
+            # noinspection PyTypeChecker, LongLine
+            keys: str | list[Any] | tuple[Any] | NDArray[Any] = [
+                self._convert_key_to_datatype(key=key, datatype=target_dtype)  # type: ignore
+                for key in string_keys
+            ]
 
         # For supported iterable path inputs, converts the iterable to a tuple. If individual keys are not valid, this
         # is expected to be caught by the method that called this method.
@@ -290,7 +290,6 @@ class NestedDictionary:
                         f"dimensionality {variable_path.ndim}."
                     )
                     console.error(message=message, error=ValueError)
-                    raise ValueError(message)  # Fallback, should not be reachable
 
                 # Additionally, numpy arrays do not support mixed types, so ensures they are only used if the dictionary
                 # does not contain mixed key datatypes.
@@ -303,7 +302,6 @@ class NestedDictionary:
                         f"({self._valid_datatypes})."
                     )
                     console.error(message=message, error=ValueError)
-                    raise ValueError(message)  # Fallback, should not be reachable
 
             keys = variable_path
         else:
@@ -313,8 +311,8 @@ class NestedDictionary:
                 f"'{type(variable_path).__name__}'. Use one fo the supported variable_path formats."
             )
             console.error(message=message, error=TypeError)
-            raise TypeError(message)  # Fallback, should not be reachable
 
+        # noinspection PyUnboundLocalVariable
         return tuple(keys)  # Ensures returned value is a tuple for efficiency
 
     def extract_nested_variable_paths(
@@ -338,6 +336,9 @@ class NestedDictionary:
             This method uses recursive self-calls to crawl the dictionary. This can lead to stack overflow for
             very deep nested dictionaries, although this is not a concern for most use cases.
 
+            This method treats empty sub-dictionaries as valid terminal paths and returns them alongside the paths to
+            terminal values.
+
         Args:
             return_raw: Determines whether the method formats the result as the tuple of key tuples or the tuple of
                 delimiter-delimited strings. See notes above for more information.
@@ -348,7 +349,7 @@ class NestedDictionary:
         """
 
         def _inner_extract(
-            input_dict: dict,
+            input_dict: dict[Any, Any],
             current_path: Optional[list[Any]] = None,
             *,
             make_raw: bool = False,
@@ -381,37 +382,48 @@ class NestedDictionary:
             # encounter and remove one of the valid duplicated keys along the path. This list is used during recursive
             # calls to keep track of paths being built
             if current_path is None:
-                current_path: list[Any] = []
+                current_path = []
 
             # This is the overall returned list that keeps track of ALL discovered paths
             paths: list[Any] = []
 
-            # Loops over each key and value extracted from the current view (level) of the nested dictionary
-            for key, value in input_dict.items():
-                # Appends the local level key to the path tracker list
-                new_path = current_path + [key]
+            # Extracts all items from the current dictionary view
+            items = input_dict.items()
 
-                # If the key points to a dictionary, recursively calls the extract method. Passes the current
-                # path tracker and the dictionary view returned by the evaluated key, to the new method call.
-                if isinstance(value, dict):
-                    # The recursion keeps winding until it encounters a non-dictionary variable. Once it does, it
-                    # causes the stack to unwind until another dictionary is found via the 'for' loop to start
-                    # stack winding. As such, the stack will at most use the same number of instances as the number
-                    # of nesting levels in the dictionary, which is unlikely to be critically large.
-                    # Note, the 'extend' has to be used here over 'append' to iteratively 'stack' node keys as the
-                    # method searches for the terminal variable.
-                    paths.extend(_inner_extract(input_dict=value, make_raw=make_raw, current_path=new_path))
-                else:
-                    # If the key references a non-dictionary variable, formats the constructed key sequence as a tuple
-                    # or as a delimited string and appends it to the path list, prior to returning it to caller.
-                    # The append operation ensures the path is kept as a separate list object within the final output
-                    # list.
-                    paths.append(tuple(new_path) if make_raw else self._path_delimiter.join(map(str, new_path)))
+            # If the evaluated dictionary is empty, adds it as a terminal path. This allows the method to support
+            # dictionaries with empty sub-dictionaries as valid terminal paths. Note, this is only used for
+            # sub-dictionaries. If the main dictionary is empty, it will be handled as 'no datatypes' case.
+            if len(items) == 0 and len(current_path) != 0:
+                paths.append(tuple(current_path) if make_raw else self._path_delimiter.join(map(str, current_path)))
+            else:
+                # Loops over each key and value extracted from the current view (level) of the nested dictionary
+                for key, value in items:
+                    # Appends the local level key to the path tracker list
+                    new_path = current_path + [key]
+
+                    # If the key points to a dictionary, recursively calls the extract method. Passes the current
+                    # path tracker and the dictionary view returned by the evaluated key, to the new method call.
+                    if isinstance(value, dict):
+                        # The recursion keeps winding until it encounters a non-dictionary variable. Once it does, it
+                        # causes the stack to unwind until another dictionary is found via the 'for' loop to start
+                        # stack winding. As such, the stack will at most use the same number of instances as the number
+                        # of nesting levels in the dictionary, which is unlikely to be critically large.
+                        # Note, the 'extend' has to be used here over 'append' to iteratively 'stack' node keys as the
+                        # method searches for the terminal variable.
+                        # noinspection PyUnboundLocalVariable
+                        paths.extend(_inner_extract(input_dict=value, make_raw=make_raw, current_path=new_path))
+                    else:
+                        # If the key references a non-dictionary variable, formats the constructed key sequence as a
+                        # tuple or as a delimited string and appends it to the path list, prior to returning it to
+                        # caller. The append operation ensures the path is kept as a separate list object within the
+                        # final output list.
+                        paths.append(tuple(new_path) if make_raw else self._path_delimiter.join(map(str, new_path)))
+
             return paths
 
         # Generates a list of variable paths and converts it to tuple before returning it to the caller. Each path is
         # formatted according to the requested output type by the inner method.
-        return tuple(_inner_extract(input_dict=self._nested_dictionary, make_raw=return_raw))
+        return tuple(_inner_extract(input_dict=self._nested_dictionary, make_raw=return_raw))  # type: ignore
 
     def read_nested_value(self, variable_path: str | tuple[Any, ...] | list[Any] | NDArray[Any]) -> Any:
         """Reads the requested value from the nested dictionary using the provided variable_path.
@@ -453,7 +465,6 @@ class NestedDictionary:
                     f"'{type(current_dict_view).__name__}' instead of the expected dictionary type."
                 )
                 console.error(message=message, error=KeyError)
-                raise KeyError(message)  # Fallback, should not be reachable
 
             # Otherwise, if key is inside the currently evaluated sub-dictionary, uses the key to retrieve the next
             # variable (section or value).
@@ -474,7 +485,6 @@ class NestedDictionary:
                     f"datatype. Available keys (and their datatypes) at this level: {available_keys_and_types}."
                 )
                 console.error(message=message, error=KeyError)
-                raise KeyError(message)  # Fallback, should not be reachable
 
         return current_dict_view
 
@@ -537,8 +547,8 @@ class NestedDictionary:
         # original dictionary is protected from modification while this method runs. Depending on the input
         # arguments, the original dictionary may still be overwritten with the modified dictionary at the end of the
         # method runtime.
-        altered_dict: dict = copy.deepcopy(self._nested_dictionary)
-        current_dict_view: dict = altered_dict
+        altered_dict: dict[Any, Any] = copy.deepcopy(self._nested_dictionary)
+        current_dict_view: dict[Any, Any] = altered_dict
 
         # Iterates through keys, navigating the dictionary or creating new nodes as needed.
         for num, key in enumerate(keys, start=1):
@@ -562,7 +572,6 @@ class NestedDictionary:
                         f"allowed. To enable overwriting, set 'allow_overwrite' argument to True."
                     )
                     console.error(message=message, error=KeyError)
-                    raise KeyError(message)  # Fallback, should not be reachable
 
             # If the evaluated key is not the last key, navigates the dictionary by setting current_dict_view to
             # the sub-dictionary pointed to by the key. If no such sub-dictionary exists, generates and sets an empty
@@ -588,7 +597,6 @@ class NestedDictionary:
                             f"overwriting, set 'allow_intermediate_overwrite' to True."
                         )
                         console.error(message=message, error=KeyError)
-                        raise KeyError(message)  # Fallback, should not be reachable
 
                 # Updates current dictionary view to the next level
                 current_dict_view = current_dict_view[key]
@@ -601,7 +609,7 @@ class NestedDictionary:
             # Updates dictionary key datatype tracker in case altered dictionary changed the number of unique
             # datatypes.
             self._key_datatypes = self.extract_key_datatypes()
-
+            return None
         # Otherwise, constructs a new NestedDictionary instance around the altered dictionary and returns this to
         # caller.
         else:
@@ -655,7 +663,7 @@ class NestedDictionary:
         """
 
         def _inner_delete(
-            traversed_dict: dict,
+            traversed_dict: dict[Any, Any],
             remaining_keys: list[Any],
             whole_path: tuple[Any, ...] | str,
             *,
@@ -713,7 +721,6 @@ class NestedDictionary:
                         f"datatype. Available keys (and their datatypes) at this level: {available_keys_and_types}."
                     )
                     console.error(message=message, error=KeyError)
-                    raise KeyError(message)  # Fallback, should not be reachable
 
                 # If the method did not raise an exception, triggers stack unwinding.
                 return
@@ -730,7 +737,7 @@ class NestedDictionary:
                 if not missing_ok:
                     # Generates a list of lists, with each inner list storing the value and datatype for each key in
                     # current dictionary view.
-                    available_keys_and_types: list[list[str]] = [[k, type(k).__name__] for k in traversed_dict.keys()]
+                    available_keys_and_types = [[k, type(k).__name__] for k in traversed_dict.keys()]
                     message = (
                         f"Unable to find the intermediate key '{next_key}' of type '{type(next_key).__name__}' from "
                         f"variable path '{whole_path}' while deleting nested value from dictionary. Make sure the "
@@ -738,7 +745,6 @@ class NestedDictionary:
                         f"level: {available_keys_and_types}."
                     )
                     console.error(message=message, error=KeyError)
-                    raise KeyError(message)  # Fallback, should not be reachable
 
                 # CRITICAL, if missing keys are allowed, stops stack winding by triggering return and starts stack
                 # unwinding even if this did not reach the terminal key. All keys past the key that produced the
@@ -754,7 +760,7 @@ class NestedDictionary:
             _inner_delete(
                 traversed_dict=traversed_dict[next_key],
                 remaining_keys=remaining_keys,
-                whole_path=variable_path,
+                whole_path=variable_path,  # type: ignore
                 missing_ok=allow_missing,
                 delete_empty_directories=delete_empty_directories,
             )
@@ -775,14 +781,14 @@ class NestedDictionary:
         )
 
         # Generates a local copy of the dictionary to prevent unwanted modification of the wrapped dictionary.
-        processed_dict: dict = copy.deepcopy(self._nested_dictionary)
+        processed_dict: dict[Any, Any] = copy.deepcopy(self._nested_dictionary)
 
         # Initiates recursive processing by calling the first instance of the _inner_delete method. Note, the method
         # modifies the dictionary by reference and has no explicit return statement.
         _inner_delete(
             traversed_dict=processed_dict,
             remaining_keys=list(keys),  # Lists are actually more efficient here as they allow in-place modification.
-            whole_path=variable_path,
+            whole_path=variable_path,  # type: ignore
             delete_empty_directories=delete_empty_sections,
             missing_ok=allow_missing,
         )
@@ -793,6 +799,8 @@ class NestedDictionary:
             # Updates dictionary key datatype tracker in case altered dictionary changed the number of unique
             # datatypes.
             self._key_datatypes = self.extract_key_datatypes()
+
+            return None
 
         # Otherwise, constructs a new NestedDictionary instance around the modified dictionary and returns it to the
         # caller.
@@ -859,7 +867,6 @@ class NestedDictionary:
                 f"'{type(target_key).__name__}' instead."
             )
             console.error(message=message, error=TypeError)
-            raise TypeError(message)  # Fallback, should not be reachable
 
         # Ensures that the search mode is one of the supported modes.
         if search_mode not in supported_modes:
@@ -868,10 +875,9 @@ class NestedDictionary:
                 f"nested dictionary variable '{target_key}'. Use one of the supported modes: {supported_modes}."
             )
             console.error(message=message, error=ValueError)
-            raise ValueError(message)  # Fallback, should not be reachable
 
         # Extracts all parameter (terminal variables) paths from the dict as a raw tuple.
-        var_paths: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)
+        var_paths: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)  # type: ignore
 
         # Sets up a set and a list to store the data. The set is used for uniqueness checks, and the list is used to
         # preserve the order of discovered keys relative to the order of the class dictionary. This method is
@@ -879,46 +885,36 @@ class NestedDictionary:
         passed_paths: set[tuple[Any, ...]] = set()
         storage_list: list[tuple[Any, ...]] = []
 
-        # Depending on the search mode, generates a filters each path to only include the keys to evaluate. This
-        # generates a list with the same dimensions as the var_paths, which is used to streamline the code below by
-        # zipping paths and keys.
-        keys_to_check: list[tuple[Any, ...]] = [
-            # For 'terminal_only' mode, only evaluates the last key of each path.
-            (
-                path[-1]
-                if search_mode == "terminal_only"
-                # For 'all' mode, evaluates all keys in the path.
-                else (
-                    path
-                    if search_mode == "all"
-                    # For 'intermediate_only' mode, evaluates all keys except for the last key of each path.
-                    else path[:-1]
-                )
-            )
-            for path in var_paths
-        ]
+        # Loops over all discovered variable paths
+        for path in var_paths:
+            # Adjusts the search procedure based on the requested mode. This conditional assumes that the search_mode
+            # validity is verified before this conditional is entered.
+            if search_mode == "terminal_only":
+                # For terminal_only mode, limits search to the last key of each path.
+                keys = path[-1]
+                # Since 'terminal_only' mode relies on skipping all keys other than the terminal key, generates a
+                # modifier to make the general search procedure below correctly return the whole path despite only
+                # evaluating the last key.
+                modifier = len(path) - 1
+            elif search_mode == "intermediate_only":
+                # For 'intermediate_only' mode, removes the terminal keys from the search space.
+                keys = path[:-1]
+                # Due to how sub-path evaluation is handled, no modifier is needed in this case.
+                modifier = 0
+            else:
+                # For 'all' mode, keeps all keys and also does not use a modifier.
+                keys = path
+                modifier = 0
 
-        # Zips the paths and keys together for efficient iteration.
-        path_and_keys = zip(var_paths, keys_to_check)
-
-        # Loops over all paths in the dictionary and for each evaluates the filtered set of keys
-        path: tuple[tuple[Any, ...], ...]
-        keys: list[tuple[Any, ...]]
-        for path, keys in path_and_keys:
-            # Sequentially scans each of the selected keys, working from the highest to the lowest hierarchy.
-            num: int
-            key: Any
+            # Carries out the search. This procedure goes through all keys remaining after adjusting the search space
+            # and compares each key to the target key. When multiple keys from each path can be evaluated, the procedure
+            # works from the highest level to the lowest level of each path. If any key in the sequence matches the
+            # target key, the path up to and including the key is saved to the return list.
             for num, key in enumerate(keys, start=1):
-                # Depending on the currently evaluated key number, indexes the path to only include the path up to
-                # the evaluated key.
-                path_keys = path[: num + (len(path) - len(keys))]
-
-                # If the evaluated key matches the target key and the key-path has not been encountered before, adds
-                # it to the storage list. The uniqueness check prevents partial directory matches from being included
-                # multiple times.
-                if key == target_key and path_keys not in passed_paths:
-                    passed_paths.add(path)
-                    storage_list.append(path)  # Preserves order of key discovery
+                scanned_path = path[: num + modifier]
+                if key == target_key and scanned_path not in passed_paths:
+                    passed_paths.add(scanned_path)
+                    storage_list.append(scanned_path)  # Preserves order of key discovery
 
         # If at least one path was discovered, returns a correctly formatted output
         if len(passed_paths) > 0:
@@ -983,10 +979,9 @@ class NestedDictionary:
                 f"to use a specific datatype. Select one of the supported options: {valid_datatypes}"
             )
             console.error(message=message, error=ValueError)
-            raise ValueError(message)  # Fallback, should not be reachable
 
         # Retrieves all available dictionary paths as tuples of keys.
-        all_paths: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)
+        all_paths: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)  # type: ignore
 
         # Converts all keys in all paths to the requested datatype.
         try:
@@ -1001,7 +996,6 @@ class NestedDictionary:
                 f"keys to use a specific datatype. Specifically, encountered the following error: {str(e)}"
             )
             console.error(message=message, error=RuntimeError)
-            raise RuntimeError(message)  # Fallback, should not be reachable
 
         # Initializes a new nested dictionary class instance using parent class delimiter and an empty seed dictionary.
         converted_dict: NestedDictionary = NestedDictionary(seed_dictionary={}, path_delimiter=self._path_delimiter)
@@ -1009,6 +1003,7 @@ class NestedDictionary:
         # Loops over each converted path, retrieves the value associated with the original (pre-conversion) path and
         # writes it to the newly created dictionary using the converted path.
         try:
+            # noinspection PyUnboundLocalVariable
             for num, path in enumerate(converted_paths):
                 # Retrieves the value using the unconverted path.
                 value: Any = self.read_nested_value(
@@ -1032,7 +1027,6 @@ class NestedDictionary:
                 f"at least one pair of duplicated keys at the same hierarchy level. Specific error message: {str(e)}"
             )
             console.error(message=message, error=RuntimeError)
-            raise RuntimeError(message)  # Fallback, should not be reachable
 
         # If class dictionary modification is preferred, replaces the wrapped class dictionary with the modified
         # dictionary
@@ -1041,6 +1035,8 @@ class NestedDictionary:
             # Updates dictionary key datatype tracker in case altered dictionary changed the number of unique
             # datatypes
             self._key_datatypes = self.extract_key_datatypes()
+
+            return None
         # Otherwise, returns the newly constructed NestedDictionary instance
         else:
             return converted_dict

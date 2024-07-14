@@ -1,10 +1,12 @@
 """Contains tests for functions stored in the standalone_methods package."""
 
 import re
-import textwrap
-import pytest
-import numpy as np
 from typing import Any
+import textwrap
+
+import numpy as np
+import pytest
+
 from ataraxis_data_structures.standalone_methods import (
     ensure_list,
     chunk_iterable,
@@ -194,6 +196,12 @@ def test_check_condition_error() -> None:
     with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
         check_condition(checked_value=object(), condition_value=1, condition_operator=">")
+
+    # Also verifies the handling of unsupported operator inputs
+    message = f"Unsupported operator symbol ({'!>'}) encountered when checking condition "
+    with pytest.raises(KeyError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        check_condition(checked_value=11, condition_value=11, condition_operator="!>")
 
 
 @pytest.mark.parametrize(

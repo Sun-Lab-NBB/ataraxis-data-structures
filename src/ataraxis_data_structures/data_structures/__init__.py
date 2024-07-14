@@ -1,10 +1,13 @@
 """This pacakge provides multiple data structures not available from default / popular Python libraries. This includes
-structures that are generally available, but lack the necessary configurations to work for Sun Lab projects.
+structures that are generally available, but lack the necessary configuration / functionality to work for Sun Lab
+projects.
 
 Currently, it exposes the following classes:
     - NestedDictionary: A class that wraps a nested Python dictionary and exposes methods to manipulate the values
-        in the dictionary using path-interface.
-    - YamlConfig: A dataclass equipped with methods to save and load itself from a .yaml file.
+        and keys of the dictionary using path-like interface.
+    - YamlConfig: A dataclass equipped with methods to save and load itself from a .yaml file. This class is
+        intended to be used as a parent that provides yaml saving and loading functionality to custom configuration
+        dataclasses.
 
 See individual package modules for more details on each of the exposed classes.
 """

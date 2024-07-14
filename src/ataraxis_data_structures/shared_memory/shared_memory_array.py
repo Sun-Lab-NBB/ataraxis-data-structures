@@ -120,7 +120,6 @@ class SharedMemoryArray:
                 f"Expected a flat (one-dimensional) numpy ndarray but instead encountered {type(prototype).__name__}."
             )
             console.error(message=message, error=TypeError)
-            raise TypeError(message)  # Safety fallback, should not be reachable
 
         # Also ensures that the prototype is flat
         if prototype.ndim != 1:
@@ -130,7 +129,6 @@ class SharedMemoryArray:
                 f"{prototype.shape} and dimensions number {prototype.ndim}."
             )
             console.error(message=message, error=ValueError)
-            raise ValueError(message)  # Safety fallback, should not be reachable
 
         # Creates the shared memory object. This process will raise FileExistsError if an object with this name
         # already exists. The shared memory object is used as a buffer to store the array data.
@@ -143,7 +141,6 @@ class SharedMemoryArray:
                 f"Use connect() method to connect to the SharedMemoryArray from a child process."
             )
             console.error(message=message, error=FileExistsError)
-            raise FileExistsError(message)  # Safety fallback, should not be reachable
 
         # Instantiates a numpy ndarray using the shared memory buffer and copies prototype array data into the shared
         # array instance.
@@ -226,7 +223,6 @@ class SharedMemoryArray:
                     f"a tuple with {len(index)} elements."
                 )
                 console.error(message=message, error=ValueError)
-                raise ValueError(message)  # Safety fallback, should not be reachable
 
     @contextmanager
     def _optional_lock(self, with_lock: bool) -> Generator[Any, Any, None]:
@@ -286,7 +282,6 @@ class SharedMemoryArray:
                 f"{initial_start}. The index is outside the valid start index range ({0}:{array_length - 1})."
             )
             console.error(message=message, error=IndexError)
-            raise IndexError(message)
 
         # Checks if stop is within bounds if it's not None
         if stop is not None and (stop < 1 or stop > array_length):
@@ -295,7 +290,6 @@ class SharedMemoryArray:
                 f"{initial_stop}. The index is outside the valid stop index range ({1}:{array_length})."
             )
             console.error(message=message, error=IndexError)
-            raise IndexError(message)
 
         # Ensures start is not greater than stop (if stop is not None)
         if stop is not None and start > stop:
@@ -305,13 +299,10 @@ class SharedMemoryArray:
                 f"({initial_stop}), which is not allowed."
             )
             console.error(message=message, error=ValueError)
-            raise ValueError(message)
 
         return start, stop
 
-    def read_data(
-        self, index: int | tuple[int, int], *, convert_output: bool = False, with_lock: bool = True
-    ) -> Union[NDArray[Any], list[Any], np.dtype[Any], int, float, bool, str, None]:
+    def read_data(self, index: int | tuple[int, int], *, convert_output: bool = False, with_lock: bool = True) -> Any:
         """Reads data from the shared memory array at the specified slice or index.
 
         This method allows flexibly extracting slices and single values from the shared memory array wrapped by the
@@ -346,7 +337,6 @@ class SharedMemoryArray:
                 f"connected to the shared memory buffer. Use connect() method prior to calling other class methods."
             )
             console.error(message=message, error=RuntimeError)
-            raise RuntimeError(message)  # Safety fallback, should not be reachable
 
         # If index is a tuple, decomposes it into slice operands to use on the array
         if isinstance(index, tuple):
@@ -362,7 +352,6 @@ class SharedMemoryArray:
                 f"a tuple of two integers, but encountered '{index}' of type {type(index).__name__} instead."
             )
             console.error(message=message, error=ValueError)
-            raise ValueError(message)  # Safety fallback, should not be reachable
 
         # Converts both indices to be positive and verifies that they are within the array boundaries and not malformed
         start, stop = self._verify_indices(start, stop)
@@ -372,14 +361,13 @@ class SharedMemoryArray:
         data: NDArray[Any]
         # Depending on the value of the 'with_lock' argument, this either acquires a Lock or runs without a lock.
         with self._optional_lock(with_lock=with_lock):
-            data = self._array[start:stop].copy()
+            data = self._array[start:stop].copy()  # type: ignore
 
         # Determines whether the data can be returned as a scalar or iterable and whether it needs to be converted to
         # Python datatype or returned as numpy datatype.
         if convert_output:
             if data.size != 1:
-                out_list: list[Any] = data.tolist()
-                return out_list
+                return data.tolist()
             else:
                 return data.item()
         elif data.size != 1:
@@ -423,7 +411,6 @@ class SharedMemoryArray:
                 f"connected to the shared memory buffer. Use connect() method prior to calling other class methods."
             )
             console.error(message=message, error=RuntimeError)
-            raise RuntimeError(message)  # Safety fallback, should not be reachable
 
         # If index is a tuple, decomposes it into slice operands to use on the array
         if isinstance(index, tuple):
@@ -439,7 +426,6 @@ class SharedMemoryArray:
                 f"a tuple of two integers, but encountered '{index}' of type {type(index).__name__} instead."
             )
             console.error(message=message, error=ValueError)
-            raise ValueError(message)  # Safety fallback, should not be reachable
 
         # Converts both indices to be positive and verifies that they are within the array boundaries and not malformed
         start, stop = self._verify_indices(start, stop)
@@ -456,7 +442,7 @@ class SharedMemoryArray:
 
             # Writes the data to the array, optionally using the lock.
             with self._optional_lock(with_lock=with_lock):
-                self._array[start:stop] = data
+                self._array[start:stop] = data  # type: ignore
         # Catches and redirects ValueErrors, which is used by numpy to indicate conversion errors.
         except ValueError as e:
             message = (
@@ -465,7 +451,6 @@ class SharedMemoryArray:
                 f"to the array: {e}."
             )
             console.error(message=message, error=ValueError)
-            raise ValueError(message)  # Safety fallback, should not be reachable
 
     @property
     def datatype(
