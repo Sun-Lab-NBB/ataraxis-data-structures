@@ -48,6 +48,8 @@ dependencies = [
     "numpy>=2",
     "ataraxis-base-utilities>=1",
     "pydantic>=2",
+    "pyyaml>=6,<7",
+    "dacite>=1,<2",
 ]
 
 [project.urls]
@@ -64,6 +66,8 @@ Documentation = "https://ataraxis-data-structures-api-docs.netlify.app/"
 conda_run = [
     "numpy>=2",
     "pydantic>=2",
+    "dacite>=1,<2",
+    "pyyaml>=6,<7",
 ]
 
 # Depepndencies known to be installable with conda for all development platforms (OSX ARM64, WIN AMD64, LIN AMD64).
@@ -90,6 +94,9 @@ conda = [
     # Linting and Stub-generation
     "mypy>=1",
     "ruff>=0",
+
+    # Types
+    "types-pyyaml>=6,<7",
 
     # Building
     "hatchling>=1",

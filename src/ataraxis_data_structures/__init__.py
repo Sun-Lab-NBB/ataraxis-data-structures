@@ -1,4 +1,4 @@
 from .shared_memory import SharedMemoryArray
-from .data_structures.nested_dictionary import NestedDictionary
+from .data_structures import YamlConfig, NestedDictionary
 
-__all__ = ["SharedMemoryArray", "NestedDictionary"]
+__all__ = ["SharedMemoryArray", "NestedDictionary", "YamlConfig"]
