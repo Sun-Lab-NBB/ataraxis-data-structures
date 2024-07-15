@@ -9,7 +9,10 @@ from ataraxis_base_utilities import console
 
 @dataclass
 class YamlConfig:
+<<<<<<< HEAD
 
+=======
+>>>>>>> c414e9df9828a177af3e685256bf60602a99f740
     def to_yaml(self, config_path: Path) -> None:
         """Converts the class instance to a dictionary and saves it as a .yml (YAML) file at the provided path.
 
