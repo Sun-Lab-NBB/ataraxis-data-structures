@@ -371,9 +371,9 @@ def test_read_data_error(int_array):
     # Tests invalid index type input
     # Recreates the array, as it is garbage-collected on Windows after the only instance of the array isz
     # disconnected.
-    sma = SharedMemoryArray.create_array("test_read_error", int_array)
+    sma = SharedMemoryArray.create_array("test_read_error2", int_array)
     message = (
-        f"Unable to read data from test_read_error SharedMemoryArray class instance. Expected an integer index or "
+        f"Unable to read data from test_read_error2 SharedMemoryArray class instance. Expected an integer index or "
         f"a tuple of two integers, but encountered 'invalid' of type {type('invalid').__name__} instead."
     )
     with pytest.raises(ValueError, match=error_format(message)):
@@ -382,7 +382,7 @@ def test_read_data_error(int_array):
 
     # Tests invalid slice tuple input format
     message = (
-        f"Unable to convert the index tuple into slice arguments for test_read_error SharedMemoryArray "
+        f"Unable to convert the index tuple into slice arguments for test_read_error2 SharedMemoryArray "
         f"instance. Expected a tuple with 1 or 2 elements (start and stop), but instead encountered "
         f"a tuple with {4} elements."
     )
@@ -457,11 +457,11 @@ def test_write_data_error(int_array):
         sma.write_data(0, 10)
 
     # Tests invalid an index type
-    sma = SharedMemoryArray.create_array("test_write_error", int_array)
+    sma = SharedMemoryArray.create_array("test_write_error2", int_array)
     sma.connect()
     message = (
-        f"Unable to write data to test_write_error SharedMemoryArray class instance. Expected an integer index or "
-        f"a tuple of two integers, but encountered 'invalid' of "
+        f"Unable to write data to test_write_error2 SharedMemoryArray class instance. Expected an integer index or "
+        f"a tuple of two integers, but encountered 'invalid' of type str instead."
     )
     with pytest.raises(ValueError, match=error_format(message)):
         # noinspection PyTypeChecker
@@ -469,7 +469,7 @@ def test_write_data_error(int_array):
 
     # Tests invalid slice tuple input format
     message = (
-        f"Unable to convert the index tuple into slice arguments for test_write_error SharedMemoryArray "
+        f"Unable to convert the index tuple into slice arguments for test_write_error2 SharedMemoryArray "
         f"instance. Expected a tuple with 1 or 2 elements (start and stop), but instead encountered "
         f"a tuple with {4} elements."
     )
