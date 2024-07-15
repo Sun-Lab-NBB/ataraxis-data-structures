@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 # Project metdata section. Provides the genral ID information about the project.
 [project]
 name = "ataraxis-data-structures"
-version = "0.1.0"
+version = "0.2.4"
 description = "Provides data structures and data manipulation methods not avaialble from default Python modules."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -45,10 +45,11 @@ classifiers = [
 
 # Runtime project dependencies. This overlaps with 'condarun' optional list.
 dependencies = [
-    "click>=8",
     "numpy>=2",
     "ataraxis-base-utilities>=1",
     "pydantic>=2",
+    "pyyaml>=6,<7",
+    "dacite>=1,<2",
 ]
 
 [project.urls]
@@ -63,9 +64,10 @@ Documentation = "https://ataraxis-data-structures-api-docs.netlify.app/"
 # (OSX ARM64, WIN AMD64, LIN AMD64). This specification is used by ataraxis-automation to resolve as many
 # project dependencies with conda over pip as possible.
 conda_run = [
-    "click>=8",
     "numpy>=2",
     "pydantic>=2",
+    "dacite>=1,<2",
+    "pyyaml>=6,<7",
 ]
 
 # Depepndencies known to be installable with conda for all development platforms (OSX ARM64, WIN AMD64, LIN AMD64).
@@ -92,6 +94,9 @@ conda = [
     # Linting and Stub-generation
     "mypy>=1",
     "ruff>=0",
+
+    # Types
+    "types-pyyaml>=6,<7",
 
     # Building
     "hatchling>=1",

@@ -1,9 +1,7 @@
 """This package provides the SharedMemoryArray class that exposes methods for transferring data between multiple Python
 processes via a shared numpy array.
 
-SharedMemoryArray works by creating multiple numpy array instances, one per each process, that share the same data
-buffer. It is equipped with the necessary mechanisms to ensure thread- and process-safe data manipulation and functions
-as an alternative to Queue objects.
+See shared_memory_array.py for more details on the class and its methods.
 """
 
 # Exposes SharedMemoryArray class for use in other modules
