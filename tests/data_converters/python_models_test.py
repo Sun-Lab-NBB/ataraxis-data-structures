@@ -8,8 +8,7 @@ from ataraxis_data_structures.data_converters.python_models import (
     StringConverter,
     NumericConverter,
 )
-from ataraxis_data_structures.data_converters.numpy_converter import PythonDataConverter
-from ataraxis_data_structures.data_converters.numpy_converter import NumpyDataConverter
+from ataraxis_data_structures.data_converters.numpy_converter import NumpyDataConverter, PythonDataConverter
 
 # from ataraxis_data_structures.data_converters.numpy_converter import PythonDataConverter
 
@@ -710,7 +709,9 @@ def test_numpyconverter_init_validation():
     Verifies that NumpyDataConverter initialization method functions as expected and correctly catches invalid inputs.
     """
     # Tests valid initialization
-    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
+    validator = PythonDataConverter(
+        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+    )
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert type(converter.converter) is PythonDataConverter
     assert converter.output_bit_width == "auto"
@@ -719,17 +720,19 @@ def test_numpyconverter_init_validation():
     with pytest.raises(TypeError):
         # noinspection PyTypeChecker
         NumpyDataConverter(python_converter="not a validator", output_bit_width="auto")
-    
+
     with pytest.raises(ValueError):
         # noinspection PyTypeChecker
         NumpyDataConverter(python_converter=validator, output_bit_width="not a string")
-    
+
     validator = PythonDataConverter(validator=StringConverter(), iterable_output_type="list", filter_failed=True)
     with pytest.raises(TypeError):
         # noinspection PyTypeChecker
         NumpyDataConverter(python_converter=validator, output_bit_width="auto")
-    
-    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=False)
+
+    validator = PythonDataConverter(
+        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=False
+    )
     with pytest.raises(ValueError):
         # noinspection PyTypeChecker
         NumpyDataConverter(python_converter=validator, output_bit_width="auto")
@@ -740,13 +743,13 @@ def test_numpyconverter_init_validation():
         NumpyDataConverter(python_converter=validator, output_bit_width=8)
 
 
-
-
 def test_numpyconverter_setters():
     """
     Verifies the functioning of NumpyDataConverter class validator setter method.
     """
-    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
+    validator = PythonDataConverter(
+        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+    )
     converter = NumpyDataConverter(validator, output_bit_width="auto")
 
     converter.set_output_bit_width(8)
@@ -779,15 +782,16 @@ def test_numpyconverter_success():
     """
     Verifies correct validation behavior for different configurations of NumpyDataConverter class.
     """
-    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert np.array_equal(
-        converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]), np.array([5, 1, 0])
+    validator = PythonDataConverter(
+        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
     )
+    converter = NumpyDataConverter(validator, output_bit_width="auto")
+    assert np.array_equal(converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]), np.array([5, 1, 0]))
     converter.set_output_bit_width(8)
     converter.toggle_signed()
     assert np.array_equal(
-        converter.python_to_numpy_converter([2**4, 2**5, 2**6, 2**7, 2**8, 2**9]), np.array([16, 32, 64, 128, np.inf, np.inf])
+        converter.python_to_numpy_converter([2**4, 2**5, 2**6, 2**7, 2**8, 2**9]),
+        np.array([16, 32, 64, 128, np.inf, np.inf]),
     )
     value = converter.python_to_numpy_converter(2**6)
     assert isinstance(value, np.uint8)
@@ -800,11 +804,14 @@ def test_numpyconverter_success():
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert np.array_equal(
         converter.python_to_numpy_converter([5, 5.5, "None", "Null", None, "7.1"]),
-        np.array([np.nan, np.nan, np.nan]), equal_nan=True
+        np.array([np.nan, np.nan, np.nan]),
+        equal_nan=True,
     )
 
     # Numpy to Python conversion
-    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
+    validator = PythonDataConverter(
+        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+    )
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert converter.numpy_to_python_converter(np.array([5, 1, 0])) == [5, 1, 0]
     assert converter.numpy_to_python_converter(np.int_(5.0)) == 5
@@ -821,12 +828,15 @@ def test_numpyconverter_success():
     assert converter.numpy_to_python_converter(np.nan) is None
     assert converter.numpy_to_python_converter(np.inf) is None
 
+
 def test_numpyconverter_failure():
     """
     Verifies correct validation failure behavior for different configurations of NumpyDataConverter class.
     """
     with pytest.raises(ValueError):
-        validator = PythonDataConverter(validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True)
+        validator = PythonDataConverter(
+            validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True
+        )
         converter = NumpyDataConverter(validator, output_bit_width=8)
         converter.python_to_numpy_converter([5.5, 6.0])
 
@@ -835,7 +845,9 @@ def test_numpyconverter_properties():
     """
     Verifies that accessor properties of NumpyDataConverter class function as expected
     """
-    validator = PythonDataConverter(validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True)
+    validator = PythonDataConverter(
+        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+    )
     converter = NumpyDataConverter(validator, output_bit_width="auto")
 
     assert type(converter.converter) is PythonDataConverter
