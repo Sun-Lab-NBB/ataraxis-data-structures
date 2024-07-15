@@ -1,7 +1,6 @@
 import numpy as np
 from .python_models import BoolConverter as BoolConverter, NoneConverter as NoneConverter, NumericConverter as NumericConverter, StringConverter as StringConverter
 from _typeshed import Incomplete
-from ataraxis_base_utilities import console as console
 from numpy.typing import NDArray
 from typing import Any, Literal
 
@@ -123,9 +122,6 @@ class NumpyDataConverter(PythonDataConverter):
     _python_converter: Incomplete
     _output_bit_width: Incomplete
     def __init__(self, python_converter: PythonDataConverter, output_bit_width: int | str = 'auto', signed: bool = True) -> None: ...
-    @property
-    def python_converter(self) -> PythonDataConverter:
-        """Returns the python_converter attribute of the class instance."""
     @property
     def converter(self) -> PythonDataConverter:
         """Returns the python_converter attribute of the class instance."""

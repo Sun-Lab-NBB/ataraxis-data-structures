@@ -53,25 +53,27 @@ class PythonDataConverter:
         self.supported_iterables = {"tuple": tuple, "list": list}
 
         if not isinstance(validator, (BoolConverter, NoneConverter, NumericConverter, StringConverter)):
-            raise TypeError(
+            message = (
                 f"Unsupported validator class {type(validator).__name__} provided when initializing ValueConverter "
                 f"class instance. Must be one of the supported validator classes: "
                 f"BoolConverter, NoneConverter, NumericConverter, StringConverter."
             )
+            console.error(message=message, error=TypeError)
         if not isinstance(filter_failed, bool):
-            raise TypeError(
+            message = (
                 f"Unsupported filter_failed argument {filter_failed} provided when initializing ValueConverter "
                 f"class instance. Must be a boolean value."
             )
+            console.error(message=message, error=TypeError)
 
         # Similarly, checks iterable_output_type for validity
         if iterable_output_type is not None and iterable_output_type not in self.supported_iterables.keys():
-            custom_error_message = (
+            message = (
                 f"Unsupported output iterable string-option {iterable_output_type} requested when initializing "
                 f"ValueConverter class instance. Select one fo the supported options: "
                 f"{self.supported_iterables.keys()}."
             )
-            raise ValueError(custom_error_message)
+            console.error(message=message, error=ValueError)
 
         # Sets conversion / validation attributes
         self._validator = validator
@@ -97,12 +99,14 @@ class PythonDataConverter:
 
     def set_validator(self, new_validator: BoolConverter | NoneConverter | NumericConverter | StringConverter) -> None:
         if not isinstance(new_validator, (BoolConverter, NoneConverter, NumericConverter, StringConverter)):
-            raise TypeError(
+            message = (
                 f"Unsupported validator class {type(new_validator).__name__} provided when setting ValueConverter "
                 f"validator. Must be one of the supported validator classes: "
                 f"BoolConverter, NoneConverter, NumericConverter, StringConverter."
             )
+            console.error(message=message, error=TypeError)
         self._validator = new_validator
+        return
 
     def validate_value(
         self,
@@ -148,7 +152,9 @@ class PythonDataConverter:
             return tuple(output_iterable) if self.iterable_output_type == "tuple" else output_iterable
 
         except TypeError as e:
-            raise TypeError(f"Unable to convert input value to a python list: {e}")
+            message = f"Unable to convert input value to a Python list: {e}"
+            console.error(message=message, error=TypeError)
+            raise TypeError("Fallback to appease mypi")
 
     @staticmethod
     def ensure_list(
@@ -211,10 +217,12 @@ class PythonDataConverter:
             return list(input_item)
 
         # Catch-all type error to execute if the input is
-        raise TypeError(
+        message = (
             f"Unable to convert input item to a Python list, as items of type {type(input_item).__name__} "
             f"are not supported."
         )
+        console.error(message=message, error=TypeError)
+        raise TypeError("Fallback to appease mypi")
 
 
 class NumpyDataConverter(PythonDataConverter):
@@ -248,32 +256,37 @@ class NumpyDataConverter(PythonDataConverter):
         signed: bool = True,
     ):
         if not isinstance(python_converter, PythonDataConverter):
-            raise TypeError(
+            message = (
                 f"Unsupported python_converter class {type(python_converter).__name__} provided when initializing "
                 f"NumpyDataConverter class instance. Must be an instance of PythonDataConverter."
             )
+            console.error(message=message, error=TypeError)
         if output_bit_width is not None and output_bit_width not in [8, 16, 32, 64, "auto"]:
-            raise ValueError(
+            message = (
                 f"Unsupported output_bit_width {output_bit_width} provided when initializing NumpyDataConverter "
                 f"class instance. Must be one of the supported options: 8, 16, 32, 64, 'auto'."
             )
+            console.error(message=message, error=ValueError)
         if type(python_converter.validator) == StringConverter:
-            raise TypeError(
+            message = (
                 f"Unsupported validator class {type(python_converter.validator).__name__} provided when initializing "
                 f"NumpyDataConverter class instance. Must be one of the supported validator classes: "
                 f"BoolConverter, NoneConverter, NumericConverter."
             )
+            console.error(message=message, error=TypeError)
         if not python_converter.filter_failed:
-            raise ValueError(
-                f"Unsupported filter_failed argument {python_converter.filter_failed} provided when "
-                f"initializing NumpyDataConverter class instance. Must be set to True."
+            message = (
+                f"Unsupported filter_failed argument {python_converter.filter_failed} provided when initializing "
+                f"NumpyDataConverter class instance. Must be set to True."
             )
+            console.error(message=message, error=ValueError)
         if type(python_converter.validator) == NumericConverter:
             if python_converter.validator.allow_int and python_converter.validator.allow_float:
-                raise ValueError(
+                message = (
                     f"Unsupported NumericConverter configuration provided when initializing NumpyDataConverter "
                     f"class instance. Both allow_int and allow_float cannot be set to True."
                 )
+                console.error(message=message, error=ValueError)
 
         self._signed = signed
         self._python_converter = python_converter
@@ -281,11 +294,6 @@ class NumpyDataConverter(PythonDataConverter):
 
     @property
     def python_converter(self) -> PythonDataConverter:
-        """Returns the python_converter attribute of the class instance."""
-        return self._python_converter
-
-    @property
-    def converter(self) -> PythonDataConverter:
         """Returns the python_converter attribute of the class instance."""
         return self._python_converter
 
@@ -306,19 +314,22 @@ class NumpyDataConverter(PythonDataConverter):
 
     def set_output_bit_width(self, new_output_bit_width: int | str) -> None:
         if new_output_bit_width not in [8, 16, 32, 64, "auto"]:
-            raise ValueError(
+            message = (
                 f"Unsupported output_bit_width {new_output_bit_width} provided when setting NumpyDataConverter "
                 f"output_bit_width. Must be one of the supported options: 8, 16, 32, 64, 'auto'."
             )
+            console.error(message=message, error=ValueError)
+
         self._output_bit_width = new_output_bit_width
 
     def set_python_converter(self, new_python_converter: PythonDataConverter) -> None:
         """Sets the python_converter attribute of the class instance to a new PythonDataConverter instance."""
         if not isinstance(new_python_converter, PythonDataConverter):
-            raise TypeError(
+            message = (
                 f"Unsupported python_converter class {type(new_python_converter).__name__} provided when setting "
                 f"NumpyDataConverter python_converter. Must be an instance of PythonDataConverter."
             )
+            console.error(message=message, error=TypeError)
         self._python_converter = new_python_converter
 
     def python_to_numpy_converter(
@@ -358,7 +369,8 @@ class NumpyDataConverter(PythonDataConverter):
 
             elif isinstance(value, (int, float)):
                 if self._output_bit_width == 8 and type(value) == float:
-                    raise ValueError(f"Unable to convert input value to a numpy datatype.")
+                    message = f"Unable to convert input value to a numpy datatype. Numpy does not support 8-bit floats."
+                    console.error(message=message, error=ValueError)
 
                 if type(value) == float:
                     width_list: list[type] = float_sign
@@ -423,18 +435,22 @@ class NumpyDataConverter(PythonDataConverter):
                     if isinstance(out, (int, float, bool, type(None), list, tuple)):
                         return out
                     else:
-                        raise ValueError(f"Unable to convert input value to a Python datatype.")
+                        message = f"Unable to convert input value to a Python datatype."
+                        console.error(message=message, error=ValueError)
                 else:
                     return validated
             else:
-                raise ValueError(f"Unable to convert input value to a Python datatype.")
+                message = f"Unable to convert input value to a Python datatype."
+                console.error(message=message, error=ValueError)
         if np.isnan(value_to_convert) or np.isinf(value_to_convert):
             return None
         output = self.python_converter.validate_value(np.array(value_to_convert).item(0))
         if not isinstance(output, str):
             return output
         else:
-            raise ValueError(f"Unable to convert input value to a Python datatype.")
+            message = f"Unable to convert input value to a Python datatype."
+            console.error(message=message, error=ValueError)
+            raise ValueError("Fallback to appease mypi")
 
     def min_scalar_type_signed_or_unsigned(self, value: int) -> type:
         """
@@ -480,5 +496,6 @@ class NumpyDataConverter(PythonDataConverter):
         for t, min_val, max_val in types:
             if min_val <= value <= max_val:
                 return t
-
-        raise OverflowError(f"Value {value} is too large to be represented by a NumPy integer type.")
+        message = f"Value {value} is too large to be represented by a NumPy integer type."
+        console.error(message=message, error=OverflowError)
+        raise OverflowError(message)

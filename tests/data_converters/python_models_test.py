@@ -1,3 +1,6 @@
+import re
+import textwrap
+
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -11,6 +14,21 @@ from ataraxis_data_structures.data_converters.python_models import (
 from ataraxis_data_structures.data_converters.numpy_converter import NumpyDataConverter, PythonDataConverter
 
 # from ataraxis_data_structures.data_converters.numpy_converter import PythonDataConverter
+
+
+def error_format(message: str) -> str:
+    """Formats the input message to match the default Console format and escapes it using re, so that it can be used to
+    verify raised exceptions.
+
+    This method is used to set up pytest 'match' clauses to verify raised exceptions.
+
+    Args:
+        message: The message to format and escape, according to standard Ataraxis testing parameters.
+
+    Returns:
+        Formatted and escape message that can be used as the 'match' argument of pytest.raises() method.
+    """
+    return re.escape(textwrap.fill(message, width=120, break_long_words=False, break_on_hyphens=False))
 
 
 @pytest.mark.parametrize(
@@ -636,13 +654,13 @@ def test_pythonconverter_init_validation():
         # noinspection PyTypeChecker
         PythonDataConverter(validator="not a validator")
 
-    with pytest.raises(TypeError):
+    with pytest.raises(ValueError):
         # noinspection PyTypeChecker
-        PythonDataConverter(iterable_output_type="not a string")
+        PythonDataConverter(validator=NumericConverter(), iterable_output_type="not a string")
 
     with pytest.raises(TypeError):
         # noinspection PyTypeChecker
-        PythonDataConverter(filter_failed="not a bool")
+        PythonDataConverter(validator=NumericConverter(), filter_failed="not a bool")
 
 
 def test_pythonconverter_success():
@@ -703,6 +721,10 @@ def test_pythonconverter_setter_methods():
     converter.set_validator(NumericConverter())
     assert type(converter.validator) == NumericConverter
 
+    with pytest.raises(TypeError):
+        # noinspection PyTypeChecker
+        converter.set_validator("not a validator")
+
 
 def test_numpyconverter_init_validation():
     """
@@ -713,7 +735,7 @@ def test_numpyconverter_init_validation():
         validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
     )
     converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert type(converter.converter) is PythonDataConverter
+    assert type(converter.python_converter) is PythonDataConverter
     assert converter.output_bit_width == "auto"
     assert converter.signed
 
@@ -775,8 +797,11 @@ def test_numpyconverter_setters():
     converter.set_python_converter(
         PythonDataConverter(validator=BoolConverter(), iterable_output_type="list", filter_failed=True)
     )
-    assert type(converter.converter) is PythonDataConverter
+    assert type(converter.python_converter) is PythonDataConverter
 
+    with pytest.raises(ValueError):
+        # noinspection PyTypeChecker
+        converter.set_output_bit_width("not a string")
 
 def test_numpyconverter_success():
     """
@@ -795,6 +820,12 @@ def test_numpyconverter_success():
     )
     value = converter.python_to_numpy_converter(2**6)
     assert isinstance(value, np.uint8)
+
+    validator = PythonDataConverter(
+        validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True
+    )
+    converter = NumpyDataConverter(validator, output_bit_width="auto")
+    assert np.array_equal(converter.python_to_numpy_converter([5.5, 6.0]), np.array([5.5, 6.0]))
 
     validator = PythonDataConverter(validator=BoolConverter(), iterable_output_type="tuple", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
@@ -850,6 +881,6 @@ def test_numpyconverter_properties():
     )
     converter = NumpyDataConverter(validator, output_bit_width="auto")
 
-    assert type(converter.converter) is PythonDataConverter
+    assert type(converter.python_converter) is PythonDataConverter
     assert converter.output_bit_width == "auto"
     assert converter.signed
