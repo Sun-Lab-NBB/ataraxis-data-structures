@@ -122,7 +122,7 @@ def chunk_iterable(
 
 
 def check_condition(
-    checked_value: int | float | str | bool | tuple[Any] | list[Any] | NDArray[Any] | np.number[Any] | np.bool_,
+    checked_value: int | float | str | bool | tuple[Any] | list[Any] | NDArray[Any] | np.number[Any],
     condition_value: int | float | str | bool | np.number[Any] | np.bool_,
     condition_operator: Literal[">", "<", ">=", "<=", "==", "!="],
 ) -> bool | np.bool_ | NDArray[np.bool_] | tuple[bool, ...]:

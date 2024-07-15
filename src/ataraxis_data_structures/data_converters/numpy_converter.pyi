@@ -28,27 +28,18 @@ class PythonDataConverter:
     suited for cases when the input value type can vary widely during runtime and/or includes many possible options.
 
     Attributes:
-        validator: The validator class to be used for value validation. Must be one of the supported validator classes
+        _validator: The validator class to be used for value validation. Must be one of the supported validator classes
             (BoolConverter, NoneConverter, NumericConverter, StringConverter).
-        iterable_output_type: Optional. A string-option that allows to convert input iterable values to a particular
+        _iterable_output_type: Optional. A string-option that allows to convert input iterable values to a particular
             iterable type prior to returning them. Only used when input values are iterables. Valid options
             are 'set', 'tuple' and 'list'. Alternatively, set to None to force the algorithm to use the same iterable
             type for output value as for the input value. Defaults to None.
-        filter_failed: Optional. If set to True, filters out failed values from the output iterable. Defaults to False.
+        _filter_failed: Optional. If set to True, filters out failed values from the output iterable. Defaults to False.
 
     Raises:
         ValueError: If the input string_options argument is not a tuple, list or None.
             Also, if the input string_options argument is an empty tuple or  list.
             If the input iterable_output_type argument is not one of the supported iterable output types.
-
-    Methods:
-        convert_value: The master function of the class. Sets-up the validation and conversion procedure for all input
-            value types (iterables and non-iterables) and returns the converted value to caller. This is the only method
-            that should be called externally, the rest of the clas methods are designed for internal class use only.
-        validate_value: The central validation function that calls the rest of the class validation functions to
-            determine whether the input value can be parsed as any of the supported (and allowed) datatypes. Also
-            contains the logic that select the most preferred datatype to convert the value to if it can represent
-            multiple allowed datatypes.
     """
     supported_iterables: Incomplete
     _validator: Incomplete
@@ -115,11 +106,11 @@ class NumpyDataConverter(PythonDataConverter):
     value type can vary widely during runtime and/or includes many possible options.
 
     Attributes:
-        python_converter: The PythonDataConverter instance to be used for input value validation and conversion.
-        output_bit_width: The bit-width of the output numpy datatype. Must be one of the supported options: 8, 16, 32, 64,
+        _python_converter: The PythonDataConverter instance to be used for input value validation and conversion.
+        _output_bit_width: The bit-width of the output numpy datatype. Must be one of the supported options: 8, 16, 32, 64,
             'auto'. If set to 'auto', the class will attempt to determine the smallest numpy datatype that can
             accommodate the input value.
-        signed: If True, the output numpy datatype will be signed. If False, the output numpy datatype will be unsigned.
+        _signed: If True, the output numpy datatype will be signed. If False, the output numpy datatype will be unsigned.
 
     Raises:
         TypeError: If the provided python_converter argument is not an instance of PythonDataConverter.
@@ -127,10 +118,6 @@ class NumpyDataConverter(PythonDataConverter):
         ValueError: If the provided output_bit_width argument is not one of the supported options: 8, 16, 32, 64, 'auto'.
             If the provided filter_failed argument is set to False.
             If the provided NumericConverter configuration allows both allow_int and allow_float to be set to True.
-
-    Methods:
-        python_to_numpy_converter: Converts input values to numpy datatypes.
-        numpy_to_python_converter: Converts numpy datatypes to Python datatypes.
     """
     _signed: Incomplete
     _python_converter: Incomplete

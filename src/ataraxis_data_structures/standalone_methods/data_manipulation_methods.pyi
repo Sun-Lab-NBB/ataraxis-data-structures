@@ -48,7 +48,7 @@ def chunk_iterable(iterable: NDArray[Any] | tuple[Any] | list[Any], chunk_size: 
     Returns:
         Chunks of the input iterable (as a tuple) or NumPy array, containing at most chunk_size elements.
     """
-def check_condition(checked_value: int | float | str | bool | tuple[Any] | list[Any] | NDArray[Any] | np.number[Any] | np.bool_, condition_value: int | float | str | bool | np.number[Any] | np.bool_, condition_operator: Literal['>', '<', '>=', '<=', '==', '!=']) -> bool | np.bool_ | NDArray[np.bool_] | tuple[bool, ...]:
+def check_condition(checked_value: int | float | str | bool | tuple[Any] | list[Any] | NDArray[Any] | np.number[Any], condition_value: int | float | str | bool | np.number[Any] | np.bool_, condition_operator: Literal['>', '<', '>=', '<=', '==', '!=']) -> bool | np.bool_ | NDArray[np.bool_] | tuple[bool, ...]:
     """Checks the input value against the condition value, using requested condition operator.
 
     Can take tuples, lists, and numpy arrays as checked_value, in which case the condition_value is applied
