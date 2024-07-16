@@ -491,10 +491,7 @@ class StringConverter:
         if not isinstance(value, str) and not self.allow_string_conversion:
             return None
         else:
-            try:
-                value = str(value)
-            except Exception:
-                return None
+            value = str(value)
 
         # If needed, converts the checked value to lower case. This is done either if the validator is configured to
         # convert strings to lower case or if it is configured to evaluate the string against an iterable of options.

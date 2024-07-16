@@ -482,6 +482,11 @@ def test_noneconverter_config(config):
         ({"allow_string_conversion": True, "string_options": ["1", "2"]}, 1, "1"),
         ({"allow_string_conversion": True, "string_options": ["1", "2"]}, 2, "2"),
         ({"allow_string_conversion": True, "string_force_lower": True}, "Spongebob", "spongebob"),
+        (
+            {"allow_string_conversion": True, "string_force_lower": True, "string_options": ["SPONGEBOB"]},
+            "SPONGEBOB",
+            "spongebob",
+        ),
         # Validator Capabilities
         ({}, "Spongebob", "Spongebob"),
         ({"string_options": ["Spongebob", "Patrick"]}, "Spongebob", "Spongebob"),
@@ -803,6 +808,11 @@ def test_numpyconverter_setters():
         # noinspection PyTypeChecker
         converter.set_output_bit_width("not a string")
 
+    with pytest.raises(TypeError):
+        # noinspection PyTypeChecker
+        converter.set_python_converter("not a number")
+
+
 def test_numpyconverter_success():
     """
     Verifies correct validation behavior for different configurations of NumpyDataConverter class.
@@ -812,6 +822,7 @@ def test_numpyconverter_success():
     )
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert np.array_equal(converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]), np.array([5, 1, 0]))
+    assert np.array_equal(converter.python_to_numpy_converter(-5), -5)
     converter.set_output_bit_width(8)
     converter.toggle_signed()
     assert np.array_equal(
@@ -827,9 +838,20 @@ def test_numpyconverter_success():
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert np.array_equal(converter.python_to_numpy_converter([5.5, 6.0]), np.array([5.5, 6.0]))
 
+    validator = PythonDataConverter(
+        validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True
+    )
+    converter = NumpyDataConverter(validator, output_bit_width=16)
+    assert np.array_equal(
+        converter.python_to_numpy_converter([5.5e-30, 6.0e30]), np.array([np.nan, np.inf]), equal_nan=True
+    )
+
     validator = PythonDataConverter(validator=BoolConverter(), iterable_output_type="tuple", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert np.array_equal(converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]), np.array([1, 0]))
+    assert np.array_equal(
+        converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]),
+        np.array([np.bool(True), np.bool(False)]),
+    )
 
     validator = PythonDataConverter(validator=NoneConverter(), iterable_output_type="list", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
@@ -846,6 +868,7 @@ def test_numpyconverter_success():
     converter = NumpyDataConverter(validator, output_bit_width="auto")
     assert converter.numpy_to_python_converter(np.array([5, 1, 0])) == [5, 1, 0]
     assert converter.numpy_to_python_converter(np.int_(5.0)) == 5
+    assert converter.numpy_to_python_converter(np.array([5])) == 5
 
     validator = PythonDataConverter(validator=BoolConverter(), iterable_output_type="tuple", filter_failed=True)
     converter = NumpyDataConverter(validator, output_bit_width="auto")
@@ -864,12 +887,19 @@ def test_numpyconverter_failure():
     """
     Verifies correct validation failure behavior for different configurations of NumpyDataConverter class.
     """
+    with pytest.raises(OverflowError):
+        validator = PythonDataConverter(
+            validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+        )
+        converter = NumpyDataConverter(validator, output_bit_width="auto")
+        converter.python_to_numpy_converter([2**100, 2**100])
+
     with pytest.raises(ValueError):
         validator = PythonDataConverter(
             validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True
         )
         converter = NumpyDataConverter(validator, output_bit_width=8)
-        converter.python_to_numpy_converter([5.5, 6.0])
+        converter.python_to_numpy_converter([0.22, 0.33])
 
 
 def test_numpyconverter_properties():

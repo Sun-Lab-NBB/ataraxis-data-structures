@@ -361,13 +361,13 @@ class NumpyDataConverter(PythonDataConverter):
         temp: list[Any] = []
 
         for value in validated_list:
-            if self._output_bit_width == "auto" and isinstance(value, (int)):
+            if self._output_bit_width == "auto" and isinstance(value, (int, float)) and value not in (True, False):
                 min_dtype = self.min_scalar_type_signed_or_unsigned(value)
                 numpy_value: np.integer[Any] | np.unsignedinteger[Any] | np.bool | NDArray[Any] | float = np.array(
                     value, dtype=min_dtype
                 )
 
-            elif isinstance(value, (int, float)):
+            elif isinstance(value, (int, float)) and value not in (True, False):
                 if self._output_bit_width == 8 and type(value) == float:
                     message = f"Unable to convert input value to a numpy datatype. Numpy does not support 8-bit floats."
                     console.error(message=message, error=ValueError)
@@ -383,7 +383,9 @@ class NumpyDataConverter(PythonDataConverter):
 
                 try:
                     numpy_value = datatype(value)
-                except Exception as e:
+                    if numpy_value == 0.0 and value != 0.0:
+                        numpy_value = np.nan
+                except OverflowError:
                     numpy_value = np.inf
 
             # Handle bools and None
@@ -431,6 +433,7 @@ class NumpyDataConverter(PythonDataConverter):
             )
             if not isinstance(validated, str):
                 if type(validated) == list and len(validated) == 1:
+                    # To satisfy tox
                     out = validated.pop()
                     if isinstance(out, (int, float, bool, type(None), list, tuple)):
                         return out
@@ -440,6 +443,7 @@ class NumpyDataConverter(PythonDataConverter):
                 else:
                     return validated
             else:
+                # To satify tox
                 message = f"Unable to convert input value to a Python datatype."
                 console.error(message=message, error=ValueError)
         if np.isnan(value_to_convert) or np.isinf(value_to_convert):
@@ -452,7 +456,7 @@ class NumpyDataConverter(PythonDataConverter):
             console.error(message=message, error=ValueError)
             raise ValueError("Fallback to appease mypi")
 
-    def min_scalar_type_signed_or_unsigned(self, value: int) -> type:
+    def min_scalar_type_signed_or_unsigned(self, value: int | float) -> type:
         """
         Returns the minimum scalar type to represent `value` with the desired signedness.
 
@@ -465,37 +469,47 @@ class NumpyDataConverter(PythonDataConverter):
         """
         # Determine the smallest scalar type that can represent the value
         dtype = np.min_scalar_type(value)
-
         # If the current dtype already matches the signed/unsigned preference, return it
-        if (isinstance(dtype, np.signedinteger) and self._signed) or (
-            isinstance(dtype, np.unsignedinteger) and not self._signed
+        if (np.issubdtype(dtype, np.signedinteger) and self._signed) or (
+            np.issubdtype(dtype, np.unsignedinteger) and not self._signed
         ):
-            # if (np.issubdtype(dtype, np.signedinteger) and self._signed) or (
-            #     np.issubdtype(dtype, np.unsignedinteger) and not self._signed
-            # ):
-            return dtype
+            if isinstance(dtype, type):
+                return dtype
+        if type(value) == int:
+            # Define the hierarchy of integer types
+            signed_types: list[tuple[type, int, int]] = [
+                (np.int8, -(2**7), 2**7 - 1),
+                (np.int16, -(2**15), 2**15 - 1),
+                (np.int32, -(2**31), 2**31 - 1),
+                (np.int64, -(2**63), 2**63 - 1),
+            ]
+            unsigned_types: list[tuple[type, int, int]] = [
+                (np.uint8, 0, 2**8 - 1),
+                (np.uint16, 0, 2**16 - 1),
+                (np.uint32, 0, 2**32 - 1),
+                (np.uint64, 0, 2**64 - 1),
+            ]
 
-        # Define the hierarchy of integer types
-        signed_types: list[tuple[type, int, int]] = [
-            (np.int8, -(2**7), 2**7 - 1),
-            (np.int16, -(2**15), 2**15 - 1),
-            (np.int32, -(2**31), 2**31 - 1),
-            (np.int64, -(2**63), 2**63 - 1),
-        ]
-        unsigned_types: list[tuple[type, int, int]] = [
-            (np.uint8, 0, 2**8 - 1),
-            (np.uint16, 0, 2**16 - 1),
-            (np.uint32, 0, 2**32 - 1),
-            (np.uint64, 0, 2**64 - 1),
-        ]
+            # Choose the appropriate hierarchy
+            types = signed_types if self._signed else unsigned_types
 
-        # Choose the appropriate hierarchy
-        types = signed_types if self._signed else unsigned_types
+            # Find the smallest dtype that can accommodate the value
+            for t, min_val, max_val in types:
+                if min_val <= value <= max_val:
+                    return t
+        elif type(value) == float:
+            # Define the hierarchy of float types
+            float_types: list[tuple[type, np.floating[Any], np.floating[Any]]] = [
+                (np.float16, np.finfo(np.float16).min, np.finfo(np.float16).max),
+                (np.float32, np.finfo(np.float32).min, np.finfo(np.float32).max),
+                (np.float64, np.finfo(np.float64).min, np.finfo(np.float64).max),
+            ]
 
-        # Find the smallest dtype that can accommodate the value
-        for t, min_val, max_val in types:
-            if min_val <= value <= max_val:
-                return t
+            # Find the smallest dtype that can accommodate the value
+            for t, min_val_f, max_val_f in float_types:
+                if min_val_f <= value <= max_val_f:
+                    return t
+        # To appease tox
         message = f"Value {value} is too large to be represented by a NumPy integer type."
         console.error(message=message, error=OverflowError)
         raise OverflowError(message)
