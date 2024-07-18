@@ -2,7 +2,6 @@ from typing import Any, Union, Optional
 
 from pydantic import validate_call
 
-# TODO
 """
 1) Refactor the remaining models to match the final factory-like class architecture:
     a) Replace errors with None returns to indicate validation failures. For None validator, use string 'None', since 

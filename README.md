@@ -82,6 +82,91 @@ Add minimal examples on how the end-user can use your library. This section is n
 library. Instead, it should provide enough information to start using the library with the expectation that the user
 can then study the API documentation and code-hints to figure out how to master the library.
 
+### Quickstart
+
+#### PythonDataConverter
+The `PythonDataConverter` is a class that validates and cross converts data from one python type to another.
+The core of the class functionality is the `validate_value` method. To properly use the classs one must initialize an
+instance of the PythonDataConverter class with accepts one required positional argument `validator` which much be an 
+instance of `BoolConverter`, `NoneConverter`, `NumericConverter`, or `StringConverter`. Each of these validator classes has
+their own configurations and must be initalized and passed into the `PythonDataConverter`class. Some arguments have
+default values. Here is an example of creating a `PythonDataConverter` that utilizes a `NumericConverter` with default
+parameters.
+```
+converter = PythonDataConverter(validator=NumericConverter())
+converter.validate_value("7.1")  # Returns the float 7.1
+```
+
+#### NumpyDataConverter
+The `NumpyConverter` class is a converter and validator is is able to convert python datatypes to numpy datatypes. The
+class extends the functionality of the `PythonDataConverter` to support numpy datatype conversion for only a limited set of
+numpy datatypes. Numpy strings are not supported. A requirement of the `NumpyDataConverter` is for the `filter_failed`
+argument of the `PythonDataConverter` to be true, the defaulted false is not allowed. Here is an example of a numeric
+`NumpyDataConverter`. Note, `NumericConverter` cannot have both fields `allow_int` and `allow_float` being true when passed
+into the `NumpyDataConverter`. Also, the NumpyDataConverter will automatically optimize the bit-width and sign (only 
+integers) of numeric data types is no arguemnt is passed for `bit_width` or `signed`
+```
+validator = PythonDataConverter(validator=NumericConverter(allow_float=False), filter_failed=True)
+converter = NumpyDataConverter(validator)
+converter.python_to_numpy_converter("7.1")   # Returns 7.1 with type np.uint8
+```
+This can also convert from numpy datatypes to python natives. Using the same validator and converter:
+```
+converter.numpy_to_python_converter(np.uint8(7))   # Returns 7 with type int
+```
+
+### Config
+#### Config: BoolConverter, NoneConverter, NumericConverter, or StringConverter
+The following are examples to initilize each converter class with the full suite of configurations. Class fields that
+require assignment have default values.
+```
+# BoolConverter
+bool_convert = BoolConverter(
+   parse_bool_equivalents = True # Default true, allows true equivalents ("True", "true", 1, "1", 1.0)  and false equivalents
+                                 # ("False", "false, 0, "0", 0.0) bool conversion
+)
+
+# NonConverter
+none_convert = NoneConverter(
+   pare_none_equivalents = True  # Default true, allows none equivalent ("None", "none", "Null", "null") none conversion
+)
+
+# NumericConverter
+num_convert = NumericConverter(
+   parse_number_strings = True   # Default true, converts numbers in string format
+   allow_int = True              # Default true, allow int conversion
+   allow_float = True            # Default true, allow float conversion
+   number_lower_limit = 7        # Default None, rejects numbers lower than this threshold
+   number_upper_limit = 17       # Default None, rejects numbers greater than this threshold
+)
+
+# StringConverter
+string_convert = StringConverter(
+   allow_string_conversion: bool = False,          # Default false, allows non-string inputs to convert to strings 
+   string_options = ['Bobby', 'Dobby', 'Poppy'],   # Default None, rejects string inputs not in this list/tuple
+   string_force_lower: bool = False,               # Default false, force string output to lowercase
+)
+
+```
+
+#### Config: PythonDataConverter
+```
+python_convert = PythonDataConverter(
+   NumericConverter(),              # Required, StringConverter not supported
+   iterable_output_type = 'tuple',  # Default None, pass in tuple/list for shallow array conversion support
+   filter_failed: bool = False,     # Default False, omits the values in a array that failed conversion   
+)
+
+```
+#### Configh: NumpyDataConverter
+```
+numpy_convert = NumpyDataConverter(
+   PythonDataConverter(NumericConverter()),  # Required
+   output_bit_width = "auto",                # Default 'auto', forces numeric inputs to a specific bit width (8, 16, 32, 64)
+                                             # Replaced with inf if too large
+   signed = True,                            # Default true, optimize the signed or unsigned int based on which saves memory.
+)
+```
 ___
 
 ## API Documentation
