@@ -1,5 +1,0 @@
-{
-    "python.analysis.extraPaths": [
-        "./src/ataraxis_data_structures/data_converters"
-    ]
-}

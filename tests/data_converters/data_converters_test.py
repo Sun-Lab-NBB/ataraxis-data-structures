@@ -5,15 +5,14 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from ataraxis_data_structures.data_converters.python_models import (
+from ataraxis_data_structures.data_converters import (
     BoolConverter,
     NoneConverter,
     StringConverter,
     NumericConverter,
+    PythonDataConverter,
+    NumpyDataConverter,
 )
-from ataraxis_data_structures.data_converters.numpy_converter import NumpyDataConverter, PythonDataConverter
-
-# from ataraxis_data_structures.data_converters.numpy_converter import PythonDataConverter
 
 
 def error_format(message: str) -> str:
@@ -36,158 +35,174 @@ def error_format(message: str) -> str:
     [
         ({}, 5, 5),
         ({}, 5.5, 5.5),
-        ({}, True, 1),
-        ({"allow_int": False}, True, 1.0),
-        ({"allow_int": False}, 5, 5.0),
-        ({"allow_float": False}, 5.0, 5),
+        ({}, True, 1.0),
+        ({"allow_integer_output": False}, True, 1.0),
+        ({"allow_integer_output": False}, 5, 5.0),
+        ({"allow_float_output": False}, 5.0, 5),
         ({"parse_number_strings": True}, "5.5", 5.5),
-        ({"parse_number_strings": True}, "5", 5),
+        ({"parse_number_strings": True}, "5", 5.0),
         ({"number_lower_limit": 0, "number_upper_limit": 10}, 5, 5),
-        ({"allow_int": False, "allow_float": True, "number_lower_limit": 0, "number_upper_limit": 10}, 5, 5.0),
-        ({"allow_int": True, "allow_float": False, "number_lower_limit": 0, "number_upper_limit": 10}, 5.0, 5),
+        (
+            {
+                "allow_integer_output": False,
+                "allow_float_output": True,
+                "number_lower_limit": 0,
+                "number_upper_limit": 10,
+            },
+            5,
+            5.0,
+        ),
+        (
+            {
+                "allow_integer_output": True,
+                "allow_float_output": False,
+                "number_lower_limit": 0,
+                "number_upper_limit": 10,
+            },
+            5.0,
+            5,
+        ),
+        ({}, "not a number", None),
+        ({}, [1, 2, 3], None),
+        ({"parse_number_strings": False}, "5.5", None),
+        ({"number_lower_limit": 0}, -5, None),
+        ({"number_upper_limit": 10}, 15, None),
+        ({"allow_float_output": False}, 5.5, None),
     ],
 )
 def test_numericconverter_success(config, input_value, expected):
-    """Verifies correct validation behavior for different configurations of  NumericConverter class.
+    """Verifies the functionality of the NumericConverter class validate_value() method.
 
-    Evaluates:
-        0 - Validation of an integer input when integers are allowed.
-        1 - Validation of a float input when floats are allowed.
+    Evaluates the following scenarios:
+        0 - Validation of an integer input with integers allowed.
+        1 - Validation of a float input with floats allowed.
         2 - Conversion of a boolean input to integer output.
-        3 - Conversion of a boolean input to float output, when integers are not allowed.
-        4 - Conversion of an integer input into a float, when integers are not allowed.
-        5 - Conversion of an integer-convertible float input into an integer, when floats are not allowed.
+        3 - Conversion of a boolean input to float output, with integers not allowed.
+        4 - Conversion of an integer input into a float, with integers not allowed.
+        5 - Conversion of an integer-convertible float input into an integer, with float outputs not allowed.
         6 - Conversion of a string into a float.
         7 - Conversion of a string into an integer.
         8 - Validation of a number within the minimum and maximum limits.
-        9 - Conversion of an integer into float, when floats are not allowed and limits are enforced.
-        10 - Conversion of an integer-convertible float into an integer, when integers are not allowed and limits
-            are enforced.
-
-    Args:
-       config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
-       input_value: The value passed to the validation function of the configured class instance.
+        9 - Conversion of an integer into float, with floats not allowed and limits enforced.
+        10 - Conversion of an integer-convertible float into an integer, with integers not allowed and limits enforced.
+        11 - Failure for a non-number-convertible string.
+        12 - Failure for a non-supported input value (list).
+        14 - Failure for a string input with string parsing disabled
+        15 - Failure for a number below the lower limit.
+        16 - Failure for a number above the upper limit
+        17 - Failure for a float input with floats not allowed and the input not integer-convertible.
     """
     converter = NumericConverter(**config)
-    assert converter.validate_value(input_value) == expected
+    output = converter.validate_value(input_value)
+    assert output == expected
+    assert isinstance(output, type(expected))
 
 
-@pytest.mark.parametrize(
-    "config,input_value",
-    [
-        ({}, "not a number"),
-        ({}, [1, 2, 3]),
-        ({"allow_int": False, "allow_float": False}, 5),
-        ({"parse_number_strings": False}, "5.5"),
-        ({"number_lower_limit": 0}, -5),
-        ({"number_upper_limit": 10}, 15),
-        ({"allow_float": False}, 5.5),
-    ],
-)
-def test_numericconverter_failure(config, input_value):
-    """Verifies correct validation failure behavior for different configurations of  NumericConverter class.
-
-    Evaluates:
-        0 - Failure for a non-number-convertible string.
-        1 - Failure for a non-supported input value (list).
-        2 - Failure when both integer and float outputs are disabled.
-        3 - Failure for a string input when string parsing is disabled
-        4 - Failure for a number below the lower limit.
-        5 - Failure for a number above the upper limit
-        6 - Failure for a float input when floats are not allowed and the input is not integer-convertible.
-
-    Args:
-       config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
-       input_value: The value passed to the validation function of the configured class instance.
-    """
-    converter = NumericConverter(**config)
-    assert converter.validate_value(input_value) is None
-
-
-def test_numericconverter_init_validation():
-    """Verifies that NumericConverter initialization method functions as expected and correctly catches invalid inputs."""
+def test_numericconverter_init_errors():
+    """Verifies the error-handling behavior of the NumericConverter class initialization method."""
     # Tests valid initialization
     converter = NumericConverter(parse_number_strings=True, allow_int=True, number_lower_limit=0)
-    assert converter.parse_strings is True
-    assert converter.allow_int is True
-    assert converter.lower_limit == 0
+    assert converter.parse_number_strings is True
+    assert converter.allow_integer_output is True
+    assert converter.number_lower_limit == 0
 
-    # Tests invalid initialization (relies on pydantic to validate the inputs)
-    with pytest.raises(ValidationError):
-        # noinspection PyTypeChecker
-        NumericConverter(parse_number_strings="not a bool")
+    # Tests invalid initialization argument types:
+    invalid_input = "invalid"
 
-    with pytest.raises(ValidationError):
+    # String parsing
+    message = (
+        f"Unable to initialize NumericConverter class instance. Expected a boolean parse_number_strings "
+        f"argument value, but encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
-        NumericConverter(number_lower_limit="not a number")
+        NumericConverter(parse_number_strings=invalid_input)
+
+    # Allow integer
+    message = (
+        f"Unable to initialize NumericConverter class instance. Expected a boolean allow_integer_output "
+        f"argument value, but encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        NumericConverter(allow_integer_output=invalid_input)
+
+    # Allow float
+    message = (
+        f"Unable to initialize NumericConverter class instance. Expected a boolean allow_float_output "
+        f"argument value, but encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        NumericConverter(allow_float_output=invalid_input)
+
+    # Lower Bound
+    message = (
+        f"Unable to initialize NumericConverter class instance. Expected an integer, float or NoneType "
+        f"number_lower_limit argument value, but encountered {invalid_input} of "
+        f"type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        NumericConverter(number_lower_limit=invalid_input)
+
+    # Upper Bound
+    message = (
+        f"Unable to initialize NumericConverter class instance. Expected an integer, float or NoneType "
+        f"number_upper_limit argument value, but encountered {invalid_input} of "
+        f"type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        NumericConverter(number_upper_limit=invalid_input)
+
+    # Lower bound equal to upper bound
+    upper_bound = 10
+    lower_bound = 10
+    message = (
+        f"Unable to initialize NumericConverter class instance. Expected a number_lower_limit that is less than "
+        f"the number_upper_limit, but encountered a lower limit of {lower_bound} and an upper limit of "
+        f"{upper_bound}."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        NumericConverter(number_lower_limit=lower_bound, number_upper_limit=upper_bound)
+
+    # Lower bound greater than upper bound
+    upper_bound = 10
+    lower_bound = 15
+    message = (
+        f"Unable to initialize NumericConverter class instance. Expected a number_lower_limit that is less than "
+        f"the number_upper_limit, but encountered a lower limit of {lower_bound} and an upper limit of "
+        f"{upper_bound}."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        NumericConverter(number_lower_limit=lower_bound, number_upper_limit=upper_bound)
+
+    # Both allow_int and allow_float are disabled
+    message = (
+        f"Unable to initialize NumericConverter class instance. Expected allow_integer_output, "
+        f"allow_float_output or both to be True, but both are set to False. At least one output type must be "
+        f"enabled to instantiate a class."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        NumericConverter(allow_integer_output=False, allow_float_output=False)
 
 
 def test_numericconverter_properties():
-    """Verifies that accessor properties of NumericConverter class function as expected"""
+    """Verifies the functionality NumericConverter class accessor properties."""
     converter = NumericConverter(
-        parse_number_strings=True, allow_int=True, allow_float=True, number_lower_limit=0, number_upper_limit=10
+        parse_number_strings=True,
+        allow_integer_output=True,
+        allow_float_output=True,
+        number_lower_limit=0,
+        number_upper_limit=10,
     )
 
-    assert converter.parse_strings
-    assert converter.allow_int
-    assert converter.allow_float
-    assert converter.lower_limit == 0
-    assert converter.upper_limit == 10
-
-
-def test_numericconverter_toggle_methods():
-    """Verifies the functioning of NumericConverter configuration flag toggling methods."""
-    converter = NumericConverter()
-
-    assert not converter.toggle_string_parsing()
-    assert not converter.parse_strings
-    assert converter.toggle_string_parsing()
-    assert converter.parse_strings
-
-    assert not converter.toggle_integer_outputs()
-    assert not converter.allow_int
-    assert converter.toggle_integer_outputs()
-    assert converter.allow_int
-
-    assert not converter.toggle_float_outputs()
-    assert not converter.allow_float
-    assert converter.toggle_float_outputs()
-    assert converter.allow_float
-
-
-def test_numericconverter_setter_methods() -> None:
-    """Verifies the functioning of NumericConverter class limit setter methods."""
-    converter = NumericConverter()
-
-    converter.set_lower_limit(5)
-    assert converter.lower_limit == 5
-
-    converter.set_lower_limit(3.33)
-    assert converter.lower_limit == 3.33
-
-    converter.set_lower_limit(None)
-    assert converter.lower_limit is None
-
-    converter.set_upper_limit(15.5)
-    assert converter.upper_limit == 15.5
-
-    converter.set_upper_limit(15)
-    assert converter.upper_limit == 15
-
-    converter.set_upper_limit(None)
-    assert converter.upper_limit is None
-
-
-def test_numericconverter_setter_method_errors() -> None:
-    """Verifies the error handling of NumericConverter class limit setter methods."""
-    converter = NumericConverter()
-    with pytest.raises(ValidationError):
-        # noinspection PyTypeChecker
-        converter.set_lower_limit("Invalid input")
-
-    with pytest.raises(ValidationError):
-        # noinspection PyTypeChecker
-        converter.set_upper_limit("Invalid input")
+    assert converter.parse_number_strings
+    assert converter.allow_integer_output
+    assert converter.allow_float_output
+    assert converter.number_lower_limit == 0
+    assert converter.number_upper_limit == 10
 
 
 @pytest.mark.parametrize(
@@ -204,15 +219,15 @@ def test_numericconverter_config(config):
     converter = NumericConverter(**config)
     for key, value in config.items():
         if key == "parse_number_strings":
-            assert converter.parse_strings == value
-        elif key == "allow_int":
-            assert converter.allow_int == value
-        elif key == "allow_float":
-            assert converter.allow_float == value
+            assert converter.parse_number_strings == value
+        elif key == "allow_integer_output":
+            assert converter.allow_integer_output == value
+        elif key == "allow_float_output":
+            assert converter.allow_float_output == value
         elif key == "number_lower_limit":
-            assert converter.lower_limit == value
+            assert converter.number_lower_limit == value
         elif key == "number_upper_limit":
-            assert converter.upper_limit == value
+            assert converter.number_upper_limit == value
 
 
 @pytest.mark.parametrize(
@@ -230,72 +245,49 @@ def test_numericconverter_config(config):
         ({}, "0", False),
         ({}, 1.0, True),
         ({}, 0.0, False),
+        ({"parse_boolean_equivalents": False}, "True", None),
+        ({"parse_boolean_equivalents": False}, "False", None),
+        ({"parse_boolean_equivalents": False}, "true", None),
+        ({"parse_boolean_equivalents": False}, "false", None),
+        ({"parse_boolean_equivalents": False}, 1, None),
+        ({"parse_boolean_equivalents": False}, 0, None),
+        ({"parse_boolean_equivalents": False}, "1", None),
+        ({"parse_boolean_equivalents": False}, "0", None),
+        ({"parse_boolean_equivalents": False}, 1.0, None),
+        ({"parse_boolean_equivalents": False}, 0.0, None),
     ],
 )
 def test_boolconverter_success(config, input_value, expected):
-    """
-    Verifies correct validation behavior for different configurations of BoolConverter class.
+    """Verifies the functionality of the BooleanConverter class validate_value() method.
 
-    Evaluates:
-        0 - Conversion of a boolean input to a boolean output, when boolean equivalents are disabled.
-        1 - Conversion of a boolean input to a boolean output, when boolean equivalents are disabled.
-        2 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
-        3 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
-        4 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
-        5 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
-        6 - Conversion of an integer input to a boolean output, when boolean equivalents are enabled.
-        7 - Conversion of an integer input to a boolean output, when boolean equivalents are enabled.
-        8 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
-        9 - Conversion of a string input to a boolean output, when boolean equivalents are enabled.
-        10 - Conversion of a float input to a boolean output, when boolean equivalents are enabled.
-        11 - Conversion of a float input to a boolean output, when boolean equivalents are enabled.
-
-    Args:s
-        config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
-        input_value: The value passed to the validation function of the configured class instance.
-        expected: The expected output of the validation function.
-    """
-    converter = BoolConverter(**config)
-    assert converter.validate_value(input_value) == expected
-
-
-@pytest.mark.parametrize(
-    "config,input_value",
-    [
-        ({"parse_bool_equivalents": False}, "True"),
-        ({"parse_bool_equivalents": False}, "False"),
-        ({"parse_bool_equivalents": False}, "true"),
-        ({"parse_bool_equivalents": False}, "false"),
-        ({"parse_bool_equivalents": False}, 1),
-        ({"parse_bool_equivalents": False}, 0),
-        ({"parse_bool_equivalents": False}, "1"),
-        ({"parse_bool_equivalents": False}, "0"),
-        ({"parse_bool_equivalents": False}, 1.0),
-        ({"parse_bool_equivalents": False}, 0.0),
-    ],
-)
-def test_boolconverter_failure(config, input_value):
-    """
-    Verifies correct validation failure behavior for different configurations of BoolConverter class.
-
-    Evaluates:
-        0 - Failure for a string input when boolean equivalents are disabled.
-        1 - Failure for a string input when boolean equivalents are disabled.
-        2 - Failure for a string input when boolean equivalents are disabled.
-        3 - Failure for a string input when boolean equivalents are disabled.
-        4 - Failure for an integer input when boolean equivalents are disabled.
-        5 - Failure for an integer input when boolean equivalents are disabled.
-        6 - Failure for a string input when boolean equivalents are disabled.
-        7 - Failure for a string input when boolean equivalents are disabled.
-        8 - Failure for a float input when boolean equivalents are disabled.
-        9 - Failure for a float input when boolean equivalents are disabled.
-
-    Args:
-        config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
-        input_value: The value passed to the validation function of the configured class instance.
+    Evaluates the following scenarios:
+        0 - Conversion of a boolean input to a boolean output, with boolean equivalents disabled.
+        1 - Conversion of a boolean input to a boolean output, with boolean equivalents disabled.
+        2 - Conversion of a string input to a boolean output, with boolean equivalents enabled.
+        3 - Conversion of a string input to a boolean output, with boolean equivalents enabled.
+        4 - Conversion of a string input to a boolean output, with boolean equivalents enabled.
+        5 - Conversion of a string input to a boolean output, with boolean equivalents enabled.
+        6 - Conversion of an integer input to a boolean output, with boolean equivalents enabled.
+        7 - Conversion of an integer input to a boolean output, with boolean equivalents enabled.
+        8 - Conversion of a string input to a boolean output, with boolean equivalents enabled.
+        9 - Conversion of a string input to a boolean output, with boolean equivalents enabled.
+        10 - Conversion of a float input to a boolean output, with boolean equivalents enabled.
+        11 - Conversion of a float input to a boolean output, with boolean equivalents enabled.
+        12 - Failure for a string input with boolean equivalents disabled.
+        13 - Failure for a string input with boolean equivalents disabled.
+        14 - Failure for a string input with boolean equivalents disabled.
+        15 - Failure for a string input with boolean equivalents disabled.
+        16 - Failure for an integer input with boolean equivalents disabled.
+        17 - Failure for an integer input with boolean equivalents disabled.
+        18 - Failure for a string input with boolean equivalents disabled.
+        19 - Failure for a string input with boolean equivalents disabled.
+        20 - Failure for a float input with boolean equivalents disabled.
+        21 - Failure for a float input with boolean equivalents disabled.
     """
     converter = BoolConverter(**config)
-    assert converter.validate_value(input_value) is None
+    output = converter.validate_value(input_value)
+    assert output == expected
+    assert isinstance(output, type(expected))
 
 
 def test_boolconverter_init_validation():
@@ -317,18 +309,6 @@ def test_boolconverter_properties():
     Verifies that accessor properties of BoolConverter class function as expected
     """
     converter = BoolConverter(parse_bool_equivalents=True)
-    assert converter.parse_bool_equivalents
-
-
-def test_boolconverter_toggle_methods():
-    """
-    Verifies the functioning of BoolConverter configuration flag toggling methods.
-    """
-    converter = BoolConverter()
-
-    assert not converter.toggle_bool_equivalents()
-    assert not converter.parse_bool_equivalents
-    assert converter.toggle_bool_equivalents()
     assert converter.parse_bool_equivalents
 
 

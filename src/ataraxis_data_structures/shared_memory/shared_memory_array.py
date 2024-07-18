@@ -339,6 +339,8 @@ class SharedMemoryArray:
             console.error(message=message, error=RuntimeError)
 
         # If index is a tuple, decomposes it into slice operands to use on the array
+        start: int = 0
+        stop: Optional[int] = None
         if isinstance(index, tuple):
             # noinspection PyTypeChecker
             start, stop = self._convert_to_slice(index=index)
@@ -413,6 +415,8 @@ class SharedMemoryArray:
             console.error(message=message, error=RuntimeError)
 
         # If index is a tuple, decomposes it into slice operands to use on the array
+        start: int = 0
+        stop: Optional[int] = None
         if isinstance(index, tuple):
             # noinspection PyTypeChecker
             start, stop = self._convert_to_slice(index=index)

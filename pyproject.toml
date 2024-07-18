@@ -46,7 +46,7 @@ classifiers = [
 # Runtime project dependencies. This overlaps with 'condarun' optional list.
 dependencies = [
     "numpy>=2",
-    "ataraxis-base-utilities>=1",
+    "ataraxis-base-utilities>=2,<3",
     "pydantic>=2",
     "pyyaml>=6,<7",
     "dacite>=1,<2",
@@ -120,7 +120,7 @@ noconda =[
     "build>=1",
 
     # Automation
-    "ataraxis-automation>=2",
+    "ataraxis-automation>=3,<4",
 ]
 
 # A shorhand specification that installs tox and all packages required for development tasks. This specification can
