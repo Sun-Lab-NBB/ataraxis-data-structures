@@ -3,10 +3,9 @@ import textwrap
 
 import numpy as np
 import pytest
-from pydantic import ValidationError
 
 from ataraxis_data_structures.data_converters import (
-    BoolConverter,
+    BooleanConverter,
     NoneConverter,
     StringConverter,
     NumericConverter,
@@ -70,7 +69,7 @@ def error_format(message: str) -> str:
         ({"allow_float_output": False}, 5.5, None),
     ],
 )
-def test_numericconverter_success(config, input_value, expected):
+def test_numeric_converter_validate_value(config, input_value, expected) -> None:
     """Verifies the functionality of the NumericConverter class validate_value() method.
 
     Evaluates the following scenarios:
@@ -98,13 +97,18 @@ def test_numericconverter_success(config, input_value, expected):
     assert isinstance(output, type(expected))
 
 
-def test_numericconverter_init_errors():
+def test_numeric_converter_repr() -> None:
+    """Verifies the functionality of NumericConverter class __repr__() method."""
+    converter = NumericConverter()
+    representation_string = (
+        f"NumericConverter(parse_number_strings={True}, allow_integer_output={True}, allow_float_output={True}, "
+        f"number_lower_limit={None}, number_upper_limit={None})"
+    )
+    assert repr(converter) == representation_string
+
+
+def test_numeric_converter_init_errors() -> None:
     """Verifies the error-handling behavior of the NumericConverter class initialization method."""
-    # Tests valid initialization
-    converter = NumericConverter(parse_number_strings=True, allow_int=True, number_lower_limit=0)
-    assert converter.parse_number_strings is True
-    assert converter.allow_integer_output is True
-    assert converter.number_lower_limit == 0
 
     # Tests invalid initialization argument types:
     invalid_input = "invalid"
@@ -188,7 +192,7 @@ def test_numericconverter_init_errors():
         NumericConverter(allow_integer_output=False, allow_float_output=False)
 
 
-def test_numericconverter_properties():
+def test_numeric_converter_properties() -> None:
     """Verifies the functionality NumericConverter class accessor properties."""
     converter = NumericConverter(
         parse_number_strings=True,
@@ -210,11 +214,12 @@ def test_numericconverter_properties():
     [
         {},
         {"parse_number_strings": False},
-        {"allow_int": False, "allow_float": True},
+        {"allow_integer_output": False, "allow_float_output": True},
+        {"allow_integer_output": True, "allow_float_output": False},
         {"number_lower_limit": -10, "number_upper_limit": 10},
     ],
 )
-def test_numericconverter_config(config):
+def test_numeric_converter_config(config) -> None:
     """Verifies that initializing NumericConverter class using **kwargs config works as expected."""
     converter = NumericConverter(**config)
     for key, value in config.items():
@@ -257,7 +262,7 @@ def test_numericconverter_config(config):
         ({"parse_boolean_equivalents": False}, 0.0, None),
     ],
 )
-def test_boolconverter_success(config, input_value, expected):
+def test_boolean_converter_validate_value(config, input_value, expected) -> None:
     """Verifies the functionality of the BooleanConverter class validate_value() method.
 
     Evaluates the following scenarios:
@@ -284,49 +289,54 @@ def test_boolconverter_success(config, input_value, expected):
         20 - Failure for a float input with boolean equivalents disabled.
         21 - Failure for a float input with boolean equivalents disabled.
     """
-    converter = BoolConverter(**config)
+    converter = BooleanConverter(**config)
     output = converter.validate_value(input_value)
     assert output == expected
     assert isinstance(output, type(expected))
 
 
-def test_boolconverter_init_validation():
-    """
-    Verifies that BoolConverter initialization method functions as expected and correctly catches invalid inputs,
-    """
-    # Tests valid initialization
-    converter = BoolConverter(parse_bool_equivalents=True)
-    assert converter.parse_bool_equivalents
+def test_boolean_converter_repr() -> None:
+    """Verifies the functionality of the BooleanConverter class __repr__() method."""
+    converter = BooleanConverter()
+    representation_string = f"BooleanConverter(parse_boolean_equivalents={True})"
+    assert repr(converter) == representation_string
 
-    # Tests invalid initialization (relies on pydantic to validate the inputs)
-    with pytest.raises(ValidationError):
+
+def test_boolean_converter_init_errors() -> None:
+    """Verifies the error-handling behavior of the BooleanConverter class initialization method."""
+
+    # Verifies that an invalid parse_boolean_equivalents type is handled correctly
+    invalid_input = "invalid"
+    message = (
+        f"Unable to initialize BooleanConverter class instance. Expected a boolean parse_boolean_equivalents "
+        f"argument value, but encountered {invalid_input} of "
+        f"type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
-        BoolConverter(parse_bool_equivalents="not a bool")
+        BooleanConverter(parse_boolean_equivalents=invalid_input)
 
 
-def test_boolconverter_properties():
-    """
-    Verifies that accessor properties of BoolConverter class function as expected
-    """
-    converter = BoolConverter(parse_bool_equivalents=True)
-    assert converter.parse_bool_equivalents
+def test_boolean_converter_properties() -> None:
+    """Verifies the functionality BooleanConverter class accessor properties."""
+    converter = BooleanConverter(parse_boolean_equivalents=False)
+
+    assert not converter.parse_boolean_equivalents
 
 
 @pytest.mark.parametrize(
     "config",
     [
         {},
-        {"parse_bool_equivalents": True},
+        {"parse_boolean_equivalents": False},
     ],
 )
-def test_boolconverter_config(config):
-    """
-    Verifies that initializing BoolConverter class using **kwargs config works as expected.
-    """
-    converter = BoolConverter(**config)
+def test_boolean_converter_config(config) -> None:
+    """Verifies that initializing BooleanConverter class using **kwargs config works as expected."""
+    converter = BooleanConverter(**config)
     for key, value in config.items():
-        if key == "parse_bool_equivalents":
-            assert converter.parse_bool_equivalents == value
+        if key == "parse_boolean_equivalents":
+            assert converter.parse_boolean_equivalents == value
 
 
 @pytest.mark.parametrize(
@@ -337,13 +347,21 @@ def test_boolconverter_config(config):
         ({}, "none", None),
         ({}, "null", None),
         ({}, "Null", None),
+        ({}, "nil", "None"),
+        ({}, 5, "None"),
+        ({}, 5.5, "None"),
+        ({}, True, "None"),
+        ({}, False, "None"),
+        ({"parse_none_equivalents": False}, "None", "None"),
+        ({"parse_none_equivalents": False}, "none", "None"),
+        ({"parse_none_equivalents": False}, "null", "None"),
+        ({"parse_none_equivalents": False}, "NULL", "None"),
     ],
 )
-def test_noneconverter_success(config, input_value, expected):
-    """
-    Verifies correct validation behavior for different configurations of NoneConverter class.
+def test_none_converter_validate_value(config, input_value, expected) -> None:
+    """Verifies the functionality of the NoneConverter class validate_value() method.
 
-    Evaluates:
+    Evaluates the following scenarios:
         0 - Conversion of a None input to a None output.
         1 - Conversion of a string input to a None output.
         2 - Conversion of a string input to a None output.
@@ -351,84 +369,47 @@ def test_noneconverter_success(config, input_value, expected):
         4 - Conversion of a string input to a None output.
         5 - Conversion of a string input to a None output.
         6 - Conversion of a string input to a None output.
-
-    Args:
-        config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
-        input_value: The value passed to the validation function of the configured class instance.
-        expected: The expected output of the validation function.
+        7 - Failure for a string input.
+        8 - Failure for an integer input.
+        9 - Failure for a float input.
+        10 - Failure for a boolean input.
+        11 - Failure for a boolean input.
+        12 - Failure for a string with when None equivalents disabled.
+        13 - Failure for a string with when None equivalents disabled.
+        14 - Failure for a string with when None equivalents disabled.
+        15 - Failure for a string with when None equivalents disabled.
     """
     converter = NoneConverter(**config)
-    assert converter.validate_value(input_value) == expected
+    output = converter.validate_value(input_value)
+    assert output == expected
+    assert isinstance(output, type(expected))
 
 
-@pytest.mark.parametrize(
-    "config,input_value",
-    [
-        ({}, "nil"),
-        ({}, 5),
-        ({}, 5.5),
-        ({}, True),
-        ({}, False),
-        ({"parse_none_equivalents": False}, "None"),
-        ({"parse_none_equivalents": False}, "none"),
-        ({"parse_none_equivalents": False}, "null"),
-        ({"parse_none_equivalents": False}, "NULL"),
-    ],
-)
-def test_noneconverter_failure(config, input_value):
-    """
-    Verifies correct validation failure behavior for different configurations of NoneConverter class.
-
-    Evaluates:
-        0 - Failure for a string input.
-        1 - Failure for an integer input.
-        2 - Failure for a float input.
-        3 - Failure for a boolean input.
-        4 - Failure for a boolean input.
-        5 - Failure for a string input when None equivalents are disabled.
-        6 - Failure for a string input when None equivalents are disabled.
-        7 - Failure for a string input when None equivalents are disabled.
-        8 - Failure for a string input when None equivalents are disabled.
-
-    Args:
-        config: The class configuration to be used for the test. Passed to the class via the **kwargs argument.
-        input_value: The value passed to the validation function of the configured class instance.
-    """
-    converter = NoneConverter(**config)
-    assert converter.validate_value(input_value) is "None"
-
-
-def test_noneconverter_init_validation():
-    """
-    Verifies that NoneConverter initialization method functions as expected and correctly catches invalid inputs.
-    """
-    # Tests valid initialization
-    converter = NoneConverter(parse_none_equivalents=True)
-    assert converter.parse_none_equivalents
-
-    # Tests invalid initialization (relies on pydantic to validate the inputs)
-    with pytest.raises(ValidationError):
-        # noinspection PyTypeChecker
-        NoneConverter(parse_none_equivalents="not a bool")
-
-
-def test_noneconverter_properties():
-    """
-    Verifies that accessor properties of NoneConverter class function as expected
-    """
-    converter = NoneConverter(parse_none_equivalents=True)
-    assert converter.parse_none_equivalents
-
-
-def test_noneconverter_toggle_methods():
-    """
-    Verifies the functioning of NoneConverter configuration flag toggling methods.
-    """
+def test_none_converter_repr() -> None:
+    """Verifies the functionality of the NoneConverter class __repr__() method."""
     converter = NoneConverter()
+    representation_string = f"NoneConverter(parse_none_equivalents={True})"
+    assert repr(converter) == representation_string
 
-    assert not converter.toggle_none_equivalents()
-    assert not converter.parse_none_equivalents
-    assert converter.toggle_none_equivalents()
+
+def test_none_converter_init_errors() -> None:
+    """Verifies the error-handling behavior of the NoneConverter class initialization method."""
+
+    # Verifies that an invalid parse_none_equivalents type is handled correctly
+    invalid_input = "invalid"
+    message = (
+        f"Unable to initialize NoneConverter class instance. Expected a boolean parse_none_equivalents "
+        f"argument value, but encountered {invalid_input} of "
+        f"type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        NoneConverter(parse_none_equivalents=invalid_input)
+
+
+def test_none_converter_properties() -> None:
+    """Verifies the functionality NoneConverter class accessor properties."""
+    converter = NoneConverter(parse_none_equivalents=True)
     assert converter.parse_none_equivalents
 
 
@@ -436,13 +417,11 @@ def test_noneconverter_toggle_methods():
     "config",
     [
         {},
-        {"parse_none_equivalents": True},
+        {"parse_none_equivalents": False},
     ],
 )
-def test_noneconverter_config(config):
-    """
-    Verifies that initializing NoneConverter class using **kwargs config works as expected.
-    """
+def test_none_converter_config(config) -> None:
+    """Verifies that initializing NoneConverter class using **kwargs config works as expected."""
     converter = NoneConverter(**config)
     for key, value in config.items():
         if key == "parse_none_equivalents":
@@ -452,7 +431,6 @@ def test_noneconverter_config(config):
 @pytest.mark.parametrize(
     "config,input_value,expected",
     [
-        # Converter Capabilities
         ({"allow_string_conversion": True}, "Spongebob", "Spongebob"),
         ({"allow_string_conversion": True}, 5, "5"),
         ({"allow_string_conversion": True}, 5.5, "5.5"),
@@ -463,143 +441,120 @@ def test_noneconverter_config(config):
         ({"allow_string_conversion": True, "string_options": ["1", "2"]}, 2, "2"),
         ({"allow_string_conversion": True, "string_force_lower": True}, "Spongebob", "spongebob"),
         (
-            {"allow_string_conversion": True, "string_force_lower": True, "string_options": ["SPONGEBOB"]},
-            "SPONGEBOB",
-            "spongebob",
+            {"allow_string_conversion": True, "string_force_lower": False, "string_options": ["SPONGEBOB"]},
+            "SpOnGeBoB",
+            "SpOnGeBoB",
         ),
-        # Validator Capabilities
-        ({}, "Spongebob", "Spongebob"),
-        ({"string_options": ["Spongebob", "Patrick"]}, "Spongebob", "Spongebob"),
-        ({"string_options": ["Spongebob", "Patrick"]}, "Patrick", "Patrick"),
+        ({"string_options": ["spongebob", "patrick"]}, "Spongebob", "Spongebob"),
+        ({"string_options": ["Spongebob", "PatRick"], "string_force_lower": True}, "Patrick", "patrick"),
+        ({"allow_string_conversion": True, "string_options": ["1", "2"]}, 3, None),
+        ({"string_options": ["Spongebob", "Patrick"]}, "Squidward", None),
+        ({}, 1, None),
+        ({}, 1.0, None),
+        ({}, True, None),
+        ({}, False, None),
+        ({}, None, None),
     ],
 )
-def test_stringconverter_success(config, input_value, expected):
-    """
-    Verifies correct validation behavior for different configurations of StringConverter class.
+def test_string_converter_validate_method(config, input_value, expected) -> None:
+    """Verifies the functionality of the StringConverter class validate_value() method.
 
-    Evaluates:
+    Evaluates the following test cases:
         0 - Conversion of a string input to a string output.
-        1 - Conversion of a string input to a string output.
-        2 - Conversion of an integer input to a string output.
-        3 - Conversion of a float input to a string output.
-        4 - Conversion of a boolean input to a string output.
-        5 - Conversion of a boolean input to a string output.
-        6 - Conversion of a None input to a string output.
-        7 - Conversion of an integer input to a string output, using a list of string options.
-        8 - Conversion of an integer input to a string output, using a list of string options.
-        9 - Conversion of a string input to a string output, with forced lower case conversion.
-        10 - Validation of a string input into a string output
-        11 - Validation of a string input into a string output with a list of valid options
-        12 - Validation of a string input into a string output with a list of valid options
+        1 - Conversion of a string-convertible integer input to a string output.
+        3 - Conversion of a string-convertible float input to a string output.
+        4 - Conversion of a string-convertible boolean True input to a string output.
+        5 - Conversion of a string-convertible boolean False input to a string output.
+        6 - Conversion of a string-convertible None input to a string output.
+        7 - Conversion of an integer input to a string output with a list of string options.
+        8 - Conversion of an integer input to a string output with a list of string options.
+        9 - Conversion of a string input to a string output with forced lower case conversion.
+        10 - Validation of a string input.
+        11 - Validation of a string input with a list of valid options, making use of automatic lower-case-conversion.
+        12 - Failure for an integer input, when the input is not in the list of valid string options.
+        13 - Failure for a string input, when the input is not in the list of valid string options.
+        14 - Failure for an integer input.
+        15 - Failure for a float input.
+        16 - Failure for a boolean input.
+        17 - Failure for a boolean input.
+        18 - Failure for a None input.
     """
     converter = StringConverter(**config)
-    assert converter.validate_value(input_value) == expected
+    output = converter.validate_value(input_value)
+    assert output == expected
+    assert isinstance(output, type(expected))
 
 
-@pytest.mark.parametrize(
-    "config,input_value",
-    [
-        ({"allow_string_conversion": True, "string_options": ["1", "2"]}, 3),
-        ({"string_options": ["Spongebob", "Patrick"]}, "Squidward"),
-        ({}, 1),
-        ({}, 1.0),
-        ({}, True),
-        ({}, False),
-        ({}, None),
-    ],
-)
-def test_stringconverter_failure(config, input_value):
-    """
-    Verifies correct validation failure behavior for different configurations of StringConverter class.
-
-    Evaluates:
-        0 - Failure for an integer input, when the input is not in the list of valid string options.
-        1 - Failure for a string input, when the input is not in the list of valid string options.
-        2 - Failure for an integer input.
-        3 - Failure for a float input.
-        4 - Failure for a boolean input.
-        5 - Failure for a boolean input.
-        6 - Failure for a None input.
-    """
-    converter = StringConverter(**config)
-    assert converter.validate_value(input_value) is None
+def test_string_converter_repr() -> None:
+    """Verifies the functionality of the StringConverter class __repr__() method."""
+    converter = StringConverter()
+    representation_string = (
+        f"StringConverter(allow_string_conversion={False}, " f"string_force_lower={False}, string_options={None},)"
+    )
+    assert repr(converter) == representation_string
 
 
-def test_stringconverter_init_validation():
-    """
-    Verifies that StringConverter initialization method functions as expected and correctly catches invalid inputs.
-    """
-    # Tests valid initialization
+def test_string_converter_init_errors() -> None:
+    """Verifies the error-handling behavior of the StringConverter class initialization method."""
+
+    # Tests invalid initialization argument types:
+    invalid_input = "invalid"
+
+    # Lower-case conversion
+    message = (
+        f"Unable to initialize StringConverter class instance. Expected a boolean string_force_lower "
+        f"argument value, but encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        StringConverter(string_force_lower=invalid_input)
+
+    # String conversion
+    message = (
+        f"Unable to initialize StringConverter class instance. Expected a boolean allow_string_conversion "
+        f"argument value, but encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        StringConverter(allow_string_conversion=invalid_input)
+
+    # String-Options
+    message = (
+        f"Unable to initialize StringConverter class instance. Expected a None, tuple, or list string_options "
+        f"argument value, but encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        StringConverter(string_options=invalid_input)
+
+    # Invalid string-option element types
+    invalid_options = ["1", 2, "3"]
+    message = (
+        f"Unable to initialize StringConverter class instance. Expected all elements of string-options "
+        f"argument to be strings, but encountered {2} of type {type(2).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        StringConverter(string_options=invalid_options)
+
+    # Empty string-option iterable
+    invalid_options = tuple()
+    message = (
+        f"Unable to initialize StringConverter class instance. Expected at least one option inside the "
+        f"string-options list or tuple argument, but encountered an empty iterable. To disable limiting "
+        f"strings to certain options, set string_options to None."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        StringConverter(string_options=invalid_options)
+
+
+def test_string_converter_properties() -> None:
+    """Verifies the functionality StringConverter class accessor properties."""
     converter = StringConverter(allow_string_conversion=True, string_options=["A", "B"], string_force_lower=True)
     assert converter.allow_string_conversion
-    assert converter.string_options == ["A", "B"]
+    assert converter.string_options == ["a", "b"]  # Ensures automatic lower-case conversion
     assert converter.string_force_lower
-
-    # Tests invalid initialization (relies on pydantic to validate the inputs)
-    with pytest.raises(ValidationError):
-        # noinspection PyTypeChecker
-        StringConverter(allow_string_conversion="not a bool")
-
-    with pytest.raises(ValidationError):
-        # noinspection PyTypeChecker
-        StringConverter(string_options="not a list")
-
-    with pytest.raises(ValidationError):
-        # noinspection PyTypeChecker
-        StringConverter(string_force_lower="not a bool")
-
-
-def test_stringconverter_properties():
-    """
-    Verifies that accessor properties of StringConverter class function as expected
-    """
-    converter = StringConverter(allow_string_conversion=True, string_options=["A", "B"], string_force_lower=True)
-    assert converter.allow_string_conversion
-    assert converter.string_options == ["A", "B"]
-    assert converter.string_force_lower
-
-
-def test_stringconverter_toggle_methods():
-    """
-    Verifies the functioning of StringConverter configuration flag toggling methods.
-    """
-    converter = StringConverter()
-
-    assert converter.toggle_string_conversion()
-    assert converter.allow_string_conversion
-    assert not converter.toggle_string_conversion()
-    assert not converter.allow_string_conversion
-
-    assert converter.toggle_string_force_lower()
-    assert converter.string_force_lower
-    assert not converter.toggle_string_force_lower()
-    assert not converter.string_force_lower
-
-
-def test_stringconverter_setter_methods() -> None:
-    """
-    Verifies the functioning of StringConverter class string options setter method.
-    """
-    converter = StringConverter()
-
-    converter.set_string_options(["A", "B"])
-    assert converter.string_options == ["A", "B"]
-
-    converter.set_string_options(["C", "D"])
-    assert converter.string_options == ["C", "D"]
-
-    converter.set_string_options(None)
-    assert converter.string_options is None
-
-
-def test_stringconverter_setter_method_errors() -> None:
-    """
-    Verifies the error handling of StringConverter class string options setter method.
-    """
-    converter = StringConverter()
-    with pytest.raises(ValidationError):
-        # noinspection PyTypeChecker
-        converter.set_string_options("Invalid input")
 
 
 @pytest.mark.parametrize(
@@ -611,104 +566,348 @@ def test_stringconverter_setter_method_errors() -> None:
         {"string_force_lower": True},
     ],
 )
-def test_stringconverter_config(config):
-    """
-    Verifies that initializing StringConverter class using **kwargs config works as expected.
-    """
+def test_string_converter_config(config) -> None:
+    """Verifies that initializing StringConverter class using **kwargs config works as expected."""
     converter = StringConverter(**config)
     for key, value in config.items():
         if key == "allow_string_conversion":
             assert converter.allow_string_conversion == value
         elif key == "string_options":
-            assert converter.string_options == value
+            # noinspection PyTypeChecker
+            assert converter.string_options == [element.lower() for element in value]  # Ensures elements are lower case
         elif key == "string_force_lower":
             assert converter.string_force_lower == value
 
 
-def test_pythonconverter_init_validation():
-    """
-    Verifies that PythonDataConverter initialization method functions as expected and correctly catches invalid inputs.
-    """
-    # Tests valid initialization
-    converter = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
-    assert type(converter.validator) is NumericConverter
-    assert converter.iterable_output_type is "list"
-    assert converter.filter_failed
+@pytest.mark.parametrize(
+    "config,input_value,expected",
+    [
+        # Test with only NumericConverter
+        ({"numeric_converter": NumericConverter(allow_float_output=False)}, 5, 5),
+        ({"numeric_converter": NumericConverter()}, 5.5, 5.5),
+        ({"numeric_converter": NumericConverter()}, "10", 10.0),
+        ({"numeric_converter": NumericConverter()}, "not a number", "Validation/ConversionError"),
+        # Test with only BooleanConverter
+        ({"boolean_converter": BooleanConverter()}, True, True),
+        ({"boolean_converter": BooleanConverter()}, "true", True),
+        ({"boolean_converter": BooleanConverter()}, "not a boolean", "Validation/ConversionError"),
+        # Test with only NoneConverter
+        ({"none_converter": NoneConverter()}, None, None),
+        ({"none_converter": NoneConverter()}, "null", None),
+        ({"none_converter": NoneConverter()}, "not none", "Validation/ConversionError"),
+        # Test with only StringConverter
+        ({"string_converter": StringConverter()}, "hello", "hello"),
+        ({"string_converter": StringConverter(allow_string_conversion=True)}, 123, "123"),
+        # Test with multiple converters
+        (
+            {
+                "numeric_converter": NumericConverter(),
+                "boolean_converter": BooleanConverter(),
+                "none_converter": NoneConverter(),
+                "string_converter": StringConverter(),
+            },
+            5,
+            5,
+        ),
+        (
+            {
+                "numeric_converter": NumericConverter(),
+                "boolean_converter": BooleanConverter(),
+                "none_converter": NoneConverter(),
+                "string_converter": StringConverter(),
+            },
+            "true",
+            True,
+        ),
+        (
+            {
+                "numeric_converter": NumericConverter(),
+                "boolean_converter": BooleanConverter(),
+                "none_converter": NoneConverter(),
+                "string_converter": StringConverter(),
+            },
+            "null",
+            None,
+        ),
+        (
+            {
+                "numeric_converter": NumericConverter(),
+                "boolean_converter": BooleanConverter(),
+                "none_converter": NoneConverter(),
+                "string_converter": StringConverter(),
+            },
+            "hello",
+            "hello",
+        ),
+        # Test with iterable input
+        ({"numeric_converter": NumericConverter()}, [1, 2, 3], (1, 2, 3)),
+        ({"numeric_converter": NumericConverter(), "iterable_output_type": "list"}, [1, 2, 3], [1, 2, 3]),
+        ({"numeric_converter": NumericConverter(), "iterable_output_type": "tuple"}, [1, 2, 3], (1, 2, 3)),
+        # Test with filter_failed_elements
+        ({"numeric_converter": NumericConverter(), "filter_failed_elements": True}, [1, "two", 3], (1, 3)),
+        ({"numeric_converter": NumericConverter(), "filter_failed_elements": True}, ["one", "two", "3"], 3.0),
+        (
+            {"numeric_converter": NumericConverter(), "filter_failed_elements": True},
+            ["one", "two", "three"],
+            "Validation/ConversionError",
+        ),
+        # Test with mixed types in iterable
+        (
+            {
+                "numeric_converter": NumericConverter(),
+                "boolean_converter": BooleanConverter(),
+                "none_converter": NoneConverter(),
+                "string_converter": StringConverter(),
+            },
+            [1, "true", None, "hello"],
+            (1, True, None, "hello"),
+        ),
+    ],
+)
+def test_python_data_converter_validate_value(config, input_value, expected) -> None:
+    """Verifies the functionality of the PythonDataConverter class validate_value() method.
 
-    with pytest.raises(TypeError):
+    Evaluates the following test cases:
+        0 - Validation of an integer input with NumericConverter.
+        1 - Validation of a float input with NumericConverter.
+        2 - Conversion of a string-convertible integer input with NumericConverter.
+        3 - Failure for a non-numeric string input with NumericConverter.
+        4 - Validation of a boolean True input with BooleanConverter.
+        5 - Conversion of a string-convertible boolean input with BooleanConverter.
+        6 - Failure for a non-boolean string input with BooleanConverter.
+        7 - Validation of a None input with NoneConverter.
+        8 - Conversion of a "null" string input to None with NoneConverter.
+        9 - Failure for a non-None string input with NoneConverter.
+        10 - Validation of a string input with StringConverter.
+        11 - Conversion of an integer input to a string with StringConverter.
+        12 - Validation of an integer input with multiple converters (NumericConverter prioritized).
+        13 - Validation of a boolean input with multiple converters (BooleanConverter prioritized).
+        14 - Validation of a None input with multiple converters (NoneConverter prioritized).
+        15 - Validation of a string input with multiple converters (StringConverter used).
+        16 - Conversion of an iterable input to a tuple with NumericConverter.
+        17 - Conversion of an iterable input to a list with NumericConverter and specified output type.
+        18 - Filtering of failed elements in an iterable input with NumericConverter.
+        19 - Validation of mixed types in an iterable input with multiple converters.
+    """
+    converter = PythonDataConverter(**config)
+    result = converter.validate_value(input_value)
+    assert result == expected
+    assert isinstance(result, type(expected))
+
+
+def test_python_data_converter_repr() -> None:
+    """Verifies the functionality of PythonDataConverter class __repr__() method."""
+    converter = PythonDataConverter(
+        numeric_converter=NumericConverter(),
+        boolean_converter=BooleanConverter(),
+        none_converter=NoneConverter(),
+        string_converter=StringConverter(),
+        iterable_output_type="list",
+        filter_failed_elements=True,
+        raise_errors=False,
+    )
+    representation_string = (
+        f"PythonDataConverter(allowed_output_types=('NoneType', 'bool', 'float', 'int', 'str'), "
+        f"iterable_output_type=list, filter_failed_elements=True, raise_errors=False)"
+    )
+    assert repr(converter) == representation_string
+
+
+def test_python_data_converter_init_errors() -> None:
+    """Verifies the error-handling behavior of the PythonDataConverter class initialization method."""
+
+    # Tests invalid initialization argument types:
+    invalid_input = "invalid"
+
+    # Numeric converter
+    message = (
+        f"Unable to initialize PythonDataConverter class instance. Expected a numeric_validator argument "
+        f"of type {type(NumericConverter).__name__} or {type(None).__name__}, but "
+        f"encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
-        PythonDataConverter(validator="not a validator")
+        PythonDataConverter(numeric_converter=invalid_input)
 
-    with pytest.raises(ValueError):
+    # Boolean converter
+    message = (
+        f"Unable to initialize PythonDataConverter class instance. Expected a boolean_validator argument "
+        f"of type {type(BooleanConverter).__name__} or {type(None).__name__}, but "
+        f"encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
-        PythonDataConverter(validator=NumericConverter(), iterable_output_type="not a string")
+        PythonDataConverter(boolean_converter=invalid_input)
 
-    with pytest.raises(TypeError):
+    # None converter
+    message = (
+        f"Unable to initialize PythonDataConverter class instance. Expected a none_validator argument "
+        f"of type {type(NoneConverter).__name__} or {type(None).__name__}, but "
+        f"encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
-        PythonDataConverter(validator=NumericConverter(), filter_failed="not a bool")
+        PythonDataConverter(none_converter=invalid_input)
+
+    # String converter
+    message = (
+        f"Unable to initialize PythonDataConverter class instance. Expected a string_validator argument "
+        f"of type {type(StringConverter).__name__} or {type(None).__name__}, but "
+        f"encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        PythonDataConverter(string_converter=invalid_input)
+
+    # Filter failed elements
+    message = (
+        f"Unable to initialize PythonDataConverter class instance. Expected a boolean filter_failed_elements "
+        f"argument value, but encountered {invalid_input} of "
+        f"type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        PythonDataConverter(filter_failed_elements=invalid_input)
+
+    # Raise errors
+    message = (
+        f"Unable to initialize PythonDataConverter class instance. Expected a boolean raise_errors "
+        f"argument value, but encountered {invalid_input} of "
+        f"type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        PythonDataConverter(raise_errors=invalid_input)
+
+    # Invalid iterable output type
+    invalid_iterable_type = "set"
+    message = (
+        f"Unsupported output iterable type {invalid_iterable_type} requested when initializing "
+        f"PythonDataConverter class instance. Select one of the supported options: "
+        f"{PythonDataConverter._supported_iterables.keys()}."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        PythonDataConverter(iterable_output_type=invalid_iterable_type)
+
+    # All converters set to None
+    message = (
+        f"Unable to initialize PythonDataConverter class instance. Expected at least one of the class "
+        f"converter arguments to be set to a supported converter class, but all are set to None. This class "
+        f"requires at least one configured base converter (NumericConverter, BooleanConverter, NoneConverter, "
+        f"StringConverter) to operate as intended."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        PythonDataConverter()
 
 
-def test_pythonconverter_success():
-    """
-    Verifies correct validation behavior for different configurations of PythonDataConverter class.
-    """
-    converter = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
-    assert converter.validate_value([5, 5.5, True, False, None, "7.1"]) == [5, 5.5, 1, 0, 7.1]
+def test_python_data_converter_properties() -> None:
+    """Verifies the functionality of PythonDataConverter class accessor properties."""
+    numeric_converter = NumericConverter()
+    boolean_converter = BooleanConverter()
+    none_converter = NoneConverter()
+    string_converter = StringConverter()
 
-    converter = PythonDataConverter(validator=BoolConverter(), iterable_output_type="tuple", filter_failed=True)
-    assert converter.validate_value([5, 5.5, True, False, None, "7.1"]) == (True, False)
+    converter = PythonDataConverter(
+        numeric_converter=numeric_converter,
+        boolean_converter=boolean_converter,
+        none_converter=none_converter,
+        string_converter=string_converter,
+        iterable_output_type="list",
+        filter_failed_elements=True,
+        raise_errors=False,
+    )
 
-    converter = PythonDataConverter(validator=StringConverter(), iterable_output_type="tuple", filter_failed=False)
-    assert converter.validate_value([5, 5.5, True, False, None, "7.1"]) == (None, None, None, None, None, "7.1")
-
-    converter = PythonDataConverter(validator=NoneConverter(), iterable_output_type="list", filter_failed=False)
-    assert converter.validate_value([5, 5.5, "None", "Null", None, "7.1"]) == ["None", "None", None, None, None, "None"]
-
-
-def test_pythonconverter_properties():
-    """
-    Verifies that accessor properties of PythonDataConverter class function as expected
-    """
-    converter = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
-
-    assert type(converter.validator) is NumericConverter
+    assert converter.numeric_converter == numeric_converter
+    assert converter.boolean_converter == boolean_converter
+    assert converter.none_converter == none_converter
+    assert converter.string_converter == string_converter
     assert converter.iterable_output_type == "list"
-    assert converter.filter_failed
+    assert converter.filter_failed is True
+    assert converter.raise_errors is False
+    assert converter.allowed_output_types == ("NoneType", "bool", "float", "int", "str")
 
 
-def test_pythonconverter_toggle_methods():
+def test_python_data_converter_supported_iterables() -> None:
+    """Verifies the functionality of PythonDataConverter class supported_iterables() method."""
+    assert PythonDataConverter.supported_iterables() == ("tuple", "list")
+
+
+@pytest.mark.parametrize(
+    "config,expected_types",
+    [
+        ({"numeric_converter": NumericConverter()}, ("float", "int")),
+        ({"boolean_converter": BooleanConverter()}, ("bool",)),
+        ({"none_converter": NoneConverter()}, ("NoneType",)),
+        ({"string_converter": StringConverter()}, ("str",)),
+        (
+            {
+                "numeric_converter": NumericConverter(),
+                "boolean_converter": BooleanConverter(),
+                "none_converter": NoneConverter(),
+                "string_converter": StringConverter(),
+            },
+            ("NoneType", "bool", "float", "int", "str"),
+        ),
+    ],
+)
+def test_python_data_converter_allowed_output_types(config, expected_types) -> None:
+    """Verifies the functionality of PythonDataConverter class allowed_output_types property.
+
+    Tests with different converter configurations.
     """
-    Verifies the functioning of PythonDataConverter configuration flag toggling methods.
+    converter = PythonDataConverter(**config)
+    assert converter.allowed_output_types == expected_types
+
+
+@pytest.mark.parametrize(
+    "config,input_value,expected_error,expected_message",
+    [
+        # Test case for multi-dimensional iterable input
+        (
+            {"numeric_converter": NumericConverter()},
+            [1, [2, 3], 4],
+            ValueError,
+            "Unable to validate the input collection of values ([1, [2, 3], 4]). Currently, this method only "
+            "supports one-dimensional iterable inputs. Instead, a sub-iterable was discovered when "
+            "evaluating element 1 ([2, 3]).",
+        ),
+        # Test case for raising error on invalid input when raise_errors is True
+        (
+            {"numeric_converter": NumericConverter(), "raise_errors": True},
+            "not a number",
+            ValueError,
+            "Unable to validate the input value (not a number). The class is configured to conditionally "
+            "return the following types: ('float', 'int'). This means that the input value is "
+            "conditionally not convertible into any allowed type. Note, this may be due to failing secondary "
+            "checks, such as numeric limits or string-option filters. The value was provided as part of this "
+            "collection of values: ['not a number'].",
+        ),
+        # Test case for raising error on invalid input within an iterable when raise_errors is True
+        (
+            {"numeric_converter": NumericConverter(), "raise_errors": True},
+            [1, "not a number", 3],
+            ValueError,
+            "Unable to validate the input value (not a number). The class is configured to conditionally "
+            "return the following types: ('float', 'int'). This means that the input value is "
+            "conditionally not convertible into any allowed type. Note, this may be due to failing secondary "
+            "checks, such as numeric limits or string-option filters. The value was provided as part of this "
+            "collection of values: [1, 'not a number', 3].",
+        ),
+    ],
+)
+def test_python_data_converter_validate_value_errors(config, input_value, expected_error, expected_message) -> None:
+    """Verifies the error-raising behavior of the PythonDataConverter class validate_value() method.
+
+    Evaluates the following test cases:
+        0 - Raising ValueError for multidimensional iterable input.
+        1 - Raising ValueError for invalid input when raise_errors is True.
+        2 - Raising ValueError for invalid input within iterable when raise_errors is True.
     """
-    converter = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
+    converter = PythonDataConverter(**config)
 
-    assert not converter.toggle_filter_failed()
-    assert not converter.filter_failed
-    assert converter.toggle_filter_failed()
-    assert converter.filter_failed
-
-
-def test_pythonconverter_setter_methods():
-    """
-    Verifies the functioning of PythonDataConverter class validator setter method.
-    """
-    converter = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
-
-    converter.set_validator(BoolConverter())
-    assert type(converter.validator) == BoolConverter
-
-    converter.set_validator(NoneConverter())
-    assert type(converter.validator) == NoneConverter
-
-    converter.set_validator(StringConverter())
-    assert type(converter.validator) == StringConverter
-
-    converter.set_validator(NumericConverter())
-    assert type(converter.validator) == NumericConverter
-
-    with pytest.raises(TypeError):
-        # noinspection PyTypeChecker
-        converter.set_validator("not a validator")
+    with pytest.raises(expected_error, match=error_format(expected_message)):
+        converter.validate_value(input_value)
 
 
 def test_numpyconverter_init_validation():

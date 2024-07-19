@@ -1,7 +1,7 @@
 from .data_converters import (
     NumericConverter,
     NoneConverter,
-    BoolConverter,
+    BooleanConverter,
     StringConverter,
     PythonDataConverter,
     NumpyDataConverter,
@@ -10,7 +10,7 @@ from .data_converters import (
 __all__ = [
     "NumericConverter",
     "NoneConverter",
-    "BoolConverter",
+    "BooleanConverter",
     "StringConverter",
     "PythonDataConverter",
     "NumpyDataConverter",
