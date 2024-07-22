@@ -23,24 +23,9 @@ Yaml Config
    :undoc-members:
    :show-inheritance:
 
-Numpy Data Converter
-====================
-.. automodule:: ataraxis_data_structures.data_converters.numpy_converter
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Python Data Converters
-======================
-.. automodule:: ataraxis_data_structures.data_converters.python_models
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-
-Standalone Methods
-==================
-.. automodule:: ataraxis_data_structures.standalone_methods.data_manipulation_methods
+Data Converters
+===============
+.. automodule:: ataraxis_data_structures.data_converters.data_converters
    :members:
    :undoc-members:
    :show-inheritance:

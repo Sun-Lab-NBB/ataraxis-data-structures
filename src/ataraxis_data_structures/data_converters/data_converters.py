@@ -3,9 +3,7 @@ from typing import Any, Union, Literal, Iterable, Optional
 
 import numpy as np
 from numpy.typing import NDArray
-from ataraxis_base_utilities import console
-
-from ..standalone_methods.data_manipulation_methods import ensure_list
+from ataraxis_base_utilities import console, ensure_list
 
 
 class NumericConverter:
@@ -197,10 +195,6 @@ class NumericConverter:
 
         # Validates the type of the value, making the necessary and allowed conversions, if possible, to pass this step.
         if isinstance(value, int) and not self._allow_int:
-            # If the value is an integer, integers are not allowed and floats are not allowed, returns None.
-            if not self._allow_float:
-                return None
-
             # If the value is an integer, integers are not allowed, but floats are allowed, converts the value to float.
             # Relies on the fact that any integer is float-convertible.
             value = float(value)
@@ -419,7 +413,7 @@ class StringConverter:
     Raises:
         TypeError: If any input argument is not of the correct type. This includes the elements of iterable
             string-options argument.
-        ValueError: If the string_options argument is an empty iterable.
+        ValueError: If the string_options argument is empty iterable.
     """
 
     def __init__(
@@ -534,10 +528,7 @@ class StringConverter:
         if not isinstance(value, str) and not self.allow_string_conversion:
             return None
         else:
-            try:
-                value = str(value)
-            except Exception:
-                return None
+            value = str(value)
 
         # If needed, converts the checked value to the lower case. This is done if the class is configured to evaluate
         # the string against a list or tuple of options. The value can still be returned as non-lower-converted string,
@@ -690,7 +681,7 @@ class PythonDataConverter:
 
         # Depending on the converter configuration, builds a set of allowed outputs. This is used in class error
         # messages
-        self._allowed_outputs: set = set()
+        self._allowed_outputs: set[str] = set()
         if numeric_converter is not None:
             if numeric_converter.allow_float_output:
                 self._allowed_outputs.add(type(float()).__name__)
@@ -818,6 +809,7 @@ class PythonDataConverter:
         """
 
         # Applies numeric converter. If it works, returns the result without evaluating further options
+        result: float | int | str | None
         if self._numeric_converter is not None:
             result = self._numeric_converter.validate_value(value)
             if result is not None:
@@ -832,7 +824,7 @@ class PythonDataConverter:
         # Applies none converter. If it works, returns the result without evaluating further options
         if self._none_converter is not None:
             result = self._none_converter.validate_value(value)
-            # None converters use string "None" to indicate conversionf failures
+            # None converters use string "None" to indicate conversion failures
             if result != "None":
                 return True, result
 
@@ -895,7 +887,7 @@ class PythonDataConverter:
 
         # Loops over the tuple-elements of the output_iterables and the original input value(s) and handles them
         # according to the class filtering / error configuration
-        final_result = []  # This is the list that will be returned to caller
+        final_result: list[int | float | str | bool | None] = []  # This is the list that will be returned to caller
         for (success, output_value), input_value in zip(output_iterable, list_value):
             # If the evaluated element has failed validation and errors are to be raised, raises a ValueError
             if not success and self.raise_errors:
@@ -943,43 +935,89 @@ class PythonDataConverter:
 
 class NumpyDataConverter:
     """After initial configuration, allows conditionally converting input python values to a specified numpy output
-    type.
+    format.
 
     This class is built on top of our general PythonDataConverter hierarchy. Specifically, it uses a PythonDataConverter
     class instance to filter and convert inputs to specific Python types know to be convertible to specific numpy types.
     It then converts the input to numpy, using the requested bit-width and signed/unsigned type for integers.
 
     Notes:
-        The class deliberately only works with Python inputs. Numpy already contains a robust set of tools for converting
-        between numpy datatypes. The purpose of this class is to provide a robust way for converting arbitrary inputs
-        into a specific numpy datatype.
+        The class deliberately only works with Python inputs. Numpy already contains a robust set of tools for
+        converting between numpy datatypes. The purpose of this class is to provide a robust way for converting
+        arbitrary inputs into a specific numpy datatypes.
 
-        The primary use for this class is to convert input values to numpy datatypes. The class is designed
-        to be as input-datatype agnostic as possible. In most cases, if a precise input value type is known, it is more
-        efficient (and easier) to implement a simple in-code conversion. This class is best suited for cases when the
-        input value type can vary widely during runtime and/or includes many possible options.
+        The class is designed to be as input-datatype agnostic as possible. In most cases, if a precise input value type
+        is known, it is more efficient (and easier) to implement a simple in-code conversion. This class is best suited
+        for cases when the input value type can vary widely during runtime and/or includes many possible options.
+
+        At this time, the class does not support converting strings from python to numpy.
 
     Attributes:
-        _python_converter: The PythonDataConverter instance to be used for input value validation and conversion.
-        _output_bit_width: The bit-width of the output numpy datatype. Must be one of the supported options: 8, 16, 32, 64,
-            'auto'. If set to 'auto', the class will attempt to determine the smallest numpy datatype that can
-            accommodate the input value.
-        _signed: If True, the output numpy datatype will be signed. If False, the output numpy datatype will be unsigned.
+        _python_converter: The initialized PythonDataConverter instance used to validate and convert the inputs into one
+            datatype known to be convertible to the requested numpy datatype. While the class can use multiple 'base'
+            converters to potentially output multiple datatypes, the instance used here has to be configured to produce
+            exactly one output datatype. The converter should not be configured to output strings, as, at this time,
+            strings are not supported.
+        _output_bit_width: The bit-width of the output numpy datatype. Must be one of the supported options:
+            8, 16, 32, 64, 'auto'. If set to 'auto', the class will determine the smallest numpy datatype that can
+            accommodate the input value. Generally, unless you have specific bit-width requirements, 'auto' is
+            recommended for memory efficiency.
+        _signed: Determines the type Python integers are converted to, since numpy distinguishes signed and unsigned
+            integers.
+        _signed_types: A list of tuples that stores supported signed integer numpy datatypes alongside the maximum and
+            minimum values that 'fit' into each of the datatypes. This is used to optimize internal processing and
+            should not be modified externally.
+        _unsigned_types: Same as _signed_types, but stores supported unsigned integer numpy datatypes.
+        _float_types: Same as _signed_types, but stores supported floating point numpy datatypes.
+        _integer_index_map: Maps supported integer numpy datatype bit-widths to the indices that can be used to slice
+            the 'types' lists to retrieve the callable datatype. This is used to access the callable datatypes used for
+            python to numpy conversion based on teh class configuration.
+        _floating_index_map: Same as _integer_index_map, but for floating point numpy datatypes.
+        _supported_output_bit_widths: Stores supported output_bit_width argument values as a set.
 
     Raises:
-        TypeError: If the provided python_converter argument is not an instance of PythonDataConverter.
-            If the provided validator argument is an instance of StringConverter.
-        ValueError: If the provided output_bit_width argument is not one of the supported options: 8, 16, 32, 64, 'auto'.
-            If the provided filter_failed argument is set to False.
-            If the provided NumericConverter configuration allows both allow_int and allow_float to be set to True.
+        TypeError: If any class arguments are not of the expected types.
+        ValueError: If the provided output_bit_width argument is not one of the supported options.
+            If the provided python_converter is configured to output multiple datatypes or to output strings. Also, if
+            it is not configured to raise errors for failed validations attempts.
     """
+
+    # Maps different numpy integer datatypes to ranges of values they can support without overflowing. This
+    # is used to automatically resolve the datatype with the minimum bit-width to represent the value.
+    _signed_types: list[tuple[type, int, int]] = [
+        (np.int8, -(2**7), 2**7 - 1),
+        (np.int16, -(2**15), 2**15 - 1),
+        (np.int32, -(2**31), 2**31 - 1),
+        (np.int64, -(2**63), 2**63 - 1),
+    ]
+    _unsigned_types: list[tuple[type, int, int]] = [
+        (np.uint8, 0, 2**8 - 1),
+        (np.uint16, 0, 2**16 - 1),
+        (np.uint32, 0, 2**32 - 1),
+        (np.uint64, 0, 2**64 - 1),
+    ]
+    # Maps different numpy floating datatypes to ranges of values they can support without overflowing. This
+    # is used to automatically resolve the datatype with the minimum bit-width to represent the value.
+    _float_types: list[tuple[type, np.floating[Any], np.floating[Any]]] = [
+        (np.float16, np.finfo(np.float16).min, np.finfo(np.float16).max),
+        (np.float32, np.finfo(np.float32).min, np.finfo(np.float32).max),
+        (np.float64, np.finfo(np.float64).min, np.finfo(np.float64).max),
+    ]
+
+    # Maps supported bit-width to retrival indices that can be used to index the appropriate callable numpy type
+    # from one of the lists above.
+    _integer_index_map: dict[int, int] = {8: 0, 16: 1, 32: 2, 64: 3}
+    _floating_index_map: dict[int, int] = {16: 0, 32: 1, 64: 2}
+
+    # Stores supported output_bit_width argument values as a set for efficient lookup.
+    _supported_output_bit_widths: set[int | str] = {8, 16, 32, 64, "auto"}
 
     def __init__(
         self,
         python_converter: PythonDataConverter,
         output_bit_width: int | str = "auto",
         signed: bool = True,
-    ):
+    ) -> None:
         # Verifies that the input arguments have valid types
         if not isinstance(python_converter, PythonDataConverter):
             message = (
@@ -988,7 +1026,7 @@ class NumpyDataConverter:
                 f"{type(python_converter).__name__}."
             )
             console.error(message=message, error=TypeError)
-        if output_bit_width is not None and output_bit_width not in [8, 16, 32, 64, "auto"]:
+        if output_bit_width is not None and output_bit_width not in self._supported_output_bit_widths:
             message = (
                 f"Unable to initialize NumpyDataConverter class instance. Encountered an unsupported output_bit_width "
                 f"argument value ({output_bit_width}). Use one of the supported options: 8, 16, 32, 64, 'auto'."
@@ -1014,7 +1052,7 @@ class NumpyDataConverter:
             console.error(message=message, error=ValueError)
 
         # Specifically, does not support strings at this time
-        elif "string" in allowed_output_types:
+        elif "str" in allowed_output_types:
             message = (
                 f"Unable to initialize NumpyDataConverter class instance. The PythonDataConverter class instance "
                 f"provided as python_converter argument is configured to validates strings. Currently, "
@@ -1038,200 +1076,300 @@ class NumpyDataConverter:
         self._python_converter = python_converter
         self._output_bit_width = output_bit_width
 
+    def __repr__(self) -> str:
+        """Returns a string representation of the NumpyDataConverter instance."""
+        return (
+            f"NumpyDataConverter(python_converter={self._python_converter.__repr__()}, "
+            f"output_bit_width={self._output_bit_width}, signed={self._signed})"
+        )
+
     @property
     def python_converter(self) -> PythonDataConverter:
-        """Returns the PythonDataConverter instance used to selectively control the range supported input and output
-        arguments to class methods."""
+        """Returns the PythonDataConverter instance used to selectively control the range of supported input and
+        output values that can be processed by this class."""
         return self._python_converter
 
     @property
     def output_bit_width(self) -> int | str:
-        """Returns the bit-width used by the output numpy datatype."""
+        """Returns the bit-width used by the output (converted) numpy values."""
         return self._output_bit_width
 
     @property
     def signed(self) -> bool:
-        """Returns True if the class is configured to convert integer inputs to signed or unsigned integers."""
+        """Returns True if the class is configured to convert integer inputs to signed integers.
+
+        Returns False if the class is configured to convert integer inputs to unsigned integers."""
         return self._signed
 
-    def min_scalar_type_signed_or_unsigned(self, value: int | float) -> type:
-        """
-        Returns the minimum scalar type to represent `value` with the desired signedness.
+    @property
+    def supported_output_bit_widths(self) -> tuple[int | str, ...]:
+        """Returns the supported output_bit_width initialization argument values that can be used with this class."""
+
+        # Since this is a mixed set of integers and a string option, it has to be sorted using a special heuristic:
+        # First, removes the string 'auto' and sorts the integer keys
+        no_auto = self._supported_output_bit_widths.copy()
+        no_auto.remove("auto")
+        sorted_list = sorted(no_auto)
+
+        # Then, re-appends auto
+        sorted_list.append("auto")
+
+        # Returns the sorted list as a tuple
+        return tuple(sorted_list)
+
+    def _resolve_scalar_type(self, value: int | float) -> type:
+        """Returns the scalar numpy type with the minimum appropriate bit-width required to represent the input value,
+        taking into consideration the intended output numpy datatype.
+
+        Currently, this method supports datatype-discovery for 8, 16, 32, and 64-bit signed and unsigned integers, and
+        16, 32, and 64-bit floating numbers.
+
+        Notes:
+            This returns the type instead of converting the value to enable using this method to aggregate conversion
+            into the same method. This method is only used to handle 'auto' bit-width conversions.
 
         Parameters
-            value: The input value to be checked.
-            signed: If True, return a signed dtype. If False, return an unsigned dtype.
+            value: The value for which to resolve (determine) the scalar datatype with the minimum possible bit-width.
 
         Returns
-            A NumPy callable type.
+            A callable NumPy scalar type that can be used to convert the value into that type.
+
+        Raises:
+            TypeError: If the value is not an integer or float.
+            OverflowError: If the value is too large to be represented by the supported integer or floating numpy
+                datatype bit-widths.
         """
-        # Determine the smallest scalar type that can represent the value
-        dtype = np.min_scalar_type(value)
-        # If the current dtype already matches the signed/unsigned preference, return it
-        if (np.issubdtype(dtype, np.signedinteger) and self._signed) or (
-            np.issubdtype(dtype, np.unsignedinteger) and not self._signed
-        ):
-            if isinstance(dtype, type):
-                return dtype
-        if type(value) == int:
-            # Define the hierarchy of integer types
-            signed_types: list[tuple[type, int, int]] = [
-                (np.int8, -(2**7), 2**7 - 1),
-                (np.int16, -(2**15), 2**15 - 1),
-                (np.int32, -(2**31), 2**31 - 1),
-                (np.int64, -(2**63), 2**63 - 1),
-            ]
-            unsigned_types: list[tuple[type, int, int]] = [
-                (np.uint8, 0, 2**8 - 1),
-                (np.uint16, 0, 2**16 - 1),
-                (np.uint32, 0, 2**32 - 1),
-                (np.uint64, 0, 2**64 - 1),
-            ]
+        if isinstance(value, int):
+            # Selects the appropriate datatype list based on whether the value needs to be signed or unsigned after
+            # conversion.
+            datatypes_list = self._signed_types if self._signed else self._unsigned_types
 
-            # Choose the appropriate hierarchy
-            types = signed_types if self._signed else unsigned_types
+            # Finds the datatype with the smallest bit-width that can accommodate the value and returns it to caller
+            for datatype, minimum_value, maximum_value in datatypes_list:
+                if minimum_value <= value <= maximum_value:
+                    return datatype
 
-            # Find the smallest dtype that can accommodate the value
-            for t, min_val, max_val in types:
-                if min_val <= value <= max_val:
-                    return t
-        elif type(value) == float:
-            # Define the hierarchy of float types
-            float_types: list[tuple[type, np.floating[Any], np.floating[Any]]] = [
-                (np.float16, np.finfo(np.float16).min, np.finfo(np.float16).max),
-                (np.float32, np.finfo(np.float32).min, np.finfo(np.float32).max),
-                (np.float64, np.finfo(np.float64).min, np.finfo(np.float64).max),
-            ]
+            # If the loop above was not able to resolve the datatype, issues an error
+            message = (
+                f"Unable to find a supported numpy datatype to represent the input integer value {value} as the value "
+                f"is too large. Currently, the maximum supported integer bit-width is 64, which supports unsigned "
+                f"values up to {self._unsigned_types[-1][-1]} and signed values up to +- {self._signed_types[-1][-1]}. "
+                f"Currently, the class is configured to use {'signed' if self._signed else 'unsigned'} type for "
+                f"integer inputs."
+            )
+            console.error(message=message, error=OverflowError)
+            # Fallback, should not be reachable
+            raise OverflowError(message)  # pragma: no cover
 
-            # Find the smallest dtype that can accommodate the value
-            for t, min_val_f, max_val_f in float_types:
-                if min_val_f <= value <= max_val_f:
-                    return t
-        # To appease tox
-        message = f"Value {value} is too large to be represented by a NumPy integer type."
-        console.error(message=message, error=OverflowError)
-        raise OverflowError(message)
+        elif isinstance(value, float):
+            # Finds the datatype with the smallest bit-width that can accommodate the value and returns it to caller
+            for datatype, minimum_float_value, maximum_float_value in self._float_types:
+                if minimum_float_value <= value <= maximum_float_value:
+                    return datatype
 
-    def python_to_numpy_converter(
+            # If the loop above was not able to resolve the datatype, issues an error
+            message = (
+                f"Unable to find a supported numpy datatype to represent the input floating value {value} as the value "
+                f"is too large. Currently, the maximum supported floating bit-width is 64, which supports values up to "
+                f"{self._float_types[-1][-1]}. "
+            )
+            console.error(message=message, error=OverflowError)
+            # Fallback, should not be reachable
+            raise OverflowError(message)  # pragma: no cover
+
+        else:
+            # If the input value is not an integer or float, raises TypeError
+            message = (
+                f"Unsupported input value type encountered when resolving the numpy datatype to convert the value to."
+                f"Expected an integer or floating input, but encountered {value} of type {type(value).__name__}."
+            )
+            console.error(message=message, error=TypeError)
+
+    def convert_value_to_numpy(
         self,
-        value_to_convert: int | float | bool | None | str | list[Any] | tuple[Any],
-    ) -> np.integer[Any] | np.unsignedinteger[Any] | np.bool | NDArray[Any]:
-        """
-        Converts input values to numpy datatypes.
+        value: int | float | bool | None | str | list[Any] | tuple[Any],
+    ) -> np.integer[Any] | np.unsignedinteger[Any] | np.floating[Any] | np.bool | NDArray[Any]:
+        """Converts input python values to numpy scalars and arrays of the predetermined datatype.
 
-        The function converts input values to numpy datatypes based on the configuration of the class instance. The
-        function supports conversion of scalar values, lists, and tuples. The function also supports conversion of
-        iterable values, such as lists and tuples, to numpy arrays.
+        The method converts input values to numpy datatypes based on the configuration of the class instance, which
+        includes the bit-width and whether to return signed and unsigned integer types. The method works by first
+        'funneling' the input values through the PythonDataConverter instance to ensure they use the same scalar or
+        iterable Python type. The values are then converted to appropriate numpy datatypes, generating a list of
+        numpy scalars. Finally, the list is either returned as a numpy array which automatically aligns datatype
+        bit-widths if needed or as a numpy scalar if the input was scalar.
 
         Args
-            value_to_convert: The input value to be converted to a numpy datatype.
+            value: The value to be converted to a numpy datatype. Note, string inputs are currently not
+                supported, unless they are directly convertible to one of the supported types: floating, integer,
+                boolean, or None.
 
         Returns
-            The converted value as a numpy datatype.
+            The converted value as a numpy scalar or array.
 
         Raises
-            ValueError: If the output_bit_width is set to 8 and the input value is a float. Numpy does not support 8-bit floats.
+            OverflowError: If the input value cannot be converted to the requested numpy datatype due to being
+                outside the representation limits for that type.
+            ValueError: If the output_bit_width is set to 8, and the input value is a float. Currently, 8-bit floats
+                are not supported.
         """
-        signed: list[type] = [np.int8, np.int16, np.int32, np.int64]
-        unsigned: list[type] = [np.uint8, np.uint16, np.uint32, np.uint64]
-        float_sign: list[type] = [np.float16, np.float16, np.float32, np.float64]
+        # Ensures that converted values are cast to lists to optimize the code structure below. Casts input values to
+        # the pre-selected datatype that is used to 'funnel' different input values to the same numpy datatype.
+        # Note, if the value cannot eb converted to the desired datatype, this will trigger a ValueError.
+        validated_list: list[Any] = ensure_list(self.python_converter.validate_value(value))
 
-        validated_value: Any = self.python_converter.validate_value(value_to_convert)
-        validated_list: list[Any] = PythonDataConverter.ensure_list(validated_value)
-        temp: list[Any] = []
+        # Generates the placeholder list which aggregates converted scalars
+        scalar_list: list[Any] = []
 
+        # Loops over each value in the validated_list and applies conversion operations to get a list of
+        # numpy scalars that use the requested datatype and (for integers) signed / unsigned type.
+        numpy_value: np.integer[Any] | np.unsignedinteger[Any] | np.bool | np.floating[Any] | float
+        datatype: type
+        minimum_value: int | np.floating[Any]
+        maximum_value: int | np.floating[Any]
         for value in validated_list:
-            if self._output_bit_width == "auto" and isinstance(value, (int, float)) and value not in (True, False):
-                min_dtype = self.min_scalar_type_signed_or_unsigned(value)
-                numpy_value: np.integer[Any] | np.unsignedinteger[Any] | np.bool | NDArray[Any] | float = np.array(
-                    value, dtype=min_dtype
-                )
-
-            elif isinstance(value, (int, float)) and value not in (True, False):
-                if self._output_bit_width == 8 and type(value) == float:
-                    message = f"Unable to convert input value to a numpy datatype. Numpy does not support 8-bit floats."
-                    console.error(message=message, error=ValueError)
-
-                if type(value) == float:
-                    width_list: list[type] = float_sign
-                else:
-                    width_list = signed if self._signed else unsigned
-
-                index_map: dict[int, int] = {8: 0, 16: 1, 32: 2, 64: 3}
-                if type(self._output_bit_width) == int:
-                    datatype: type = width_list[index_map[self._output_bit_width]]
-
-                try:
-                    numpy_value = datatype(value)
-                    if numpy_value == 0.0 and value != 0.0:
-                        numpy_value = np.nan
-                except OverflowError:
-                    numpy_value = np.inf
-
-            # Handle bools and None
-            elif type(value) == bool:
+            # If the input is a boolean type, converts it to numpy boolean
+            if isinstance(value, bool):
                 numpy_value = np.bool(value)
+
+            # If the input is a None type, converts it to np.nan type
             elif value is None:
                 numpy_value = np.nan
-            temp.append(numpy_value)
-        return np.array(temp) if len(temp) > 1 else temp[0]
 
-    def numpy_to_python_converter(
+            # If the output_bit_width is set to "auto", determines the smallest scalar datatype that can represent the
+            # data value and casts the value into that type. By this point, the only possible input types are
+            # integer and float.
+            elif self._output_bit_width == "auto" and isinstance(value, (int, float)):
+                datatype = self._resolve_scalar_type(value)
+                numpy_value = datatype(value)
+
+            # If the input is an integer, attempts to convert it to the requested integer datatype.
+            elif isinstance(value, int) and not isinstance(self._output_bit_width, str):
+                # Depending on whether signed or unsigned integers are required, uses the predefined bit-width to
+                # index the callable numpy type from the appropriate list.
+                if self._signed:
+                    datatype = self._signed_types[self._integer_index_map[self._output_bit_width]][0]
+                    minimum_value = self._signed_types[self._integer_index_map[self._output_bit_width]][1]
+                    maximum_value = self._signed_types[self._integer_index_map[self._output_bit_width]][2]
+                else:
+                    datatype = self._unsigned_types[self._integer_index_map[self._output_bit_width]][0]
+                    minimum_value = self._unsigned_types[self._integer_index_map[self._output_bit_width]][1]
+                    maximum_value = self._unsigned_types[self._integer_index_map[self._output_bit_width]][2]
+
+                # Attempts to convert the value to the requested datatype
+                try:
+                    numpy_value = datatype(value)
+                except OverflowError:
+                    message = (
+                        f"Unable to convert the input integer value {value}, which is part of the collection "
+                        f"{validated_list} to the requested type ({datatype.__name__}). The value does not fit into "
+                        f"the requested numpy datatype which can only accommodate values between {minimum_value} "
+                        f"and {maximum_value}."
+                    )
+                    console.error(message=message, error=OverflowError)
+
+            # The only left 'case' here is that the input is a float. Attempts to convert it to the requested
+            # numpy floating datatype.
+            else:
+                # Since fewer bit-widths are supported for floats than for integers, catches cases where floats are
+                # attempted to be converted to unsupported bit-width range.
+                if self._output_bit_width not in self._floating_index_map.keys():
+                    message = (
+                        f"Unable to convert the input floating value {value}, which is part of the collection "
+                        f"{validated_list} to the requested bit-width ({self._output_bit_width}). Currently, "
+                        f"supported floating-point datatypes are limited to 16, 32 and 64 bit-widths."
+                    )
+                    console.error(message=message, error=ValueError)
+
+                # Resolves the fixed datatype to convert the value into
+                datatype = self._float_types[self._floating_index_map[self._output_bit_width]][0]  # type: ignore
+                minimum_value = self._float_types[self._floating_index_map[self._output_bit_width]][1]  # type: ignore
+                maximum_value = self._float_types[self._floating_index_map[self._output_bit_width]][2]  # type: ignore
+
+                # Attempts value conversion. Raises exceptions if the value cannot be converted
+                try:
+                    # noinspection PyUnboundLocalVariable
+                    numpy_value = datatype(value)
+                    # This catches the numpy behavior for too large negative inputs. A negative float that has too many
+                    # trailing zeroes will be rounded to 0.0, which is considered not desirable. It is converted into an
+                    # OverflowError instead.
+                    if numpy_value == 0.0 and value != 0.0 or np.isinf(numpy_value) or np.isnan(numpy_value):
+                        raise OverflowError
+                # The method correctly triggers an overflow error when the value is too large. Combined with the
+                # 'manual' overflow triggered above, this covers both extremes.
+                except OverflowError:
+                    message = (
+                        f"Unable to convert the input floating value {value}, which is part of the collection "
+                        f"{validated_list} to the requested type ({datatype.__name__}). The value does not fit into "
+                        f"the requested numpy datatype which can only accommodate values between {minimum_value} "
+                        f"and {maximum_value}."
+                    )
+                    console.error(message=message, error=OverflowError)
+
+            # Appends the converted value to the scalar_list
+            # noinspection PyUnboundLocalVariable
+            scalar_list.append(numpy_value)
+
+        # Returns the list as a numpy array if it has more than one element (this automatically equalizes the
+        # datatypes). Otherwise, if there is only a single element, pops that element out and returns it as a scalar.
+        return np.array(scalar_list) if len(scalar_list) > 1 else scalar_list.pop()
+
+    def convert_value_from_numpy(
         self,
-        value_to_convert: Union[
+        value: Union[
             np.integer[Any],
             np.unsignedinteger[Any],
+            np.floating[Any],
             np.bool,
-            float,
             NDArray[Any],
         ],
     ) -> int | float | bool | None | list[Any] | tuple[Any, ...]:
-        """
-        Converts numpy datatypes to Python datatypes.
+        """Converts numpy values to Python datatypes.
 
-        The function converts numpy datatypes to Python datatypes based on the configuration of the class instance. The
-        function supports conversion of scalar values, lists, and tuples. The function also supports conversion of
-        iterable values, such as lists and tuples, to numpy arrays.
+        The method converts input numpy datatypes to Python datatypes based on the configuration of the class instance.
+        Specifically, it first converts numpy values to python values using item() (for scalars) and tolist()
+        (for arrays) method and then passes the resultant values through PythonDataConverter. This ensures the values
+        are converted to the same Python datatype regardless of automated NumPy conversion.
 
         Args
-            value_to_convert: The input value to be converted to a Python datatype.
+            value: The value to be converted to a Python datatype. Has to be a numpy scalar or array value.
+                Currently, this method only supports one-dimensional numpy arrays.
 
         Returns
-            The converted value as a Python datatype.
+            The value converted to a Python datatype.
         """
 
-        if isinstance(value_to_convert, np.ndarray):
-            temp: list[Any] = []
-            for i in range(len(value_to_convert)):
-                if np.isnan(value_to_convert[i]) or np.isinf(value_to_convert[i]):
-                    temp.append(None)
-                else:
-                    temp.append(value_to_convert[i].item())
-
-            validated: int | float | bool | str | None | list[Any] | tuple[Any, ...] = (
-                self.python_converter.validate_value(temp)
-            )
-            if not isinstance(validated, str):
-                if type(validated) == list and len(validated) == 1:
-                    # To satisfy tox
-                    out = validated.pop()
-                    if isinstance(out, (int, float, bool, type(None), list, tuple)):
-                        return out
-                    else:
-                        message = f"Unable to convert input value to a Python datatype."
-                        console.error(message=message, error=ValueError)
-                else:
-                    return validated
-            else:
-                # To satify tox
-                message = f"Unable to convert input value to a Python datatype."
+        # Most of the processing needs to be done for numpy array inputs
+        if isinstance(value, np.ndarray):
+            # Since multidimensional inputs are currently not supported, the method raises an error if it encounters a
+            # multidimensional numpy array.
+            if value.ndim > 1:
+                message = (
+                    f"Unable to convert input NumPy array value to a Python datatype. Expected a one-dimensional numpy "
+                    f"array, but encountered an array with {value.ndim} dimensions and shape {value.shape}."
+                )
                 console.error(message=message, error=ValueError)
-        if np.isnan(value_to_convert) or np.isinf(value_to_convert):
-            return None
-        output = self.python_converter.validate_value(np.array(value_to_convert).item(0))
-        if not isinstance(output, str):
-            return output
+
+            # If the value is a one-dimensional numpy array, first converts it to a list using tolist() method
+            output_list = value.tolist()
+
+            # Then, uses list comprehension to replace np.nan and np.inf with python None values
+            output_list = [None if value == np.nan or value == np.inf else value for value in output_list]
+
+            # Runs the filtered list through the Python Converter to bring it to the same output datatype or
+            # raise a ValueError if any of the elements are not convertible.
+            converted_value = self._python_converter.validate_value(output_list)
+
+            # PythonDataConverter automatically pops one-element lists into scalars. Therefore, the returned value is
+            # already using the most efficient type and can be returned to caller.
+            return converted_value  # type: ignore
+
+        # If the input value is a numpy nan or inf, replaces it with Python None and runs it through the
+        # PythonDataConverter before returning it to caller.
+        elif np.isnan(value) or np.isinf(value):
+            return self._python_converter.validate_value(None)  # type: ignore
+
+        # Finally, if the input is a numpy scalar, pops it out as a numpy scalar using the item() method and runs it
+        # through the PythonDataConverter before returning it to caller.
         else:
-            message = f"Unable to convert input value to a Python datatype."
-            console.error(message=message, error=ValueError)
-            raise ValueError("Fallback to appease mypi")
+            output = self._python_converter.validate_value(value.item())
+            return output  # type: ignore

@@ -146,7 +146,7 @@ def test_read_data(request, array_fixture, buffer_name, index, convert, expected
     sma = SharedMemoryArray.create_array(buffer_name, sample_array)
 
     # Reads data using test-specific parameters for the index and conversion flag
-    result = sma.read_data(index=index, convert_output=convert)
+    result = sma.read_data(index=index, convert_output=convert, with_lock=False)
 
     # Verifies that the value returned by the test matches expectation
     if isinstance(expected, list):

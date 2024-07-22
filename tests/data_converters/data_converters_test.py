@@ -1,3 +1,5 @@
+"""Contains tests for classes and methods stored inside the data_converters module of the data_converters pacakge."""
+
 import re
 import textwrap
 
@@ -910,186 +912,820 @@ def test_python_data_converter_validate_value_errors(config, input_value, expect
         converter.validate_value(input_value)
 
 
-def test_numpyconverter_init_validation():
+@pytest.mark.parametrize(
+    "config,input_value,expected_value",
+    [
+        # Tests with integer inputs
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 8,
+                "signed": True,
+            },
+            5,
+            np.int8(5),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 8,
+                "signed": False,
+            },
+            5,
+            np.uint8(5),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 16,
+                "signed": True,
+            },
+            1000,
+            np.int16(1000),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 16,
+                "signed": False,
+            },
+            1000,
+            np.uint16(1000),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 32,
+                "signed": True,
+            },
+            100000,
+            np.int32(100000),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 32,
+                "signed": False,
+            },
+            100000,
+            np.uint32(100000),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 64,
+                "signed": True,
+            },
+            1000000000000,
+            np.int64(1000000000000),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 64,
+                "signed": False,
+            },
+            1000000000000,
+            np.uint64(1000000000000),
+        ),
+        # Tests with float inputs
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 16,
+            },
+            5.5,
+            np.float16(5.5),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 32,
+            },
+            5.5,
+            np.float32(5.5),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 64,
+            },
+            5.5,
+            np.float64(5.5),
+        ),
+        # Tests with boolean input
+        (
+            {"python_converter": PythonDataConverter(boolean_converter=BooleanConverter(), raise_errors=True)},
+            True,
+            np.bool_(True),
+        ),
+        (
+            {"python_converter": PythonDataConverter(boolean_converter=BooleanConverter(), raise_errors=True)},
+            False,
+            np.bool_(False),
+        ),
+        # Tests with None input
+        (
+            {"python_converter": PythonDataConverter(none_converter=NoneConverter(), raise_errors=True)},
+            None,
+            np.nan,
+        ),
+        # Tests with iterable inputs
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 16,
+                "signed": True,
+            },
+            [1, 2, 3],
+            np.array([1, 2, 3], dtype=np.int16),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 32,
+            },
+            [1.1, 2.2, 3.3],
+            np.array([1.1, 2.2, 3.3], dtype=np.float32),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(boolean_converter=BooleanConverter(), raise_errors=True),
+            },
+            [True, False, True],
+            np.array([True, False, True], dtype=np.bool_),
+        ),
+        # Tests with auto bit width
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": "auto",
+                "signed": True,
+            },
+            127,
+            np.int8(127),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": "auto",
+                "signed": False,
+            },
+            255,
+            np.uint8(255),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": "auto",
+            },
+            5.5,
+            np.float16(5.5),
+        ),
+        # Tests with mixed types in iterable
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 64,
+            },
+            [1, 2.5, "2.3", False],
+            np.array([1.0, 2.5, 2.3, 0.0], dtype=np.float64),
+        ),
+        # Tests with string input that can be converted to number
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(parse_number_strings=True, allow_float_output=False),
+                    raise_errors=True,
+                ),
+                "output_bit_width": 32,
+                "signed": True,
+            },
+            "123",
+            np.int32(123),
+        ),
+    ],
+)
+def test_numpy_data_converter_convert_value_to_numpy(config, input_value, expected_value) -> None:
+    """Verifies the functionality of the NumpyDataConverter class convert_value_to_numpy() method.
+
+    Evaluates the following scenarios:
+        0-7 - Conversion of integers to various bit widths (8, 16, 32, 64) and signed/unsigned types.
+        8-10 - Conversion of floats to various precisions (16, 32, 64 bit).
+        11-12 - Conversion of boolean values.
+        13 - Conversion of None to numpy nan.
+        14-16 - Conversion of iterables (integers, floats, booleans).
+        17-19 - Conversion with auto bit width selection for integers and floats.
+        20 - Conversion of mixed types in an iterable to integer.
+        21 - Conversion of a numeric string to numpy integer.
     """
-    Verifies that NumpyDataConverter initialization method functions as expected and correctly catches invalid inputs.
+    converter = NumpyDataConverter(**config)
+    result = converter.convert_value_to_numpy(input_value)
+    assert isinstance(result, type(expected_value))  # Checks resultant type
+    np.testing.assert_equal(result, expected_value)  # Checks resultant value
+
+
+@pytest.mark.parametrize(
+    "config,input_value,expected_error,expected_message",
+    [
+        # Tests overflow for signed integer
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 8,
+                "signed": True,
+            },
+            128,
+            OverflowError,
+            "Unable to convert the input integer value 128, which is part of the collection [128] to the requested "
+            "type (int8). The value does not fit into the requested numpy datatype which can only "
+            "accommodate values between -128 and 127.",
+        ),
+        # Tests overflow for unsigned integer
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 8,
+                "signed": False,
+            },
+            256,
+            OverflowError,
+            "Unable to convert the input integer value 256, which is part of the collection [256] to the requested "
+            "type (uint8). The value does not fit into the requested numpy datatype which can only "
+            "accommodate values between 0 and 255.",
+        ),
+        # Tests overflow for float
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 32,
+            },
+            1e40,
+            OverflowError,
+            "Unable to convert the input floating value 1e+40, which is part of the collection [1e+40] to the "
+            "requested type (float32). The value does not fit into the requested numpy datatype which can only "
+            "accommodate values between",
+        ),
+        # Tests using floats with 8-bit output width configuration
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 8,
+            },
+            1e40,
+            ValueError,
+            "Unable to convert the input floating value 1e+40, which is part of the collection [1e+40] to the "
+            "requested bit-width (8). Currently, supported floating-point datatypes are limited to 16, 32 and 64 "
+            "bit-widths.",
+        ),
+    ],
+)
+def test_numpy_data_converter_convert_value_to_numpy_errors(
+    config, input_value, expected_error, expected_message
+) -> None:
+    """Verifies the error-raising behavior of the NumpyDataConverter class convert_value_to_numpy() method.
+
+    Evaluates the following scenarios:
+        0 - Raising OverflowError for signed integer overflow.
+        1 - Raising OverflowError for unsigned integer overflow.
+        2 - Raising OverflowError for float overflow.
+        3 - Raising ValueError for floating-point conversion with 8-bit output width configuration.
     """
-    # Tests valid initialization
-    validator = PythonDataConverter(
-        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+    converter = NumpyDataConverter(**config)
+    with pytest.raises(expected_error, match=error_format(expected_message)):
+        converter.convert_value_to_numpy(input_value)
+
+
+@pytest.mark.parametrize(
+    "config,input_value,expected_value",
+    [
+        # Tests with numpy integer types
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.int8(5),
+            5,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.uint8(5),
+            5,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.int16(1000),
+            1000,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.uint16(1000),
+            1000,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.int32(100000),
+            100000,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.uint32(100000),
+            100000,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.int64(1000000000000),
+            1000000000000,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.uint64(1000000000000),
+            1000000000000,
+        ),
+        # Tests with numpy float types
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                )
+            },
+            np.float16(5.5),
+            5.5,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                )
+            },
+            np.float32(5.5),
+            5.5,
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                )
+            },
+            np.float64(5.5),
+            5.5,
+        ),
+        # Tests with numpy boolean
+        (
+            {"python_converter": PythonDataConverter(boolean_converter=BooleanConverter(), raise_errors=True)},
+            np.bool_(True),
+            True,
+        ),
+        (
+            {"python_converter": PythonDataConverter(boolean_converter=BooleanConverter(), raise_errors=True)},
+            np.bool_(False),
+            False,
+        ),
+        # Tests with numpy nan and inf
+        ({"python_converter": PythonDataConverter(none_converter=NoneConverter(), raise_errors=True)}, np.nan, None),
+        ({"python_converter": PythonDataConverter(none_converter=NoneConverter(), raise_errors=True)}, np.inf, None),
+        ({"python_converter": PythonDataConverter(none_converter=NoneConverter(), raise_errors=True)}, -np.inf, None),
+        # Tests with numpy arrays
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.array([1, 2, 3], dtype=np.int32),
+            (1, 2, 3),
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                )
+            },
+            np.array([1.1, 2.2, 3.3], dtype=np.float32),
+            (1.1, 2.2, 3.3),
+        ),
+        (
+            {"python_converter": PythonDataConverter(boolean_converter=BooleanConverter(), raise_errors=True)},
+            np.array([True, False, True], dtype=np.bool_),
+            (True, False, True),
+        ),
+        # Test with an empty numpy array. This should be recognized as non-error-raising conversion error as the element
+        # is popped out from iterable.
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                )
+            },
+            np.array([], dtype=np.float64),
+            "Validation/ConversionError",
+        ),
+        # Test with a single element numpy array
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.array([42], dtype=np.int32),
+            42,
+        ),
+    ],
+)
+def test_numpy_data_converter_convert_value_from_numpy(config, input_value, expected_value) -> None:
+    """Verifies the functionality of the NumpyDataConverter class convert_value_from_numpy() method.
+
+    Evaluates the following scenarios:
+        0-7 - Conversion of numpy integer types (8, 16, 32 and 64 bit-widths) to Python integer.
+        8-10 - Conversion of numpy float types (float16, float32, float64) to Python float.
+        11-12 - Conversion of numpy boolean to Python boolean.
+        13-15 - Conversion of numpy nan and inf to Python None.
+        16-18 - Conversion of numpy arrays (int, float, bool) to Python tuples.
+        20 - Conversion of an empty numpy array to empty Python tuple.
+        21 - Conversion of a single element numpy array to Python scalar.
+        22 - Conversion of a numpy array containing inf and nan to Python tuple with None values.
+    """
+    converter = NumpyDataConverter(**config)
+    result = converter.convert_value_from_numpy(input_value)
+    # Verifies the general output type
+    assert isinstance(result, type(expected_value))
+
+    # For iterables, checks overall iterable length and individual elements
+    if isinstance(result, (tuple, list)):
+        assert len(result) == len(expected_value)
+        for r, e in zip(result, expected_value):
+            # Uses numpy methods for verifying floats and None values
+            if isinstance(e, float):
+                if np.isnan(e):
+                    assert np.isnan(r)
+                else:
+                    assert np.allclose([r], [e], rtol=1e-5, atol=1e-8)
+            else:
+                assert r == e
+
+    # For scalars, processes floats and Nones slightly differently.
+    elif isinstance(result, float):
+        if np.isnan(expected_value):
+            assert np.isnan(result)
+        else:
+            assert np.allclose([result], [expected_value], rtol=1e-5, atol=1e-8)
+    else:
+        assert result == expected_value
+
+
+@pytest.mark.parametrize(
+    "config,input_value,expected_error,expected_message",
+    [
+        # Test with a multidimensional numpy array
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            np.array([[1, 2], [3, 4]]),
+            ValueError,
+            "Unable to convert input NumPy array value to a Python datatype. Expected a one-dimensional numpy "
+            "array, but encountered an array with 2 dimensions and shape (2, 2).",
+        ),
+    ],
+)
+def test_numpy_data_converter_convert_value_from_numpy_errors(
+    config, input_value, expected_error, expected_message
+) -> None:
+    """Verifies the error-raising behavior of the NumpyDataConverter class convert_value_from_numpy() method.
+
+    Evaluates the following scenario:
+        0 - Raising ValueError for multidimensional numpy array input.
+    """
+    converter = NumpyDataConverter(**config)
+    with pytest.raises(expected_error, match=error_format(expected_message)):
+        converter.convert_value_from_numpy(input_value)
+
+
+def test_numpy_data_converter_repr() -> None:
+    """Verifies the functionality of NumpyDataConverter class __repr__() method."""
+    python_converter = PythonDataConverter(
+        numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
     )
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert type(converter.python_converter) is PythonDataConverter
-    assert converter.output_bit_width == "auto"
-    assert converter.signed
-
-    with pytest.raises(TypeError):
-        # noinspection PyTypeChecker
-        NumpyDataConverter(python_converter="not a validator", output_bit_width="auto")
-
-    with pytest.raises(ValueError):
-        # noinspection PyTypeChecker
-        NumpyDataConverter(python_converter=validator, output_bit_width="not a string")
-
-    validator = PythonDataConverter(validator=StringConverter(), iterable_output_type="list", filter_failed=True)
-    with pytest.raises(TypeError):
-        # noinspection PyTypeChecker
-        NumpyDataConverter(python_converter=validator, output_bit_width="auto")
-
-    validator = PythonDataConverter(
-        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=False
+    converter = NumpyDataConverter(python_converter=python_converter, output_bit_width=32, signed=True)
+    representation_string = (
+        f"NumpyDataConverter(python_converter={python_converter.__repr__()}, " f"output_bit_width=32, signed=True)"
     )
-    with pytest.raises(ValueError):
-        # noinspection PyTypeChecker
-        NumpyDataConverter(python_converter=validator, output_bit_width="auto")
-
-    validator = PythonDataConverter(validator=NumericConverter(), iterable_output_type="list", filter_failed=True)
-    with pytest.raises(ValueError):
-        # noinspection PyTypeChecker
-        NumpyDataConverter(python_converter=validator, output_bit_width=8)
+    assert repr(converter) == representation_string
 
 
-def test_numpyconverter_setters():
-    """
-    Verifies the functioning of NumpyDataConverter class validator setter method.
-    """
-    validator = PythonDataConverter(
-        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+def test_numpy_data_converter_init_errors() -> None:
+    """Verifies the error-handling behavior of the NumpyDataConverter class initialization method."""
+
+    # Tests invalid initialization argument types:
+    invalid_input = "invalid"
+
+    # Python converter
+    message = (
+        f"Unable to initialize NumpyDataConverter class instance. Expected a python_converter argument "
+        f"of type {type(PythonDataConverter).__name__}, but encountered {invalid_input} of type "
+        f"{type(invalid_input).__name__}."
     )
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        NumpyDataConverter(python_converter=invalid_input)
 
-    converter.set_output_bit_width(8)
-    assert converter.output_bit_width == 8
+    # Output bit width
+    message = (
+        f"Unable to initialize NumpyDataConverter class instance. Encountered an unsupported output_bit_width "
+        f"argument value ({invalid_input}). Use one of the supported options: 8, 16, 32, 64, 'auto'."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        NumpyDataConverter(
+            python_converter=PythonDataConverter(numeric_converter=NumericConverter(), raise_errors=True),
+            output_bit_width=invalid_input,
+        )
 
-    converter.set_output_bit_width(16)
-    assert converter.output_bit_width == 16
+    # Signed
+    message = (
+        f"Unable to initialize NumpyDataConverter class instance. Expected a boolean signed argument type, "
+        f"but encountered {invalid_input} of type {type(invalid_input).__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        NumpyDataConverter(
+            python_converter=PythonDataConverter(numeric_converter=NumericConverter(), raise_errors=True),
+            signed=invalid_input,
+        )
 
-    converter.set_output_bit_width(32)
+    # Verifies that PythonDataConverter with multiple output types is not allowed
+    multi_output_converter = PythonDataConverter(
+        numeric_converter=NumericConverter(), string_converter=StringConverter(), raise_errors=True
+    )
+    message = (
+        f"Unable to initialize NumpyDataConverter class instance. The PythonDataConverter class instance "
+        f"provided as python_converter argument is configured to allow multiple scalar output types: "
+        f"{multi_output_converter.allowed_output_types}. NumpyDataConverter class requires the PythonDataConverter "
+        f"class to only allow a single scalar output type to be compatible."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        NumpyDataConverter(python_converter=multi_output_converter)
+
+    # Verifies that PythonDataConverter with string output is not allowed
+    string_converter = PythonDataConverter(string_converter=StringConverter(), raise_errors=True)
+    message = (
+        f"Unable to initialize NumpyDataConverter class instance. The PythonDataConverter class instance "
+        f"provided as python_converter argument is configured to validates strings. Currently, "
+        f"NumpyDataConverter does not support converting strings to numpy formats."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        NumpyDataConverter(python_converter=string_converter)
+
+    # Verifies that PythonDataConverter not configured to raise errors is not allowed
+    non_raising_converter = PythonDataConverter(
+        numeric_converter=NumericConverter(allow_float_output=False), raise_errors=False
+    )
+    message = (
+        f"Unable to initialize NumpyDataConverter class instance. The PythonDataConverter class instance "
+        f"provided as python_converter argument is configured to not raise errors on validation failure. "
+        f"Currently, NumpyDataConverter expects that PythonDataConverter raises errors if it cannot validate"
+        f"inputs."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        NumpyDataConverter(python_converter=non_raising_converter)
+
+
+@pytest.mark.parametrize(
+    "config,expected",
+    [
+        # Tests with default values
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                )
+            },
+            {"output_bit_width": "auto", "signed": True},
+        ),
+        # Tests with custom values for numeric converter
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 32,
+                "signed": False,
+            },
+            {"output_bit_width": 32, "signed": False},
+        ),
+        # Tests with boolean converter
+        (
+            {"python_converter": PythonDataConverter(boolean_converter=BooleanConverter(), raise_errors=True)},
+            {"output_bit_width": "auto", "signed": True},
+        ),
+        # Tests with none converter
+        (
+            {"python_converter": PythonDataConverter(none_converter=NoneConverter(), raise_errors=True)},
+            {"output_bit_width": "auto", "signed": True},
+        ),
+        # Tests with different bit widths
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+                ),
+                "output_bit_width": 16,
+            },
+            {"output_bit_width": 16, "signed": True},
+        ),
+        (
+            {
+                "python_converter": PythonDataConverter(
+                    numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+                ),
+                "output_bit_width": 64,
+            },
+            {"output_bit_width": 64, "signed": True},
+        ),
+    ],
+)
+def test_numpy_data_converter_config(config, expected) -> None:
+    """Verifies the successful initialization of the NumpyDataConverter class using kwarg inputs.
+
+    Evaluates the following test cases:
+        0 - Initialization with default values using NumericConverter.
+        1 - Initialization with custom values (32-bit, unsigned) using NumericConverter.
+        2 - Initialization with default values using BooleanConverter.
+        3 - Initialization with default values using NoneConverter.
+        4 - Initialization with 16-bit width using NumericConverter.
+        5 - Initialization with 64-bit width using NumericConverter.
+    """
+    converter = NumpyDataConverter(**config)
+    assert converter.python_converter == config["python_converter"]
+    assert converter.output_bit_width == expected["output_bit_width"]
+    assert converter.signed == expected["signed"]
+
+
+def test_numpy_data_converter_properties() -> None:
+    """Verifies the functionality of NumpyDataConverter class accessor properties."""
+    python_converter = PythonDataConverter(
+        numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+    )
+    converter = NumpyDataConverter(python_converter=python_converter, output_bit_width=32, signed=True)
+
+    assert converter.python_converter == python_converter
     assert converter.output_bit_width == 32
-
-    converter.set_output_bit_width(64)
-    assert converter.output_bit_width == 64
-
-    converter.set_output_bit_width("auto")
-    assert converter.output_bit_width == "auto"
-
-    assert not converter.toggle_signed()
-    assert not converter.signed
-    assert converter.toggle_signed()
-    assert converter.signed
-
-    converter.set_python_converter(
-        PythonDataConverter(validator=BoolConverter(), iterable_output_type="list", filter_failed=True)
-    )
-    assert type(converter.python_converter) is PythonDataConverter
-
-    with pytest.raises(ValueError):
-        # noinspection PyTypeChecker
-        converter.set_output_bit_width("not a string")
-
-    with pytest.raises(TypeError):
-        # noinspection PyTypeChecker
-        converter.set_python_converter("not a number")
+    assert converter.signed is True
+    assert converter.supported_output_bit_widths == (8, 16, 32, 64, "auto")
 
 
-def test_numpyconverter_success():
+@pytest.mark.parametrize(
+    "value, signed, expected_type",
+    [
+        (5, True, np.int8),
+        (5, False, np.uint8),
+        (256, True, np.int16),
+        (256, False, np.uint16),
+        (65536, True, np.int32),
+        (65536, False, np.uint32),
+        (2**31, True, np.int64),
+        (2**31, False, np.uint32),
+        (2**63 - 1, True, np.int64),
+        (2**63, False, np.uint64),
+        (5.5, True, np.float16),
+        (1e20, True, np.float32),
+        (1e100, True, np.float64),
+    ],
+)
+def test_numpy_data_converter_resolve_scalar_type(value, signed, expected_type) -> None:
+    """Verifies the functionality of NumpyDataConverter class resolve_scalar_type() method.
+
+    Tests resolving scalar types for various integer and float values, considering signed and unsigned options.
     """
-    Verifies correct validation behavior for different configurations of NumpyDataConverter class.
-    """
-    validator = PythonDataConverter(
-        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
-    )
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert np.array_equal(converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]), np.array([5, 1, 0]))
-    assert np.array_equal(converter.python_to_numpy_converter(-5), -5)
-    converter.set_output_bit_width(8)
-    converter.toggle_signed()
-    assert np.array_equal(
-        converter.python_to_numpy_converter([2**4, 2**5, 2**6, 2**7, 2**8, 2**9]),
-        np.array([16, 32, 64, 128, np.inf, np.inf]),
-    )
-    value = converter.python_to_numpy_converter(2**6)
-    assert isinstance(value, np.uint8)
-
-    validator = PythonDataConverter(
-        validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True
-    )
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert np.array_equal(converter.python_to_numpy_converter([5.5, 6.0]), np.array([5.5, 6.0]))
-
-    validator = PythonDataConverter(
-        validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True
-    )
-    converter = NumpyDataConverter(validator, output_bit_width=16)
-    assert np.array_equal(
-        converter.python_to_numpy_converter([5.5e-30, 6.0e30]), np.array([np.nan, np.inf]), equal_nan=True
-    )
-
-    validator = PythonDataConverter(validator=BoolConverter(), iterable_output_type="tuple", filter_failed=True)
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert np.array_equal(
-        converter.python_to_numpy_converter([5, 5.5, True, False, None, "7.1"]),
-        np.array([np.bool(True), np.bool(False)]),
-    )
-
-    validator = PythonDataConverter(validator=NoneConverter(), iterable_output_type="list", filter_failed=True)
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert np.array_equal(
-        converter.python_to_numpy_converter([5, 5.5, "None", "Null", None, "7.1"]),
-        np.array([np.nan, np.nan, np.nan]),
-        equal_nan=True,
-    )
-
-    # Numpy to Python conversion
-    validator = PythonDataConverter(
-        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
-    )
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert converter.numpy_to_python_converter(np.array([5, 1, 0])) == [5, 1, 0]
-    assert converter.numpy_to_python_converter(np.int_(5.0)) == 5
-    assert converter.numpy_to_python_converter(np.array([5])) == 5
-
-    validator = PythonDataConverter(validator=BoolConverter(), iterable_output_type="tuple", filter_failed=True)
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert converter.numpy_to_python_converter(np.array([1, 0])) == (True, False)
-    assert converter.numpy_to_python_converter(np.int_(1)) == True
-    assert converter.numpy_to_python_converter(np.bool_(True)) == True
-
-    validator = PythonDataConverter(validator=NoneConverter(), iterable_output_type="list", filter_failed=True)
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
-    assert converter.numpy_to_python_converter(np.array([np.nan, np.nan, np.nan])) == [None, None, None]
-    assert converter.numpy_to_python_converter(np.nan) is None
-    assert converter.numpy_to_python_converter(np.inf) is None
-
-
-def test_numpyconverter_failure():
-    """
-    Verifies correct validation failure behavior for different configurations of NumpyDataConverter class.
-    """
-    with pytest.raises(OverflowError):
-        validator = PythonDataConverter(
-            validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+    if isinstance(value, float):
+        converter = NumpyDataConverter(
+            python_converter=PythonDataConverter(
+                numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+            ),
+            signed=signed,
         )
-        converter = NumpyDataConverter(validator, output_bit_width="auto")
-        converter.python_to_numpy_converter([2**100, 2**100])
-
-    with pytest.raises(ValueError):
-        validator = PythonDataConverter(
-            validator=NumericConverter(allow_int=False), iterable_output_type="list", filter_failed=True
+    else:
+        converter = NumpyDataConverter(
+            python_converter=PythonDataConverter(
+                numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+            ),
+            signed=signed,
         )
-        converter = NumpyDataConverter(validator, output_bit_width=8)
-        converter.python_to_numpy_converter([0.22, 0.33])
+    assert converter._resolve_scalar_type(value) == expected_type
 
 
-def test_numpyconverter_properties():
-    """
-    Verifies that accessor properties of NumpyDataConverter class function as expected
-    """
-    validator = PythonDataConverter(
-        validator=NumericConverter(allow_float=False), iterable_output_type="list", filter_failed=True
+def test_numpy_data_converter_resolve_scalar_type_errors() -> None:
+    """Verifies the error-handling behavior of the NumpyDataConverter class resolve_scalar_type() method."""
+    converter = NumpyDataConverter(
+        python_converter=PythonDataConverter(
+            numeric_converter=NumericConverter(allow_float_output=False), raise_errors=True
+        )
     )
-    converter = NumpyDataConverter(validator, output_bit_width="auto")
 
-    assert type(converter.python_converter) is PythonDataConverter
-    assert converter.output_bit_width == "auto"
-    assert converter.signed
+    # Tests an unsupported input type
+    message = (
+        f"Unsupported input value type encountered when resolving the numpy datatype to convert the value to."
+        f"Expected an integer or floating input, but encountered {'not a number'} of type "
+        f"{type('not a number').__name__}."
+    )
+    with pytest.raises(TypeError, match=error_format(message)):
+        # noinspection PyTypeChecker
+        converter._resolve_scalar_type("not a number")
+
+    # Tests integer overflow
+    message = (
+        f"Unable to find a supported numpy datatype to represent the input integer value {2**64} as the value "
+        f"is too large. Currently, the maximum supported integer bit-width is 64, which supports unsigned "
+        f"values up to {converter._unsigned_types[-1][-1]} and signed values up to "
+        f"+- {converter._signed_types[-1][-1]}. Currently, the class is configured to use "
+        f"{'signed' if converter._signed else 'unsigned'} type for integer inputs."
+    )
+    with pytest.raises(OverflowError, match=error_format(message)):
+        converter._resolve_scalar_type(2**64)
+
+    # Tests floating overflow
+    converter = NumpyDataConverter(
+        python_converter=PythonDataConverter(
+            numeric_converter=NumericConverter(allow_integer_output=False), raise_errors=True
+        )
+    )
+    message = (
+        f"Unable to find a supported numpy datatype to represent the input floating value {1.7976931348623157e+318} "
+        f"as the value is too large. Currently, the maximum supported floating bit-width is 64, which supports values "
+        f"up to {converter._float_types[-1][-1]}."
+    )
+    with pytest.raises(OverflowError, match=error_format(message)):
+        converter._resolve_scalar_type(1.7976931348623157e318)
