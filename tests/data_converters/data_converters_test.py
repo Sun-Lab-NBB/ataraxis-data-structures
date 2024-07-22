@@ -5,12 +5,12 @@ import numpy as np
 import pytest
 
 from ataraxis_data_structures.data_converters import (
-    BooleanConverter,
     NoneConverter,
     StringConverter,
+    BooleanConverter,
     NumericConverter,
-    PythonDataConverter,
     NumpyDataConverter,
+    PythonDataConverter,
 )
 
 

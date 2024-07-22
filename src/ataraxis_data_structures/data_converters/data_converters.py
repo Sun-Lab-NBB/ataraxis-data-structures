@@ -1,9 +1,10 @@
-from typing import Any, Union, Literal, Optional, Iterable
 from types import NoneType
+from typing import Any, Union, Literal, Iterable, Optional
 
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_base_utilities import console
+
 from ..standalone_methods.data_manipulation_methods import ensure_list
 
 
