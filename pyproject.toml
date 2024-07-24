@@ -5,11 +5,11 @@
 requires = ["hatchling>=1,<2"]
 build-backend = "hatchling.build"
 
-# Project metdata section. Provides the genral ID information about the project.
+# Project metdata section. Provides the general ID information about the project.
 [project]
 name = "ataraxis-data-structures"
 version = "1.0.0"
-description = "Provides data structures and data manipulation methods not avaialble from default Python modules."
+description = "Provides classes and structures for storing, manipulating, and sharing data between Python processes."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
@@ -66,7 +66,7 @@ condarun = [
     "pyyaml>=6,<7",
 ]
 
-# Depepndencies known to be installable with conda for all development platforms (OSX ARM64, WIN AMD64, LIN AMD64).
+# Dependencies known to be installable with conda for all development platforms (OSX ARM64, WIN AMD64, LIN AMD64).
 conda = [
     # Tox
     "tox>=4,<5",

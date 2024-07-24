@@ -1,3 +1,12 @@
+"""This module contains multiple Converter classes that can be used to convert between Python and Numpy datatypes.
+
+The primary purpose of the classes exposed through this module is to provide data validation functionality to classes
+that import a lot of user-defined data, such as YamlConfig class. Specifically, after initial configuration, each of the
+classes exposed through this library can be used to statically validate incoming data using a standardized API. In turn,
+this allows enforcing customizable type-ranges to otherwise untyped Python contexts, greatly simplifying input / output
+standardization and working with c-types and NumPy.
+"""
+
 from types import NoneType
 from typing import Any, Union, Literal, Iterable, Optional
 
