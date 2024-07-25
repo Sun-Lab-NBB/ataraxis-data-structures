@@ -71,7 +71,7 @@ class NestedDictionary:
             TypeError: If new_delimiter argument is not a string.
 
         """
-    def extract_key_datatypes(self) -> set[str]:
+    def _extract_key_datatypes(self) -> set[str]:
         """Extracts datatype names used by keys in the wrapped dictionary and returns them as a set.
 
         Saves extracted datatypes as a set and keeps only unique datatype names. Primarily, this information is useful

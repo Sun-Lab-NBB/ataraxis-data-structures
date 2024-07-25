@@ -41,8 +41,8 @@ dependencies:
   - hyperframe=6.0.1=pyhd8ed1ab_0
   - idna=3.7=pyhd8ed1ab_0
   - imagesize=1.4.1=pyhd8ed1ab_0
-  - importlib-metadata=8.1.0=pyha770c72_0
-  - importlib_metadata=8.1.0=hd8ed1ab_0
+  - importlib-metadata=8.2.0=pyha770c72_0
+  - importlib_metadata=8.2.0=hd8ed1ab_0
   - importlib_resources=6.4.0=pyhd8ed1ab_0
   - iniconfig=2.0.0=pyhd8ed1ab_0
   - jaraco.classes=3.4.0=pyhd8ed1ab_1
@@ -94,7 +94,7 @@ dependencies:
   - pygments=2.18.0=pyhd8ed1ab_0
   - pyproject-api=1.7.1=pyhd8ed1ab_0
   - pysocks=1.7.1=pyha2e5f31_6
-  - pytest=8.3.1=pyhd8ed1ab_0
+  - pytest=8.3.2=pyhd8ed1ab_0
   - pytest-cov=5.0.0=pyhd8ed1ab_0
   - pytest-xdist=3.6.1=pyhd8ed1ab_0
   - python=3.12.4=h194c7f8_0_cpython

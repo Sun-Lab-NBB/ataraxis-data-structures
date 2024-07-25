@@ -13,7 +13,7 @@ from typing import Any, Type, Literal, Optional
 
 import numpy as np
 from numpy.typing import NDArray
-from ataraxis_base_utilities import console
+from ataraxis_base_utilities import console, ensure_list
 
 
 class NestedDictionary:
@@ -91,7 +91,7 @@ class NestedDictionary:
 
         # Sets key_datatype variable to a set that stores all key datatypes. This variable is then used by other
         # methods to support the use of string variable paths (where allowed).
-        self._key_datatypes: set[str] = self.extract_key_datatypes()
+        self._key_datatypes: set[str] = self._extract_key_datatypes()
 
     def __repr__(self) -> str:
         """Returns a string representation of the class instance."""
@@ -134,7 +134,7 @@ class NestedDictionary:
 
         self._path_delimiter = new_delimiter
 
-    def extract_key_datatypes(self) -> set[str]:
+    def _extract_key_datatypes(self) -> set[str]:
         """Extracts datatype names used by keys in the wrapped dictionary and returns them as a set.
 
         Saves extracted datatypes as a set and keeps only unique datatype names. Primarily, this information is useful
@@ -608,7 +608,7 @@ class NestedDictionary:
 
             # Updates dictionary key datatype tracker in case altered dictionary changed the number of unique
             # datatypes.
-            self._key_datatypes = self.extract_key_datatypes()
+            self._key_datatypes = self._extract_key_datatypes()
             return None
         # Otherwise, constructs a new NestedDictionary instance around the altered dictionary and returns this to
         # caller.
@@ -798,7 +798,7 @@ class NestedDictionary:
             self._nested_dictionary = processed_dict
             # Updates dictionary key datatype tracker in case altered dictionary changed the number of unique
             # datatypes.
-            self._key_datatypes = self.extract_key_datatypes()
+            self._key_datatypes = self._extract_key_datatypes()
 
             return None
 
@@ -910,7 +910,10 @@ class NestedDictionary:
             # and compares each key to the target key. When multiple keys from each path can be evaluated, the procedure
             # works from the highest level to the lowest level of each path. If any key in the sequence matches the
             # target key, the path up to and including the key is saved to the return list.
-            for num, key in enumerate(keys, start=1):
+            for num, key in enumerate(ensure_list(keys), start=1):
+                # Note on 'ensure_list' above. For terminal keys, Python automatically optimizes one-element tuples to
+                # variables. This breaks the search mechanism here. To address the issue, keys are always cast to list
+                # before this loop is executed.
                 scanned_path = path[: num + modifier]
                 if key == target_key and scanned_path not in passed_paths:
                     passed_paths.add(scanned_path)
@@ -1034,7 +1037,7 @@ class NestedDictionary:
             self._nested_dictionary = copy.deepcopy(converted_dict._nested_dictionary)
             # Updates dictionary key datatype tracker in case altered dictionary changed the number of unique
             # datatypes
-            self._key_datatypes = self.extract_key_datatypes()
+            self._key_datatypes = self._extract_key_datatypes()
 
             return None
         # Otherwise, returns the newly constructed NestedDictionary instance

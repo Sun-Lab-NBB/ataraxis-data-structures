@@ -277,7 +277,7 @@ def test_extract_key_datatypes(nested_dict: dict, expected_types: set):
     key datatypes used in the dictionary, regardless of nesting level or combination.
     """
     nd = NestedDictionary(nested_dict)
-    extracted_types = nd.extract_key_datatypes()
+    extracted_types = nd._extract_key_datatypes()
     assert extracted_types == expected_types
     assert len(extracted_types) == len(expected_types)
 
@@ -406,9 +406,7 @@ def test_extract_nested_variable_paths(nested_dict: dict, return_raw: bool, expe
         (float("nan"), "str", "nan"),
     ],
 )
-def test_convert_key_to_datatype_success(
-    key: Any, datatype: Literal["int", "str", "float", "NoneType"], expected_result: Any
-):
+def test_convert_key_to_datatype(key: Any, datatype: Literal["int", "str", "float", "NoneType"], expected_result: Any):
     """Verifies the functioning of the NestedDictionary class _convert_key_to_datatype() method.
 
     This test covers the following scenarios:
@@ -505,7 +503,7 @@ def test_convert_key_to_datatype_error():
         (np.array([]), {"int"}, tuple()),  # Empty numpy array
     ],
 )
-def test_convert_variable_path_to_keys_success(
+def test_convert_variable_path_to_keys(
     variable_path: Union[str, list, tuple, np.ndarray],
     key_datatypes: set,
     expected_result: tuple,
@@ -629,9 +627,7 @@ def test_convert_variable_path_to_keys_error():
         ({"b": {"d": {"e": 3, "f": [4, 5, 6]}}}, "b.d", {"e": 3, "f": [4, 5, 6]}),
     ],
 )
-def test_read_nested_value_success(
-    test_dict: dict, variable_path: Union[str, list, tuple, np.ndarray], expected_result: Any
-):
+def test_read_nested_value(test_dict: dict, variable_path: Union[str, list, tuple, np.ndarray], expected_result: Any):
     """
     Verifies the functionality of the NestedDictionary class read_nested_value() method.
 
@@ -704,7 +700,7 @@ def test_read_nested_value_error():
         ({"a": {"b": 1}}, ["a", "b", "c"], 2, {"a": {"b": {"c": 2}}}, True, True, True),
     ],
 )
-def test_write_nested_value_success(
+def test_write_nested_value(
     initial_dict: dict,
     variable_path: Union[str, list, tuple, np.ndarray],
     value: Any,
@@ -795,7 +791,7 @@ def test_write_nested_value_error():
         ({"a": {"b": {"c": 1}}}, ["a"], {}, True, True, False),
     ],
 )
-def test_delete_nested_value_success(
+def test_delete_nested_value(
     initial_dict: dict,
     variable_path: Union[str, list, tuple, np.ndarray],
     expected_dict: dict,
@@ -881,7 +877,7 @@ def test_delete_nested_value_error():
         ({"a": 1, "b": {"c": 2}}, "b", "terminal_only", False, None),
     ],
 )
-def test_find_nested_variable_path_success(
+def test_find_nested_variable_path(
     initial_dict: dict,
     target_key: Union[str, int, float, None],
     search_mode: str,
@@ -957,7 +953,7 @@ def test_find_nested_variable_path_error():
         ({1: [1, 2, 3], 2: {"a": 1, "b": 2}}, "str", True, {"1": [1, 2, 3], "2": {"a": 1, "b": 2}}),
     ],
 )
-def test_convert_all_keys_to_datatype_success(
+def test_convert_all_keys_to_datatype(
     initial_dict: dict[Any, Any],
     target_datatype: Literal["str", "int"],
     modify_class_dictionary: bool,

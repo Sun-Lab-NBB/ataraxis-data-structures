@@ -187,7 +187,23 @@ class SharedMemoryArray:
             self._buffer.close()
             self._is_connected = False
 
-    def _convert_to_slice(self, index: tuple[int, int]) -> tuple[int, int | None]:
+    def destroy(self) -> None:
+        """Requests the underlying shared memory buffer to be destroyed.
+
+        This method should only be called once from the highest runtime scope. Typically, this is done as part of a
+        global runtime shutdown procedure to ensure all resources are released. Calling this method while having
+        SharedMemoryArray instances connected to the buffer will lead to undefined behavior.
+
+        This method will only work if the current instance is NOT connected to the buffer.
+
+        Notes:
+            This method does not do anything on Windows. Windows automatically garbage-collects the buffers as long as
+            they are no longer connected to by any SharedMemoryArray instances.
+        """
+        if not self._is_connected and self._buffer is not None:
+            self._buffer.unlink()
+
+    def _convert_to_slice(self, index: tuple[int, ...]) -> tuple[int, int | None]:
         """Converts the input tuple into start and stop arguments compatible with numpy slice operation.
 
         Args:
@@ -216,13 +232,15 @@ class SharedMemoryArray:
                 stop = int(index[1])
                 return start, stop
             # Invalid input
-            if 1 < len(index) > 2:
+            else:
                 message: str = (
                     f"Unable to convert the index tuple into slice arguments for {self.name} SharedMemoryArray "
                     f"instance. Expected a tuple with 1 or 2 elements (start and stop), but instead encountered "
                     f"a tuple with {len(index)} elements."
                 )
                 console.error(message=message, error=ValueError)
+                # Fallback to appease mypy, should not be reachable
+                raise ValueError(message)  # pragma: no cover
 
     @contextmanager
     def _optional_lock(self, with_lock: bool) -> Generator[Any, Any, None]:
@@ -302,7 +320,7 @@ class SharedMemoryArray:
 
         return start, stop
 
-    def read_data(self, index: int | tuple[int, int], *, convert_output: bool = False, with_lock: bool = True) -> Any:
+    def read_data(self, index: int | tuple[int, ...], *, convert_output: bool = False, with_lock: bool = True) -> Any:
         """Reads data from the shared memory array at the specified slice or index.
 
         This method allows flexibly extracting slices and single values from the shared memory array wrapped by the
@@ -363,6 +381,7 @@ class SharedMemoryArray:
         data: NDArray[Any]
         # Depending on the value of the 'with_lock' argument, this either acquires a Lock or runs without a lock.
         with self._optional_lock(with_lock=with_lock):
+            # noinspection PyTestUnpassedFixture
             data = self._array[start:stop].copy()  # type: ignore
 
         # Determines whether the data can be returned as a scalar or iterable and whether it needs to be converted to
@@ -379,7 +398,7 @@ class SharedMemoryArray:
 
     def write_data(
         self,
-        index: int | tuple[int, int],
+        index: int | tuple[int, ...],
         data: Union[NDArray[Any], list[Any], tuple[Any], np.dtype[Any], int, float, bool, str, None],
         with_lock: bool = True,
     ) -> None:

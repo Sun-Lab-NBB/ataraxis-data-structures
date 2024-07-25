@@ -64,6 +64,17 @@ def test_create_array(int_array):
     assert sma.is_connected
     np.testing.assert_array_equal(sma.read_data((0, 5)), int_array)
 
+    # Destroys the array, freeing up the buffer name to be used by other SMA instances
+    sma.disconnect()
+    sma.destroy()
+
+    # Verifies that the buffer has been freed up
+    sma = SharedMemoryArray.create_array("test_create_array", int_array)
+
+    # Cleans up after the runtime
+    sma.disconnect()
+    sma.destroy()
+
 
 def test_repr(int_array):
     """Verifies the functionality of the SharedMemoryArray class __repr__() method.

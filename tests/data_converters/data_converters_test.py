@@ -885,7 +885,7 @@ def test_python_data_converter_allowed_output_types(config, expected_types) -> N
             "checks, such as numeric limits or string-option filters. The value was provided as part of this "
             "collection of values: ['not a number'].",
         ),
-        # Test case for raising error on invalid input within an iterable when raise_errors is True
+        # Test case for raising error on invalid input within iterable when raise_errors is True
         (
             {"numeric_converter": NumericConverter(), "raise_errors": True},
             [1, "not a number", 3],
@@ -1150,7 +1150,7 @@ def test_numpy_data_converter_convert_value_to_numpy(config, input_value, expect
         13 - Conversion of None to numpy nan.
         14-16 - Conversion of iterables (integers, floats, booleans).
         17-19 - Conversion with auto bit width selection for integers and floats.
-        20 - Conversion of mixed types in an iterable to integer.
+        20 - Conversion of mixed types in iterable to integer.
         21 - Conversion of a numeric string to numpy integer.
     """
     converter = NumpyDataConverter(**config)
@@ -1413,9 +1413,9 @@ def test_numpy_data_converter_convert_value_from_numpy(config, input_value, expe
         11-12 - Conversion of numpy boolean to Python boolean.
         13-15 - Conversion of numpy nan and inf to Python None.
         16-18 - Conversion of numpy arrays (int, float, bool) to Python tuples.
-        20 - Conversion of an empty numpy array to empty Python tuple.
-        21 - Conversion of a single element numpy array to Python scalar.
-        22 - Conversion of a numpy array containing inf and nan to Python tuple with None values.
+        19 - Conversion of an empty numpy array to empty Python tuple.
+        20 - Conversion of a single element numpy array to Python scalar.
+        21 - Conversion of a numpy array containing inf and nan to Python tuple with None values.
     """
     converter = NumpyDataConverter(**config)
     result = converter.convert_value_from_numpy(input_value)

@@ -14,18 +14,18 @@ ___
 
 ## Detailed Description
 
-This library aggregates the classes and methods that are broadly help working with data. This includes 
+This library aggregates the classes and methods that broadly help working with data. This includes 
 classes to manipulate the data, share (move) the data between different Python processes and save and load the 
 data from storage. 
 
 Generally, these classes either implement novel functionality not available through other popular libraries or extend 
-existing functionality to match specific needs of other project Ataraxis module. That said, the library is written in a
-way that it can be used as a standalone module with minimum dependency on other Ataraxis modules.
+existing functionality to match specific needs of other project Ataraxis modules. That said, the library is written 
+in a way that it can be used as a standalone module with minimum dependency on other Ataraxis modules.
 ___
 
 ## Features
 
-- Supports Windows, Linux, and OSx.
+- Supports Windows, Linux, and macOS.
 - Provides a Process- and Thread-safe way of sharing data between Python processes through a NumPy array structure.
 - Provides tools for working with complex nested dictionaries using a path-like API.
 - Provides a set of classes for converting between a wide range of Python and NumPy scalar and iterable datatypes.
@@ -84,9 +84,11 @@ minimalistic example and / or 'quickstart' to detailed notes on nuanced class fu
 (if the class has such functionality).
 
 ### Data Converters
-Generally, Data Converters are designed to in some way mimic the functionality of 
-[pydantic](https://docs.pydantic.dev/latest/) project, but in a different scope. Unlike pydantic, which is primarily 
-a data validator, our Converters are primarily designed ot be flexible data converters.
+Generally, Data Converters are designed to in some way mimic the functionality of the
+[pydantic](https://docs.pydantic.dev/latest/) project. Unlike pydantic, which is primarily a data validator, 
+our Converters are designed specifically for flexible data conversion. While pydantic provides a fairly 
+inflexible 'coercion' mechanism to cast input data to desired types, Converter classes offer a flexible and 
+nuanced mechanism for casting Python variables between different types.
 
 #### Base Converters
 To assist converting to specific Python scalar types, we provide 4 'Base' converters: NumericConverter, 
@@ -154,7 +156,7 @@ assert bool_converter.validate_value("Not an equivalent") == 'None'
 ```
 
 __StringConverter:__ Converts inputs to strings. Since most Python scalar types are string-convertible, the default 
-class configuration is to NOT convert inputs:
+class configuration is to NOT convert inputs (to validate them without a conversion):
 ```
 from ataraxis_data_structures.data_converters import StringConverter
 
@@ -177,9 +179,10 @@ assert str_converter.validate_value('2') is None  # Not a valid option
 
 #### PythonDataConverter
 The PythonDataConverter class expands upon the functionality of the 'Base' Converter classes. To do so, it accepts 
-pre-configured instances of the 'Base' Converter classes and applies them to inputs to its' __validate_value()__ method.
+pre-configured instances of the 'Base' Converter classes and applies them to inputs via its' __validate_value()__ 
+method.
 
-__PythonDataConverter__ extends converter functionality to one-dimensional iterable inputs and outputs by applying 
+__PythonDataConverter__ extends converter functionality to __one-dimensional iterable inputs and outputs__ by applying 
 a 'Base' converter to each element of the iterable. It also works with scalars:
 ```
 from ataraxis_data_structures.data_converters import NumericConverter, PythonDataConverter
@@ -206,28 +209,620 @@ python_converter = PythonDataConverter(
 assert python_converter.validate_value(["33", 11, 14.0, 3.32]) == [33, 11, 14]
 ```
 
-__PythonDataConverter__ also allows combining multiple 'Base' converters to allow multiple output types. 
-*__Note__*: The outputs are preferentially converted in this order float > integer > boolean > None > string"
+__PythonDataConverter__ also allows combining __multiple 'Base' converters__ to allow multiple output types. 
+*__Note:__* The outputs are preferentially converted in this order float > integer > boolean > None > string:
+```
+from ataraxis_data_structures.data_converters import (
+    NumericConverter,
+    BooleanConverter,
+    StringConverter,
+    PythonDataConverter,
+)
+
+# Configured converters to be combined through PythonDataConverter
+numeric_converter = NumericConverter(allow_integer_output=True, allow_float_output=False, parse_number_strings=True)
+bool_converter = BooleanConverter(parse_boolean_equivalents=True)
+string_converter = StringConverter(allow_string_conversion=True)
+
+# When provided with multiple converters, they are applied in this order: Numeric > Boolean > None > String
+python_converter = PythonDataConverter(
+    numeric_converter=numeric_converter, boolean_converter=bool_converter, string_converter=string_converter
+)
+
+# Output depends on the application hierarchy and the configuration of each 'Base' converter. If at least one converter
+# 'validates' the value successfully, the 'highest' success value is returned.
+assert python_converter.validate_value('33') == 33  # Parses integer-convertible string as integer
+
+assert python_converter.validate_value('True') is True  # Parses boolean-equivalent string as boolean
+
+# Since numeric converter cannot output floats and the input is not boolean-equivalent, it is processed by
+# string-converter as a string
+assert python_converter.validate_value(14.123) == '14.123'
+
+# The principles showcased above are iteratively applied to each element of iterable inputs:
+assert python_converter.validate_value(["22", False, 11.0, 3.32]) == (22, False, 11, '3.32')
 ```
 
+__PythonDataConverter__ can be configured to raise exceptions instead of returning string error types:
+```
+from ataraxis_data_structures.data_converters import (
+    NumericConverter,
+    BooleanConverter,
+    StringConverter,
+    PythonDataConverter,
+)
+
+# Configures base converters to make sure input floating values will fail validation.
+numeric_converter = NumericConverter(allow_float_output=False)
+bool_converter = BooleanConverter(parse_boolean_equivalents=False)
+string_converter = StringConverter(allow_string_conversion=False)
+
+# By default, PythonDataConverter is configured to return 'Validation/ConversionError' string for any input(s) that
+# fails conversion:
+python_converter = PythonDataConverter(
+    numeric_converter=numeric_converter, boolean_converter=bool_converter, string_converter=string_converter
+)
+assert python_converter.validate_value([3.124, 1.213]) == ("Validation/ConversionError", "Validation/ConversionError")
+
+# However, the class can be configured to raise errors instead:
+python_converter = PythonDataConverter(
+    numeric_converter=numeric_converter,
+    boolean_converter=bool_converter,
+    string_converter=string_converter,
+    raise_errors=True,
+)
+try:
+    python_converter.validate_value([3.124, 1.213])  # This raises value error
+except ValueError as e:
+    print(f'Encountered error: {e}')
 ```
 
 #### NumpyDataConverter
-The `NumpyConverter` class is a converter and validator is is able to convert python datatypes to numpy datatypes. The
-class extends the functionality of the `PythonDataConverter` to support numpy datatype conversion for only a limited set of
-numpy datatypes. Numpy strings are not supported. A requirement of the `NumpyDataConverter` is for the `filter_failed`
-argument of the `PythonDataConverter` to be true, the defaulted false is not allowed. Here is an example of a numeric
-`NumpyDataConverter`. Note, `NumericConverter` cannot have both fields `allow_int` and `allow_float` being true when passed
-into the `NumpyDataConverter`. Also, the NumpyDataConverter will automatically optimize the bit-width and sign (only 
-integers) of numeric data types is no arguemnt is passed for `bit_width` or `signed`
+The NumpyDataConverter class extends the functionality of PythonDataConverter class to support converting to and from
+NumPy datatypes. The fundamental difference between Python and NumPy data is that NumPy uses c-extensions and, 
+therefore, requires input and output data to be strictly typed before it is processed. In the context of data 
+conversion, this typically means that there is a single NumPy datatype into which we need to 'funnel' one or more 
+Python types.
+
+*__Note!__* At this time, NumpyDataConverter only supports integer, floating-point, and boolean conversion. Support 
+for strings may be added in the future, but currently it is not planned.
+
+__NumpyDataConverter__ works by wrapping an instance of PythonDataConverter class configured in a way that it outputs
+a single Python datatype. After initial configuration, use __convert_value_to_numpy()__ method to convert input 
+Python values to NumPy values.
 ```
-validator = PythonDataConverter(validator=NumericConverter(allow_float=False), filter_failed=True)
-converter = NumpyDataConverter(validator)
-converter.python_to_numpy_converter("7.1")   # Returns 7.1 with type np.uint8
+from ataraxis_data_structures.data_converters import (
+    NumericConverter,
+    PythonDataConverter,
+    NumpyDataConverter
+)
+import numpy as np
+
+# NumpyDataConverter requires a PythonDataConverter instance configured to return a single type:
+numeric_converter = NumericConverter(allow_float_output=False, allow_integer_output=True)  # Only integers are allowed
+
+# PythonDataConverter has to use only one Base converter to satisfy he conditions mentioned above. Additionally, the
+# class has to be configured to raise errors instead of returning error-strings:
+python_converter = PythonDataConverter(numeric_converter=numeric_converter, raise_errors=True)
+
+numpy_converter = NumpyDataConverter(python_converter=python_converter)
+
+# By default, NumpyDataConverter prefers signed integers to unsigned integers and automatically uses the smallest
+# bit-width sufficient to represent the data. This is in contrast to the 'standard' numpy behavior that defaults 
+# to 32 or 64 bit-widths depending on the output type.
+assert numpy_converter.convert_value_to_numpy('3') == np.int8(3)
+assert isinstance(numpy_converter.convert_value_to_numpy('3'), np.int8)
 ```
-This can also convert from numpy datatypes to python natives. Using the same validator and converter:
+
+__NumpyDataConverter__ can be additionally configured to produce outputs of specific bit-widths and, for integers,
+signed or unsigned type:
 ```
-converter.numpy_to_python_converter(np.uint8(7))   # Returns 7 with type int
+from ataraxis_data_structures.data_converters import (
+    NumericConverter,
+    PythonDataConverter,
+    NumpyDataConverter
+)
+import numpy as np
+
+# Specifically, configures the converter to produce unsigned integers using 64 bit-widths.
+numeric_converter = NumericConverter(allow_float_output=False, allow_integer_output=True)
+python_converter = PythonDataConverter(numeric_converter=numeric_converter, raise_errors=True)
+numpy_converter = NumpyDataConverter(python_converter=python_converter, output_bit_width=64, signed=False)
+
+# Although the number would have automatically been converted to an 8-bit signed integer, our configuration ensures
+# it is a 64-bit unsigned integer.
+assert numpy_converter.convert_value_to_numpy('11') == np.uint64(11)
+assert isinstance(numpy_converter.convert_value_to_numpy('11'), np.uint64)
+
+# This works for iterables as well:
+output = numpy_converter.convert_value_to_numpy([11, 341, 67481])
+expected = np.array([11, 341, 67481], dtype=np.uint64)
+assert np.array_equal(output, expected)
+assert output.dtype == np.uint64
+```
+
+__NumpyDataConverter__ can be used to convert numpy datatypes back to Python types using __convert_value_from_numpy()__
+method:
+```
+from ataraxis_data_structures.data_converters import (
+    NumericConverter,
+    PythonDataConverter,
+    NumpyDataConverter
+)
+import numpy as np
+
+# Configures the converter to work with floating-point numbers
+numeric_converter = NumericConverter(allow_float_output=True, allow_integer_output=False)
+python_converter = PythonDataConverter(numeric_converter=numeric_converter, raise_errors=True)
+numpy_converter = NumpyDataConverter(python_converter=python_converter)
+
+# Converts scalar floating types to python types
+assert numpy_converter.convert_value_from_numpy(np.float64(1.23456789)) == 1.23456789
+assert isinstance(numpy_converter.convert_value_from_numpy(np.float64(1.23456789)), float)
+
+# Also works for iterables
+input_array = np.array([1.234, 5.671, 6.978], dtype=np.float16)
+output = numpy_converter.convert_value_from_numpy(input_array)
+assert np.allclose(output, (1.234, 5.671, 6.978), atol=0.01, rtol=0)  # Fuzzy comparison due to rounding
+assert isinstance(output, tuple)
+```
+
+### NestedDictionary
+The NestedDictionary class wraps and manages a Python dictionary object. It exposes methods for evaluating the layout 
+of the wrapped dictionary and manipulating values and sub-dictionaries in the hierarchy using a path-like API.
+
+#### Reading and Writing values
+The class contains two principal methods likely to be helpful for most users: __write_nested_value()__ and 
+__read_nested_value()__ which can be used together with a Path-like API to work with dictionary values:
+```
+from ataraxis_data_structures import NestedDictionary
+
+# By default, the class initializes as an empty dictionary object
+nested_dictionary = NestedDictionary()
+
+# The class is designed to work with nested paths, which are one-dimensional iterables of keys. The class always
+# crawls the dictionary from the highest hierarchy, sequentially indexing sublevels of the dictionary using the
+# provided keys. Note! Key datatypes are important, the class respects input key datatype where possible.
+path = ['level1', 'sublevel2', 'value1']  # This is the same as nested_dict['level1']['sublevel2']['value1']
+
+# To write into the dictionary, you can use a path-like API:
+nested_dictionary.write_nested_value(variable_path=path, value=111)
+
+# To read from the nested dictionary, you can use the same path-like API:
+assert nested_dictionary.read_nested_value(variable_path=path) == 111
+
+# Both methods can be used to read and write individual values and whole dictionary sections:
+path = ['level2']
+nested_dictionary.write_nested_value(variable_path=path, value={'sublevel2': {'subsublevel1': {'value': 3}}})
+assert nested_dictionary.read_nested_value(variable_path=path) == {'sublevel2': {'subsublevel1': {'value': 3}}}
+```
+
+#### Wrapping existing dictionaries
+The class can wrap pre-created dictionaries to extend class functionality to almost any Python dictionary object:
+```
+from ataraxis_data_structures import NestedDictionary
+
+# The class can be initialized with a pre-created dictionary to manage that dictionary
+seed_dict = {'key1': {'key2': {'key3': 10}}, 12: 'value1'}
+nested_dictionary = NestedDictionary(seed_dict)
+
+assert nested_dictionary.read_nested_value(['key1', 'key2', 'key3']) == 10
+assert nested_dictionary.read_nested_value([12]) == 'value1'
+```
+
+#### Path API
+The class generally supports two formats used to specify paths to desired values and sub-dictionaries: an iterable of
+keys and a delimited string.
+```
+from ataraxis_data_structures import NestedDictionary
+
+# Python dictionaries are very flexible with the datatypes that can be used for dictionary keys.
+seed_dict = {11: {'11': {True: False}}}
+nested_dictionary = NestedDictionary(seed_dict)
+
+# When working with dictionaries that mix multiple different types for keys, you have to use the 'iterable' path format.
+# This is the only format that reliably preserves and accounts for key datatypes:
+assert nested_dictionary.read_nested_value([11, '11', True]) is False
+
+# However, when all dictionary keys are of the same datatype, you can use the second format of delimiter-delimited
+# strings. This format does not preserve key datatype information, but it is more human-friendly and mimics the
+# path API commonly used in file systems:
+seed_dict = {'11': {'11': {'True': False}}}
+nested_dictionary = NestedDictionary(seed_dict, path_delimiter='/')
+
+assert nested_dictionary.read_nested_value('11/11/True') is False
+
+# You can always modify the 'delimiter' character via set_path_delimiter() method:
+nested_dictionary.set_path_delimiter('.')
+assert nested_dictionary.read_nested_value('11.11.True') is False
+```
+
+#### Key datatype methods
+The class comes with a set of methods that can be used to discover and potentially modify dictionary key datatypes.
+Primarily, these methods are designed to convert the dictionary to use the same datatype for all keys, where possible, 
+to enable using the 'delimited string' path API.
+```
+from ataraxis_data_structures import NestedDictionary
+
+# Instantiates a dictionary with mixed datatypes.
+seed_dict = {11: {'11': {True: False}}}
+nested_dictionary = NestedDictionary(seed_dict)
+
+# If you do not know the datatypes of your dictionary, you can access them via the 'key_datatypes' property, which
+# returns them as a sorted list of strings. The property is updated during class initialization and when using methods
+# that modify the dictionary, but it references a static set under-the-hood and will NOT reflect any manual changes to
+# the dictionary.
+assert nested_dictionary.key_datatypes == ('bool', 'int', 'str')
+
+# You can use the convert_all_keys_to_datatype method to convert all keys to the desired type. By default, the method
+# modifies the wrapped dictionary in-place, but it can be optionally configured to return a new NestedDictionary class
+# instance that wraps the modified dictionary
+new_nested_dict = nested_dictionary.convert_all_keys_to_datatype(datatype='str', modify_class_dictionary=False)
+assert new_nested_dict.key_datatypes == ('str',)  # All keys have been converted to strings
+assert nested_dictionary.key_datatypes == ('bool', 'int', 'str')  # Conversion did not affect original dictionary
+
+# This showcases the default behavior of in-place conversion
+nested_dictionary.convert_all_keys_to_datatype(datatype='int')
+assert nested_dictionary.key_datatypes == ('int',)  # All keys have been converted to integers
+```
+
+#### Extracting variable paths
+The class is equipped with methods for mapping dictionaries with unknown topologies. Specifically, the class
+can find the paths to all terminal values or to specific terminal (value), intermediate (sub-dictionary) or both 
+(all) dictionary elements:
+```
+from ataraxis_data_structures import NestedDictionary
+
+# Instantiates a dictionary with mixed datatypes complex nesting
+seed_dict = {"11": {"11": {"11": False}}, "key2": {"key2": 123}}
+nested_dictionary = NestedDictionary(seed_dict)
+
+# Extracts the paths to all values stored in the dictionary and returns them using iterable path API format (internally,
+# it is referred to as 'raw').
+value_paths = nested_dictionary.extract_nested_variable_paths(return_raw=True)
+
+# The method has extracted the path to the two terminal values in the dictionary
+assert len(value_paths) == 2
+assert value_paths[0] == ("11", "11", "11")
+assert value_paths[1] == ("key2", "key2")
+
+# If you need to find the path to a specific variable or section, you can use the find_nested_variable_path() to search
+# for the desired path:
+
+# The search can be customized to only evaluate dictionary section keys (intermediate_only), which allows searching for
+# specific sections:
+intermediate_paths = nested_dictionary.find_nested_variable_path(
+    target_key="key2", search_mode="intermediate_only", return_raw=True
+)
+
+# There is only one 'section' key2 in the dictionary, and this key is found inside the highest scope of the dictionary:
+assert intermediate_paths == ('key2',)
+
+# Alternatively, you can search for terminal keys (value keys) only:
+terminal_paths = nested_dictionary.find_nested_variable_path(
+    target_key="11", search_mode="terminal_only", return_raw=True
+)
+
+# There is exactly one path that satisfies those search requirements
+assert terminal_paths == ("11", "11", "11")
+
+# Finally, you can evaluate all keys: terminal and intermediate.
+all_paths = nested_dictionary.find_nested_variable_path(
+    target_key="11", search_mode="all", return_raw=True
+)
+
+# Here, 3 tuples are returned as a tuple of tuples. In the examples above, the algorithm automatically optimized
+# returned data by returning it as a single tuple, since each search discovered a single path.
+assert len(all_paths) == 3
+assert all_paths[0] == ("11",)
+assert all_paths[1] == ("11", "11",)
+assert all_paths[2] == ("11", "11", "11")
+```
+
+#### Overwriting and deleting values
+In addition to reading and adding new values to the dictionary, the class offers methods for overwriting and removing
+existing dictionary sections and values. These methods can be flexibly configured to carry out a wide range of 
+potentially destructive dictionary operations:
+```
+from ataraxis_data_structures import NestedDictionary
+
+# Instantiates a dictionary with mixed datatypes complex nesting
+seed_dict = {"11": {"11": {"11": False}}, "key2": {"key2": 123}}
+nested_dictionary = NestedDictionary(seed_dict)
+
+# By default, the write function is configured to allow overwriting dictionary values
+value_path = "11.11.11"
+modified_dictionary = nested_dictionary.write_nested_value(
+    value_path, value=True, allow_terminal_overwrite=True, modify_class_dictionary=False
+)
+
+# Ensures that 'False' is overwritten with true in the modified dictionary
+assert modified_dictionary.read_nested_value(value_path) is True
+assert nested_dictionary.read_nested_value(value_path) is False
+
+# You can also overwrite dictionary sections, which is not enabled by default:
+value_path = "11.11"
+modified_dictionary = nested_dictionary.write_nested_value(
+    value_path, value={"12": "not bool"}, allow_intermediate_overwrite=True, modify_class_dictionary=False
+)
+
+# This time, the whole intermediate section has been overwritten with the provided dictionary
+assert modified_dictionary.read_nested_value(value_path) == {"12": "not bool"}
+assert nested_dictionary.read_nested_value(value_path) == {"11": False}
+
+# Similarly, you can also delete dictionary values and sections by using the dedicated deletion method. By default, it
+# is designed to remove all dictionary sections that are empty after the deletion has been carried out
+value_path = "11.11.11"
+modified_dictionary = nested_dictionary.delete_nested_value(
+    variable_path=value_path, modify_class_dictionary=False, delete_empty_sections=True
+)
+
+# Ensures the whole branch of '11' keys has been removed from the dictionary
+assert '11.11.11' not in modified_dictionary.extract_nested_variable_paths()
+
+# When empty section deletion is disabled, the branch should remain despite no longer having the deleted key:value pair
+modified_dictionary = nested_dictionary.delete_nested_value(
+    variable_path=value_path, modify_class_dictionary=False, delete_empty_sections=False,
+)
+
+# This path now points to an empty dictionary section, but it exists
+assert '11.11' in modified_dictionary.extract_nested_variable_paths()
+assert modified_dictionary.read_nested_value('11.11') == {}
+```
+
+### YamlConfig
+The YamlConfig class extends the functionality of standard Python dataclasses by bundling them with methods to save and
+load class data to / from .yaml files. Primarily, this is helpful for classes that store configuration data for other
+runtimes so that they can be stored between runtimes and edited (.yaml is human-readable).
+
+#### Saving and loading config data
+This class is intentionally kept as minimalistic as possible. It does not do any input data validation and relies on the
+user manually implementing that functionality, if necessary. The class is designed to be used as a parent for custom
+dataclasses. 
+
+All class 'yaml' functionality is realized through to_yaml() and from_yaml() methods:
+```
+from ataraxis_data_structures import YamlConfig
+from dataclasses import dataclass
+from pathlib import Path
+import tempfile
+
+# First, the class needs to be subclassed as a custom dataclass
+@dataclass
+class MyConfig(YamlConfig):
+    # Note the 'base' class initialization values. This ensures that if the class data is not loaded from manual
+    # storage, the example below will not work.
+    integer: int = 0
+    string: str = 'random'
+
+
+# Instantiates the class using custom values
+config = MyConfig(integer=123, string='hello')
+
+# Uses temporary directory to generate the path that will be used to store the file
+temp_dir = tempfile.mkdtemp()
+out_path = Path(temp_dir).joinpath("my_config.yaml")
+
+# Saves the class as a .yaml file. If you want to see / edit the file manually, replace the example 'temporary'
+# directory with a custom directory
+config.to_yaml(config_path=out_path)
+
+# Ensures the file has been written
+assert out_path.exists()
+
+# Loads and re-instantiates the config as a dataclass using the data inside the .yaml file
+loaded_config = MyConfig.from_yaml(config_path=out_path)
+
+# Ensures that the loaded config data matches the original config
+assert loaded_config.integer == config.integer
+assert loaded_config.string == config.string
+```
+
+### SharedMemoryArray
+The SharedMemoryArray class allows sharing data between multiple Python processes in a thread- and process-safe way.
+It is designed to compliment other common data-sharing methods, such as multiprocessing and multithreading Queue 
+classes. The class implements a shared one-dimensional numpy array, allowing different processes to dynamically write 
+and read any elements of the array independent of order and without mandatory 'consumption' of manipulated elements.
+
+#### Array creation
+The SharedMemoryArray only needs to be initialized __once__ by the highest scope process. That is, only the parent 
+process should create the SharedMemoryArray instance and provide it as an argument to all children processes during
+their instantiation. The initialization process uses the input prototype numpy array and unique buffer name to generate 
+a shared memory buffer and fill it with input array data. 
+
+*__Note!__* The array dimensions and datatype cannot be changed after initialization, the resultant SharedMemoryArray
+will always use the same shape and datatype.
+```
+from ataraxis_data_structures import SharedMemoryArray
+import numpy as np
+
+# The prototype array and buffer name determine the layout of the SharedMemoryArray for its entire lifetime:
+prototype = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
+buffer_name = 'unique_buffer'
+
+# To initialize the array, use create_array() method. DO NOT use class initialization method directly!
+sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
+
+# The instantiated SharedMemoryArray object wraps an array with the same dimensions and data type as the prototype
+# and uses the unique buffer name to identify the shared memory buffer to connect from different processes.
+assert sma.name == buffer_name
+assert sma.shape == prototype.shape
+assert sma.datatype == prototype.dtype
+```
+
+#### Array connection, disconnection and destruction
+Each __child__ process has to use the __connect()__ method to connect to the array before reading or writing data. 
+The parent process that has created the array connects to the array automatically during creation and does not need to 
+be reconnected. At the end of each connected process runtime, you need to call the __disconnect()__ method to remove 
+the reference to the shared buffer:
+```
+import numpy as np
+
+from ataraxis_data_structures import SharedMemoryArray
+
+# Initializes a SharedMemoryArray
+prototype = np.zeros(shape=6, dtype=np.uint64)
+buffer_name = "unique_buffer"
+sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
+
+# This method has to be called before any child process that received the array can manipulate its data. While the
+# process that creates the array is connected automatically, calling the connect() method does not have negative
+# consequences.
+sma.connect()
+
+# You can verify the connection status of the array by using is_connected property:
+assert sma.is_connected
+
+# This disconnects the array from shared buffer. On Windows platforms, when all instances are disconnected from the
+# buffer, the buffer is automatically garbage-collected. Therefore, it is important to make sure the array has at least
+# one connected instance at all times, unless you no longer intend to use the class. On Unix platforms, the buffer may
+# persist even after being disconnected by all instances.
+sma.disconnect()  # For each connect(), there has to be a matching disconnect() statement
+
+assert not sma.is_connected
+
+# On Unix platforms, you may need to manually destroy the array by calling the destroy() method. This has no effect on
+# Windows (see above):
+sma.destroy()  # While not strictly necessary, for each create_array(), there should be a matching destroy() call.
+```
+
+#### Reading array data
+To read from the array wrapped by the class, you can use the __read_data()__ method. The method allows reading
+individual values and array slices and return data as NumPy or Python values:
+```
+import numpy as np
+from ataraxis_data_structures import SharedMemoryArray
+
+# Initializes a SharedMemoryArray
+prototype = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
+buffer_name = "unique_buffer"
+sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
+sma.connect()
+
+# The method can be used to read individual elements from the array. By default, the data is read as the numpy datatype
+# used by the array
+output = sma.read_data(index=2)
+assert output == np.uint64(3)
+assert isinstance(output, np.uint64)
+
+# You can use 'convert_output' flag to force the method to us ePython datatypes for the returned data:
+output = sma.read_data(index=2, convert_output=True)
+assert output == 3
+assert isinstance(output, int)
+
+# By default, the method acquires a Lock object before reading data, preventing multiple processes from working with
+# the array at the same time. For some use cases this can be detrimental (for example, when you are using the array to
+# share the data between multiple read-only processes). In this case, you can read the data without locking:
+output = sma.read_data(index=2, convert_output=True, with_lock=False)
+assert output == 3
+assert isinstance(output, int)
+
+# To read a slice of the array, provide a tuple of two indices (for closed range) or a tuple of one index (start, open
+# range).
+output = sma.read_data(index=(0,), convert_output=True, with_lock=False)
+assert output == [1, 2, 3, 4, 5, 6]
+assert isinstance(output, list)
+
+# Closed range end-index is excluded from sliced data
+output = sma.read_data(index=(1, 4), convert_output=False, with_lock=False)
+assert np.array_equal(output, np.array([2, 3, 4], dtype=np.uint64))
+assert isinstance(output, np.ndarray)
+```
+
+#### Writing array data
+To write data to the array wrapped by the class, use the __write_data()__ method. It's API is deliberately kept very 
+similar to the read method:
+```
+import numpy as np
+from ataraxis_data_structures import SharedMemoryArray
+
+# Initializes a SharedMemoryArray
+prototype = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
+buffer_name = "unique_buffer"
+sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
+sma.connect()
+
+# Data writing method has a similar API to data reading method. It can write scalars and slices to the shared memory
+# array. It tries to automatically convert the input into the type used by the array as needed:
+sma.write_data(index=1, data=7, with_lock=True)
+assert sma.read_data(index=1, convert_output=True) == 7
+
+# Numpy inputs are automatically converted to the correct datatype if possible
+sma.write_data(index=1, data=np.uint8(9), with_lock=True)
+assert sma.read_data(index=1, convert_output=False) == np.uint8(9)
+
+# Writing by slice is also supported
+sma.write_data(index=(1, 3), data=[10, 11], with_lock=False)
+assert sma.read_data(index=(0,), convert_output=True) == [1, 10, 11, 4, 5, 6]
+```
+
+#### Using the array from multiple processes
+While all methods showcased above run from the same process, the main advantage of the class is that they work
+just as well when used from different Python processes:
+```
+import numpy as np
+from ataraxis_data_structures import SharedMemoryArray
+from multiprocessing import Process
+
+
+def concurrent_worker(shared_memory_object: SharedMemoryArray, index: int):
+    """This worker will run in a different process.
+
+    It increments a shared memory array variable by 1 if the variable is even. Since each increment will
+    shift it to be odd, to work as intended, this process has to work together with a different process that
+    increments odd values. The process shuts down once the value reaches 200.
+
+    Args:
+        shared_memory_object: The SharedMemoryArray instance to work with.
+        index: The index inside the array to increment
+    """
+    # Connects to the array
+    shared_memory_object.connect()
+
+    # Runs until the value becomes 200
+    while shared_memory_object.read_data(index) < 200:
+        # Reads data from the input index
+        shared_value = shared_memory_object.read_data(index)
+
+        # Checks if the value is even and below 200
+        if shared_value % 2 == 0 and shared_value < 200:
+            # Increments the value by one and writes it back to the array
+            shared_memory_object.write_data(index, shared_value + 1)
+
+    # Disconnects and terminates the process
+    shared_memory_object.disconnect()
+
+
+if __name__ == "__main__":
+    # Initializes a SharedMemoryArray
+    sma = SharedMemoryArray.create_array("test_concurrent", np.zeros(5, dtype=np.int32))
+
+    # Generates multiple processes and uses each to repeatedly write and read data from different indices of the same
+    # array.
+    processes = [Process(target=concurrent_worker, args=(sma, i)) for i in range(5)]
+    for p in processes:
+        p.start()
+
+    # For each of the array indices, increments the value of the index if it is odd. Child processes increment even
+    # values and ignore odd ones, so the only way for this code to finish is if children and parent process take turns
+    # incrementing shared values until they reach 200
+    while np.any(sma.read_data((0, 5)) < 200):  # Runs as long as any value is below 200
+        # Loops over addressable indices
+        for i in range(5):
+            value = sma.read_data(i)
+            if value % 2 != 0 and value < 200:  # If the value is odd and below 200, increments the value by 1
+                sma.write_data(i, value + 1)
+
+    # Waits for the processes to join
+    for p in processes:
+        p.join()
+
+    # Verifies that all processes ran as expected and incremented their respective variable
+    assert np.all(sma.read_data((0, 5)) == 200)
+
+    # Cleans up the shared memory array after all processes are terminated
+    sma.disconnect()
+    sma.destroy()
 ```
 ___
 
@@ -284,7 +879,7 @@ available pipelines and their implementation. Alternatively, call ```tox list```
 to see the list of available tasks.
 
 **Note!** All commits to this project have to successfully complete the ```tox``` task before being pushed to GitHub. 
-To minimize the runtime task for this task, use ```tox --parallel```.
+To minimize the runtime for this task, use ```tox --parallel```.
 
 For more information, you can also see the 'Usage' section of the 
 [ataraxis-automation project](https://github.com/Sun-Lab-NBB/ataraxis-automation) documentation.
@@ -346,7 +941,7 @@ ___
 
 ## Acknowledgments
 
-- All Sun Lab [members](https://neuroai.github.io/sunlab/people) for providing the inspiration and comments during the
+- All Sun lab [members](https://neuroai.github.io/sunlab/people) for providing the inspiration and comments during the
   development of this library.
 - [numpy](https://github.com/numpy/numpy) project for providing low-level functionality for many of the 
   classes exposed through this library.

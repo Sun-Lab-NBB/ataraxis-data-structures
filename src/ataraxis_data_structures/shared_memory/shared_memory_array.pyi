@@ -101,7 +101,20 @@ class SharedMemoryArray:
             This method does not destroy the shared memory buffer. It only releases the local reference to the shared
             memory buffer, potentially enabling it to be garbage-collected.
         """
-    def _convert_to_slice(self, index: tuple[int, int]) -> tuple[int, int | None]:
+    def destroy(self) -> None:
+        """Requests the underlying shared memory buffer to be destroyed.
+
+        This method should only be called once from the highest runtime scope. Typically, this is done as part of a
+        global runtime shutdown procedure to ensure all resources are released. Calling this method while having
+        SharedMemoryArray instances connected to the buffer will lead to undefined behavior.
+
+        This method will only work if the current instance is NOT connected to the buffer.
+
+        Notes:
+            This method does not do anything on Windows. Windows automatically garbage-collects the buffers as long as
+            they are no longer connected to by any SharedMemoryArray instances.
+        """
+    def _convert_to_slice(self, index: tuple[int, ...]) -> tuple[int, int | None]:
         """Converts the input tuple into start and stop arguments compatible with numpy slice operation.
 
         Args:
@@ -144,7 +157,7 @@ class SharedMemoryArray:
             ValueError: If start index is larger than the stop index after both are converted to positive numbers
             IndexError: If either of the two indices is outside the array boundaries.
         """
-    def read_data(self, index: int | tuple[int, int], *, convert_output: bool = False, with_lock: bool = True) -> Any:
+    def read_data(self, index: int | tuple[int, ...], *, convert_output: bool = False, with_lock: bool = True) -> Any:
         """Reads data from the shared memory array at the specified slice or index.
 
         This method allows flexibly extracting slices and single values from the shared memory array wrapped by the
@@ -173,7 +186,7 @@ class SharedMemoryArray:
         """
     def write_data(
         self,
-        index: int | tuple[int, int],
+        index: int | tuple[int, ...],
         data: NDArray[Any] | list[Any] | tuple[Any] | np.dtype[Any] | int | float | bool | str | None,
         with_lock: bool = True,
     ) -> None:
