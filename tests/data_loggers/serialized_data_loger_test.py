@@ -110,9 +110,9 @@ def test_data_logger_data_integrity(tmp_path, sample_data):
     saved_data = np.load(saved_files[0])
 
     # Extract components from saved data
-    saved_source_id = int.from_bytes(saved_data[:8].tobytes(), byteorder="little")
-    saved_timestamp = int.from_bytes(saved_data[8:16].tobytes(), byteorder="little")
-    saved_content = saved_data[16:]
+    saved_source_id = int.from_bytes(saved_data[:1].tobytes(), byteorder="little")
+    saved_timestamp = int.from_bytes(saved_data[1:9].tobytes(), byteorder="little")
+    saved_content = saved_data[9:]
 
     assert saved_source_id == source_id
     assert saved_timestamp == timestamp
@@ -137,7 +137,7 @@ def test_data_logger_compression(tmp_path, sample_data):
     logger.compress_logs(remove_sources=True, verbose=True)
 
     # Verify compressed files
-    compressed_files = list(tmp_path.glob("*.npz"))
+    compressed_files = list(tmp_path.glob("**/*.npz"))
     assert len(compressed_files) == 2  # One for each unique source_id
 
     # Verify original files were removed

@@ -14,7 +14,7 @@ from multiprocessing.managers import SyncManager
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_time import PrecisionTimer
-from ataraxis_base_utilities import console
+from ataraxis_base_utilities import LogLevel, console
 
 from ..shared_memory import SharedMemoryArray
 
@@ -65,7 +65,6 @@ class DataLogger:
         _terminator_array: A shared memory array used to terminate (shut down) the logger processes.
         _logger_processes: A tuple of Process objects, each representing a logger process.
         _started: A boolean flag used to track whether Logger processes are running.
-        _expired: This flag is used to ensure that start-shutdown cycle can only be performed once.
     """
 
     def __init__(
@@ -147,7 +146,7 @@ class DataLogger:
         if not self._started:
             return
 
-        self._terminator_array.write_data(0, 0)
+        self._terminator_array.write_data(0, 1)
 
         # If check is to appease mypy
         if self._logger_processes is not None:
@@ -218,7 +217,7 @@ class DataLogger:
         sleep_timer = PrecisionTimer(precision="us")
 
         # Main process loop. This loop will run until BOTH the terminator flag is passed and the input queue is empty.
-        while terminator_array.read_data(index=0, convert_output=False) or not input_queue.empty():
+        while not terminator_array.read_data(index=0, convert_output=False) or not input_queue.empty():
             data: NDArray[np.uint8]
             source_id: int
             object_count: int
@@ -228,8 +227,8 @@ class DataLogger:
                 source_id, object_count, time_stamp, serialized_data = input_queue.get_nowait()
 
                 # Prepares the data by serializing originally non-numpy inputs and concatenating all data into one array
-                serialized_time_stamp = np.frombuffer(buffer=np.uint64(time_stamp).tobytes(), dtype=np.uint8)
-                serialized_source = np.frombuffer(buffer=np.uint64(source_id).tobytes(), dtype=np.uint8)
+                serialized_time_stamp = np.frombuffer(buffer=np.uint64(time_stamp), dtype=np.uint8).copy()
+                serialized_source = np.frombuffer(buffer=np.uint8(source_id), dtype=np.uint8).copy()
 
                 # Note, object_count is only needed to properly handle logging with multiple cores. It is assumed that
                 # each source produces the data sequentially and, therefore, that timestamps can be used to resolve the
@@ -280,6 +279,9 @@ class DataLogger:
             verbose: Determines whether to print processed arrays to console. This option is mostly useful for debugging
                 other Ataraxis libraries and should be disabled by default.
         """
+        if verbose:
+            console.enable()  # Ensures Console is enabled if verbose mode is enabled.
+
         # Groups files by source_id
         source_files: dict[int, list[Path]] = defaultdict(list)
 
@@ -301,15 +303,17 @@ class DataLogger:
                 source_data[f"{stem}"] = np.load(file_path)
 
                 if verbose:
-                    console.echo(message=f"Compressing {stem} file with data {source_data[f'{stem}']}")
+                    console.echo(f"Compressing {stem} file with data {source_data[f'{stem}']}")
 
             # Compresses the data for each source into a separate .npz archived named after the source_id
-            output_path = self._output_directory.parent.joinpath(f"{source_id}.npz")
+            output_path = self._output_directory.joinpath(f"{source_id}.npz")
             np.savez_compressed(output_path, **source_data)
 
             # If source removal is requested, deletes all compressed .npy files
             if remove_sources:
                 for file in files:
+                    if verbose:
+                        console.echo(f"Removing compressed file {file}")
                     file.unlink()
 
     @property

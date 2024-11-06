@@ -4,6 +4,7 @@ from multiprocessing import Queue as MPQueue
 import numpy as np
 from _typeshed import Incomplete
 from numpy.typing import NDArray
+from ataraxis_base_utilities import LogLevel as LogLevel
 
 from ..shared_memory import SharedMemoryArray as SharedMemoryArray
 
@@ -53,7 +54,6 @@ class DataLogger:
         _terminator_array: A shared memory array used to terminate (shut down) the logger processes.
         _logger_processes: A tuple of Process objects, each representing a logger process.
         _started: A boolean flag used to track whether Logger processes are running.
-        _expired: This flag is used to ensure that start-shutdown cycle can only be performed once.
     """
 
     _process_count: Incomplete
