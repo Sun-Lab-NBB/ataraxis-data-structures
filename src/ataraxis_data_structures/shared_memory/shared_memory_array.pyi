@@ -187,7 +187,17 @@ class SharedMemoryArray:
     def write_data(
         self,
         index: int | tuple[int, ...],
-        data: NDArray[Any] | list[Any] | tuple[Any] | np.dtype[Any] | int | float | bool | str | None,
+        data: NDArray[Any]
+        | list[Any]
+        | tuple[Any]
+        | np.unsignedinteger[Any]
+        | np.signedinteger[Any]
+        | np.floating[Any]
+        | int
+        | float
+        | bool
+        | str
+        | None,
         with_lock: bool = True,
     ) -> None:
         """Writes data to the shared memory array at the specified index or indices (via slice).

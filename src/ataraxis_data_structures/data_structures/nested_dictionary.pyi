@@ -85,7 +85,7 @@ class NestedDictionary:
             from each key class using its __name__ property.
         """
     def _convert_key_to_datatype(
-        self, key: Any, datatype: Literal["int", "str", "float", "NoneType"]
+        self, key: Any, datatype: Literal["int", "str", "float", "None"]
     ) -> int | str | float | None:
         """Converts the input key to the requested datatype.
 
