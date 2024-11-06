@@ -6,7 +6,8 @@ API documentation: https://ataraxis-data-structures-api-docs.netlify.app/
 Authors: Ivan Kondratyev (Inkaros) & Edwin Chen
 """
 
+from .data_loggers import DataLogger
 from .shared_memory import SharedMemoryArray
 from .data_structures import YamlConfig, NestedDictionary
 
-__all__ = ["SharedMemoryArray", "NestedDictionary", "YamlConfig"]
+__all__ = ["SharedMemoryArray", "NestedDictionary", "YamlConfig", "DataLogger"]
