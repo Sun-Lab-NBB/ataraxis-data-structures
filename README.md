@@ -31,6 +31,7 @@ ___
 - Provides a set of classes for converting between a wide range of Python and NumPy scalar and iterable datatypes.
 - Extends standard Python dataclass to enable it to save and load itself to / from YAML files.
 - Pure-python API.
+- Provides a massively-scalable data logger optimized for saving byte-serialized data from multiple input Processes.
 - GPL 3 License.
 
 ___
