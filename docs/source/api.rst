@@ -29,3 +29,10 @@ Data Converters
    :members:
    :undoc-members:
    :show-inheritance:
+
+Data Loggers
+============
+.. automodule:: ataraxis_data_structures.data_loggers.serialized_data_logger
+   :members:
+   :undoc-members:
+   :show-inheritance:

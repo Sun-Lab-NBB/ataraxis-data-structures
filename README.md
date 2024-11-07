@@ -730,7 +730,7 @@ assert isinstance(output, np.ndarray)
 ```
 
 #### Writing array data
-To write data to the array wrapped by the class, use the __write_data()__ method. It's API is deliberately kept very 
+To write data to the array wrapped by the class, use the __write_data()__ method. Its API is deliberately kept very 
 similar to the read method:
 ```
 import numpy as np
@@ -823,6 +823,65 @@ if __name__ == "__main__":
     # Cleans up the shared memory array after all processes are terminated
     sma.disconnect()
     sma.destroy()
+```
+### DataLogger
+The DataLogger class sets up data logger instances running on isolated cores (Processes) and exposes a shared Queue 
+object for buffering and piping data from any other Process to the logger cores. Currently, the logger is only intended 
+for saving serialized byte arrays used by other Ataraxis libraries (notably: ataraxis-video-system and 
+ataraxis-transport-layer).
+
+#### Logger creation and use
+Currently, a single DataLogger can be initialized at a time. Initializing a second instance until the first instance is
+garbage collected will run into an error due to internal binding of [SharedMemoryArray](#sharedmemoryarray) class.
+```
+from ataraxis_data_structures import DataLogger
+import numpy as np
+import tempfile
+import time as tm
+from pathlib import Path
+
+# Due to the internal use of Process classes, the logger has to be protected by the __main__ guard.
+if __name__ == '__main__':
+    # The Logger only needs to be provided with the path to the output directory to be used. However, it can be further
+    # customized to control the number of processes and threads used to log the data. See class docstrings for details.
+    tempdir = tempfile.TemporaryDirectory()  # A temporary directory for illustration purposes
+    logger = DataLogger(output_directory=Path(tempdir.name))  # The logger will create a new folder: 'tempdir/data_log'
+
+    # Before the logger starts saving data, its saver processes need to be initialized.
+    logger.start()
+
+    # To submit data to the logger, access its input_queue property and share it with all other Processes that need to
+    # log byte-serialized data.
+    logger_queue = logger.input_queue
+
+    # Creates and submits example data to be logged as a 4-element tuple. See 'input_queue' docstrings on additional
+    # details about the purpose of each tuple element
+    source_id = 1
+    object_number = 1
+    timestamp = tm.time()
+    data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)
+    logger_queue.put((source_id, object_number, timestamp, data))
+
+    object_number = 2
+    timestamp = tm.time()
+    data = np.array([6, 7, 8, 9, 10], dtype=np.uint8)
+    # Same source id
+    logger_queue.put((source_id, object_number, timestamp, data))
+
+    # Shutdown ensures all buffered data is saved before the logger is terminated. At the end of this runtime, there
+    # should be 2 .npy files: 1_00000000000000000001.npy and 1_00000000000000000002.npy.
+    logger.shutdown()
+
+    # Verifies two .npy files were created
+    assert len(list(Path(tempdir.name).glob('**/*.npy'))) == 2
+
+    # The logger also provides a method for compressing all .npy files into .npz archives. This method is intended to be
+    # called after the 'online' runtime is over to optimize the memory occupied by data.
+    logger.compress_logs(remove_sources=True)  # Ensures .npy files are deleted once they are compressed into .npz file
+
+    # The compression creates a single .npz file named after the source_id: 1_data_log.npz
+    assert len(list(Path(tempdir.name).glob('**/*.npy'))) == 0
+    assert len(list(Path(tempdir.name).glob('**/*.npz'))) == 1
 ```
 ___
 

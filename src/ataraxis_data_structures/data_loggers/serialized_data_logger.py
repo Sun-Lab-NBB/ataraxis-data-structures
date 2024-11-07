@@ -1,3 +1,11 @@
+"""This module contains the DataLogger class that allows efficiently saving serialized byte-array data collected from
+different Processes.
+
+DataLogger works by creating the requested number of multithreaded logger processes and exposing a single shared Queue
+that is sued to buffer and pipe the data to be logged to the saver processes. The class is optimized for working with
+byte-serialized payloads stored in Numpy arrays.
+"""
+
 import queue
 from typing import Optional
 from pathlib import Path
@@ -10,6 +18,7 @@ from multiprocessing import (
 )
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.managers import SyncManager
+from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,26 +31,29 @@ from ..shared_memory import SharedMemoryArray
 class DataLogger:
     """Saves input data as uncompressed byte numpy array (.npy) files using the requested number of cores and threads.
 
-    This class instantiates and manages the runtime of a logger spread over the requested number of cores and threads.
-    The class exposes a shared multiprocessing Queue via the 'input_queue' property, which can be used to buffer and
-    pipe the data to the processes used by the logger. The class expects the data to consist of 4 elements: the ID
-    code of the source (integer), the count of the data object for that source (integer), the acquisition timestamp
-    (integer) and the serialized data to log (the array of bytes (np.uint8)).
-
-    Initializing the class does not start the logger processes! Call start() method to initialize the logger processes.
+    This class instantiates and manages the runtime of a logger distributed over the requested number of cores and
+    threads. The class exposes a shared multiprocessing Queue via the 'input_queue' property, which can be used to
+    buffer and pipe the data to the logger from other Processes. The class expects the data to consist of 4 elements:
+    the ID code of the source (integer), the sequence position of the data object for that source (integer), the
+    acquisition timestamp (integer) and the serialized data to log (the array of bytes (np.uint8)).
 
     Notes:
-        Do not instantiate more than a single instance of DataLogger class at a time, as the second initialization will
-        fail! Instead, tweak the number of processes and threads as necessary to comply with the load and share the
-        input_queue of the initialized DataLogger with all other classes that need to log serialized data. For most use
-        cases, using a single process (core) with 5-10 threads will be enough to prevent the buffer from filling up.
+        Initializing the class does not start the logger processes! Call start() method to initialize the logger
+        processes.
+
+        Do not instantiate more than a single instance of DataLogger class at a time! Since this class uses
+        SharedMemoryArray with a fixed name to terminate the controller Processes, only one DataLogger instance can
+        exist at a given time. Delete the class instance if you need to recreate it for any reason.
+
+        Tweak the number of processes and threads as necessary to comply with the load and share the input_queue of the
+        initialized DataLogger with all other classes that need to log serialized data. For most use cases, using a
+        single process (core) with 5-10 threads will be enough to prevent the buffer from filling up.
         For demanding runtimes, you can increase the number of cores as necessary to comply with the demand.
 
-        This class will log data into the same directory to allow for the most efficient post-runtime compression.
-        Since all arrays are saved using the source_id as part of the filename, it is possible to demix the data based
-        on its source. Additionally, the order in which the data came is also preserved in resultant file names,
-        allowing to demix the data based on the time it was logged (not to mention that all timestamps are also
-        preserved inside the array).
+        This class will log data from all sources and Processes into the same directory to allow for the most efficient
+        post-runtime compression. Since all arrays are saved using the source_id as part of the filename, it is possible
+        to demix the data based on its source during post-processing. Additionally, the sequence numbers of logged
+        arrays are also used in file names to aid sorting saved data.
 
     Args:
         output_directory: The directory where the log folder will be created.
@@ -55,8 +67,8 @@ class DataLogger:
             disable delays entirely.
 
     Attributes:
-        _process_count: The number of processes to use for logging data.
-        _thread_count: The number of threads to use for logging data. Note, this number of threads will be created for
+        _process_count: The number of processes to use for data saving.
+        _thread_count: The number of threads to use for data saving. Note, this number of threads will be created for
             each process.
         _sleep_timer: The time in microseconds to delay between polling the queue.
         _output_directory: The directory where the log folder will be created.
@@ -74,22 +86,23 @@ class DataLogger:
         thread_count: int = 5,
         sleep_timer: int = 5000,
     ) -> None:
-        self._process_count: int = process_count
-        self._thread_count: int = thread_count
-        self._sleep_timer: int = sleep_timer if sleep_timer > 0 else 0  # Ensures sleep timer is not negative.
+        # Ensures inputs are not negative
+        self._process_count: int = process_count if process_count > 1 else 1
+        self._thread_count: int = thread_count if thread_count > 1 else 1
+        self._sleep_timer: int = sleep_timer if sleep_timer > 0 else 0
 
         # If necessary, ensures that the output directory tree exists. This involves creating an additional folder
         # 'data_log', to which the data will be saved in an uncompressed format.
         self._output_directory: Path = output_directory.joinpath("data_log")
         # noinspection PyProtectedMember
-        console._ensure_directory_exists(self._output_directory)
+        console._ensure_directory_exists(self._output_directory)  # This also ensures input is a valid Path object
 
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
         self._mp_manager: SyncManager = Manager()
         self._input_queue: MPQueue = self._mp_manager.Queue()  # type: ignore
 
         self._terminator_array: SharedMemoryArray = SharedMemoryArray.create_array(
-            name=f"data_logger_terminator",  # This basically prevents two Loggers to be active at the same time.
+            name=f"data_logger_terminator",  # This prevents more than one Logger from being active at the same time.
             prototype=np.zeros(shape=1, dtype=np.uint8),
         )  # Instantiation automatically connects the main process to the array.
 
@@ -113,8 +126,24 @@ class DataLogger:
         self._terminator_array.disconnect()
         self._terminator_array.destroy()
 
+    @staticmethod
+    def _vacate_shared_memory_buffer() -> None:  # pragma: no cover
+        """Clears the SharedMemory buffer with the same name as the one used by the class.
+
+        While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
+        class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
+        reinitialized. This method allows manually removing that buffer to reset the system.
+        """
+        buffer = SharedMemory(name=f"data_logger_terminator", create=False)
+        buffer.close()
+        buffer.unlink()
+
     def start(self) -> None:
-        """Starts the logger processes."""
+        """Starts the logger processes.
+
+        Once this method is called, data submitted to the 'input_queue' of the class instance will be saved to disk via
+        the started Processes.
+        """
         if self._started:
             return
 
@@ -156,6 +185,11 @@ class DataLogger:
     @staticmethod
     def _save_data(filename: Path, data: NDArray[np.uint8]) -> None:  # pragma: no cover
         """Thread worker function that saves the data.
+
+        Args:
+            filename: The name of the file to save the data to. Note, the name has to be suffix-less, as '.npy' suffix
+                will be appended automatically.
+            data: The data to be saved, packaged into one-dimensional bytes array.
 
         Since data saving is primarily IO-bound, using multiple threads per each Process is likely to achieve the best
         saving performance.
@@ -269,13 +303,22 @@ class DataLogger:
         terminator_array.disconnect()
 
     def compress_logs(self, remove_sources: bool = False, verbose: bool = False) -> None:
-        """Consolidates all .npy files in the log directory into a single compressed .npz file.
+        """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
 
-        Individual .npy files are grouped by source_id and acquisition number.
+        Individual .npy files are grouped by acquisition number before being compressed. Sources are demixed to allow
+        for more efficient data processing and reduce the RAM requirements when compressing sizeable chunks of data.
+
+        Notes:
+            This method requires all data from the same source to be loaded into RAM before it is added to the .npz
+            archive. While this should not be a problem for most runtimes, you can modify this method to use memory
+            mapping if your specific use circumstance runs into RAM issues.
+
+            If 'verbose' flag is set to True, the method will enable the Console class to print data to the terminal.
+            Overall, this flag should not be enabled together with other 'verbose' ataraxis runtimes, when possible.
 
         Args:
             remove_sources: Determines whether to remove the individual .npy files after they have been consolidated
-                into .npz archives.
+                into .npz archives. Usually, this is a safe option that saves disk space.
             verbose: Determines whether to print processed arrays to console. This option is mostly useful for debugging
                 other Ataraxis libraries and should be disabled by default.
         """
@@ -294,7 +337,7 @@ class DataLogger:
         for source_id in source_files:
             source_files[source_id].sort(key=lambda x: int(x.stem.split("_")[1]))
 
-        # Compresses all .npy files for each source into a single compressed .npz file
+        # Compresses all .npy files for each source into a single source-specific compressed .npz file
         source_data = {}
         for source_id, files in source_files.items():
             # Loads and uses the array data to fill a temporary dictionary that will be used for .npz archive creation.
@@ -305,8 +348,8 @@ class DataLogger:
                 if verbose:
                     console.echo(f"Compressing {stem} file with data {source_data[f'{stem}']}")
 
-            # Compresses the data for each source into a separate .npz archived named after the source_id
-            output_path = self._output_directory.joinpath(f"{source_id}.npz")
+            # Compresses the data for each source into a separate .npz archive named after the source_id
+            output_path = self._output_directory.joinpath(f"{source_id}_data_log.npz")
             np.savez_compressed(output_path, **source_data)
 
             # If source removal is requested, deletes all compressed .npy files
@@ -320,6 +363,12 @@ class DataLogger:
     def input_queue(self) -> MPQueue:  # type: ignore
         """Returns the multiprocessing Queue used to buffer and pipe the data to the logger processes.
 
-        Share this queue with all source processes that need to log data.
+        Share this queue with all source processes that need to log data. Note, the queue expects the input data to be
+        a 4-element tuple in the following order:
+        -1 the ID code of the source (integer). Has to be unique across all systems that send data to be logged!
+        -2 the acquisition number of the data object (integer). This helps track the order in which data was acquired.
+        -3 the acquisition timestamp (integer). Tracks when the data was originally acquired.
+        -4 the serialized data (A uint8 NumPy array). This has to be a one-dimensional array.
+
         """
         return self._input_queue
