@@ -182,6 +182,9 @@ class DataLogger:
             for process in self._logger_processes:
                 process.join()
 
+        # Shuts down the multiprocessing manager, which automatically garbage-collects queue objects.
+        self._mp_manager.shutdown()
+
     @staticmethod
     def _save_data(filename: Path, data: NDArray[np.uint8]) -> None:  # pragma: no cover
         """Thread worker function that saves the data.
@@ -189,7 +192,7 @@ class DataLogger:
         Args:
             filename: The name of the file to save the data to. Note, the name has to be suffix-less, as '.npy' suffix
                 will be appended automatically.
-            data: The data to be saved, packaged into one-dimensional bytes array.
+            data: The data to be saved, packaged into a one-dimensional bytes array.
 
         Since data saving is primarily IO-bound, using multiple threads per each Process is likely to achieve the best
         saving performance.
@@ -235,7 +238,7 @@ class DataLogger:
                     file_name, data_to_save = local_queue.get_nowait()
                     executor.submit(DataLogger._save_data, file_name, data_to_save)
                     local_queue.task_done()
-                except queue.Empty:
+                except Exception:
                     # If the queue is empty, evaluates whether the shutdown flag is set. If so, terminates the thread
                     if shutdown:
                         break
@@ -279,7 +282,7 @@ class DataLogger:
                 # Adds the logging task to local queue for thread processing
                 local_queue.put((filename, data))
 
-            except queue.Empty:
+            except Exception:
                 # If the queue becomes empty, blocks the process for the requested number of microseconds. With
                 # sufficiently log delays, this can help with managing the power draw and the thermal load of the host
                 # system.
@@ -306,7 +309,7 @@ class DataLogger:
         """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
 
         Individual .npy files are grouped by acquisition number before being compressed. Sources are demixed to allow
-        for more efficient data processing and reduce the RAM requirements when compressing sizeable chunks of data.
+        for more efficient data processing and reduce the RAM requirements when compressing sizable chunks of data.
 
         Notes:
             This method requires all data from the same source to be loaded into RAM before it is added to the .npz
@@ -322,7 +325,8 @@ class DataLogger:
             verbose: Determines whether to print processed arrays to console. This option is mostly useful for debugging
                 other Ataraxis libraries and should be disabled by default.
         """
-        if verbose:
+        was_enabled = console.is_enabled  # Records the initial console status
+        if verbose and not was_enabled:
             console.enable()  # Ensures Console is enabled if verbose mode is enabled.
 
         # Groups files by source_id
@@ -344,9 +348,7 @@ class DataLogger:
             for file_path in files:
                 stem = file_path.stem
                 source_data[f"{stem}"] = np.load(file_path)
-
-                if verbose:
-                    console.echo(f"Compressing {stem} file with data {source_data[f'{stem}']}")
+                console.echo(f"Compressing {stem} file with data {source_data[f'{stem}']}.", level=LogLevel.INFO)
 
             # Compresses the data for each source into a separate .npz archive named after the source_id
             output_path = self._output_directory.joinpath(f"{source_id}_data_log.npz")
@@ -355,9 +357,13 @@ class DataLogger:
             # If source removal is requested, deletes all compressed .npy files
             if remove_sources:
                 for file in files:
-                    if verbose:
-                        console.echo(f"Removing compressed file {file}")
+                    console.echo(f"Removing compressed file {file}.", level=LogLevel.INFO)
                     file.unlink()
+
+        console.echo(f"Log compression complete.", level=LogLevel.SUCCESS)
+
+        if not was_enabled and verbose:
+            console.disable()  # Disables the Console if it was enabled by this runtime.
 
     @property
     def input_queue(self) -> MPQueue:  # type: ignore

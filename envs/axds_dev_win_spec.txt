@@ -425,3 +425,55 @@
     +zstandard-0.23.0 (conda-forge/win-64)
     +zstd-1.5.6 (conda-forge/win-64)
 
+2024-11-17 13:00:11  (rev 5)
+     coverage  {7.6.4 (conda-forge/win-64) -> 7.6.7 (conda-forge/win-64)}
+     hatchling  {1.25.0 (conda-forge/noarch) -> 1.26.3 (conda-forge/noarch)}
+     intel-openmp  {2024.2.1 (conda-forge/win-64) -> 2025.0.0 (conda-forge/win-64)}
+     libblas  {3.9.0 (conda-forge/win-64) -> 3.9.0 (conda-forge/win-64)}
+     libcblas  {3.9.0 (conda-forge/win-64) -> 3.9.0 (conda-forge/win-64)}
+     libexpat  {2.6.3 (conda-forge/win-64) -> 2.6.4 (conda-forge/win-64)}
+     libhwloc  {2.11.1 (conda-forge/win-64) -> 2.11.2 (conda-forge/win-64)}
+     liblapack  {3.9.0 (conda-forge/win-64) -> 3.9.0 (conda-forge/win-64)}
+     libxml2  {2.13.4 (conda-forge/win-64) -> 2.13.5 (conda-forge/win-64)}
+     mkl  {2024.2.2 (conda-forge/win-64) -> 2025.0.0 (conda-forge/win-64)}
+     openssl  {3.3.2 (conda-forge/win-64) -> 3.4.0 (conda-forge/win-64)}
+     packaging  {24.1 (conda-forge/noarch) -> 24.2 (conda-forge/noarch)}
+     ruff  {0.7.2 (conda-forge/win-64) -> 0.7.4 (conda-forge/win-64)}
+     setuptools  {75.3.0 (conda-forge/noarch) -> 75.5.0 (conda-forge/noarch)}
+     tbb  {2021.13.0 (conda-forge/win-64) -> 2022.0.0 (conda-forge/win-64)}
+     tomli  {2.0.2 (conda-forge/noarch) -> 2.1.0 (conda-forge/noarch)}
+     uv  {0.4.30 (conda-forge/win-64) -> 0.5.2 (conda-forge/win-64)}
+     vc  {14.3 (conda-forge/win-64) -> 14.3 (conda-forge/win-64)}
+     vc14_runtime  {14.40.33810 (conda-forge/win-64) -> 14.42.34433 (conda-forge/win-64)}
+     vs2015_runtime  {14.40.33810 (conda-forge/win-64) -> 14.42.34433 (conda-forge/win-64)}
+     wheel  {0.44.0 (conda-forge/noarch) -> 0.45.0 (conda-forge/noarch)}
+     zipp  {3.20.2 (conda-forge/noarch) -> 3.21.0 (conda-forge/noarch)}
+    +libflang-5.0.0 (conda-forge/win-64)
+    +libopenblas-0.3.28 (conda-forge/win-64)
+    +llvm-meta-5.0.0 (conda-forge/noarch)
+    +openmp-5.0.0 (conda-forge/win-64)
+
+2024-11-17 13:00:58  (rev 6)
+     llvm-meta  {5.0.0 (conda-forge/noarch) -> 13.0.1 (conda-forge/noarch)}
+     openmp  {5.0.0 (conda-forge/win-64) -> 5.0.0 (conda-forge/win-64)}
+    +clang_variant-1.0 (conda-forge/win-64)
+    +clangdev-5.0.0 (conda-forge/win-64)
+
+2024-11-17 13:01:31  (rev 7)
+     clangdev  {5.0.0 (conda-forge/win-64) -> 8.0.1 (conda-forge/win-64)}
+     libblas  {3.9.0 (conda-forge/win-64) -> 3.9.0 (conda-forge/win-64)}
+     libcblas  {3.9.0 (conda-forge/win-64) -> 3.9.0 (conda-forge/win-64)}
+     libflang  {5.0.0 (conda-forge/win-64) -> 19.1.3 (conda-forge/win-64)}
+     liblapack  {3.9.0 (conda-forge/win-64) -> 3.9.0 (conda-forge/win-64)}
+     libopenblas  {0.3.28 (conda-forge/win-64) -> 0.3.28 (conda-forge/win-64)}
+     openmp  {5.0.0 (conda-forge/win-64) -> 8.0.1 (conda-forge/win-64)}
+    +blis-0.9.0 (conda-forge/win-64)
+    +clang-8.0.1 (conda-forge/win-64)
+    +clang-tools-8.0.1 (conda-forge/win-64)
+    +clangxx-8.0.1 (conda-forge/win-64)
+    +libclang-8.0.1 (conda-forge/win-64)
+    +libllvm8-8.0.1 (conda-forge/win-64)
+    +llvm-openmp-8.0.1 (conda-forge/win-64)
+    +llvm-tools-8.0.1 (conda-forge/win-64)
+    +llvmdev-8.0.1 (conda-forge/win-64)
+

@@ -4,7 +4,6 @@ from multiprocessing import Queue as MPQueue
 import numpy as np
 from _typeshed import Incomplete
 from numpy.typing import NDArray
-from ataraxis_base_utilities import LogLevel as LogLevel
 
 from ..shared_memory import SharedMemoryArray as SharedMemoryArray
 
@@ -98,7 +97,7 @@ class DataLogger:
         Args:
             filename: The name of the file to save the data to. Note, the name has to be suffix-less, as '.npy' suffix
                 will be appended automatically.
-            data: The data to be saved, packaged into one-dimensional bytes array.
+            data: The data to be saved, packaged into a one-dimensional bytes array.
 
         Since data saving is primarily IO-bound, using multiple threads per each Process is likely to achieve the best
         saving performance.
@@ -128,7 +127,7 @@ class DataLogger:
         """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
 
         Individual .npy files are grouped by acquisition number before being compressed. Sources are demixed to allow
-        for more efficient data processing and reduce the RAM requirements when compressing sizeable chunks of data.
+        for more efficient data processing and reduce the RAM requirements when compressing sizable chunks of data.
 
         Notes:
             This method requires all data from the same source to be loaded into RAM before it is added to the .npz
