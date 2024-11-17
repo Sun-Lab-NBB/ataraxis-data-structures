@@ -152,3 +152,17 @@
     +zstandard-0.23.0 (conda-forge/linux-64)
     +zstd-1.5.6 (conda-forge/linux-64)
 
+2024-11-17 13:19:23  (rev 2)
+     coverage  {7.6.4 (conda-forge/linux-64) -> 7.6.7 (conda-forge/linux-64)}
+     expat  {2.6.3 (conda-forge/linux-64) -> 2.6.4 (conda-forge/linux-64)}
+     hatchling  {1.25.0 (conda-forge/noarch) -> 1.26.3 (conda-forge/noarch)}
+     libexpat  {2.6.3 (conda-forge/linux-64) -> 2.6.4 (conda-forge/linux-64)}
+     openssl  {3.3.2 (conda-forge/linux-64) -> 3.4.0 (conda-forge/linux-64)}
+     packaging  {24.1 (conda-forge/noarch) -> 24.2 (conda-forge/noarch)}
+     ruff  {0.7.2 (conda-forge/linux-64) -> 0.7.4 (conda-forge/linux-64)}
+     setuptools  {75.3.0 (conda-forge/noarch) -> 75.5.0 (conda-forge/noarch)}
+     tomli  {2.0.2 (conda-forge/noarch) -> 2.1.0 (conda-forge/noarch)}
+     uv  {0.4.30 (conda-forge/linux-64) -> 0.5.2 (conda-forge/linux-64)}
+     wheel  {0.44.0 (conda-forge/noarch) -> 0.45.0 (conda-forge/noarch)}
+     zipp  {3.20.2 (conda-forge/noarch) -> 3.21.0 (conda-forge/noarch)}
+
