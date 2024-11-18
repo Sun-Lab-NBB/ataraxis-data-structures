@@ -6,11 +6,14 @@ that is sued to buffer and pipe the data to be logged to the saver processes. Th
 byte-serialized payloads stored in Numpy arrays.
 """
 
-import queue
+import sys
+from queue import Empty, Queue
 from typing import Optional
 from pathlib import Path
+from operator import index
 from threading import Thread
 from collections import defaultdict
+from dataclasses import dataclass
 from multiprocessing import (
     Queue as MPQueue,
     Manager,
@@ -28,18 +31,68 @@ from ataraxis_base_utilities import LogLevel, console
 from ..shared_memory import SharedMemoryArray
 
 
+@dataclass(frozen=True)
+class LogPackage:
+    """Stores the data and ID information to be logged by the DataLogger class and exposes methods for packaging this
+    data into the format expected by the logger.
+
+    This class collects, preprocesses and stores the data to be logged by the DataLogger instance. To be logged, entries
+    have to be packed into this class instance and submitted (put) into the input_queue exposes by the DataLogger class.
+    All data to be logged has to come wrapped into this class instance!
+    """
+
+    source_id: int
+    """The ID code of the source that produced the data. Has to be unique across all systems that send data
+    to be logged during a single runtime!"""
+
+    time_stamp: int
+    """The data acquisition time. Tracks when the data was originally acquired."""
+
+    serialized_data: NDArray[np.uint8]
+    """The data to be logged, stored as a one-dimensional bytes numpy array."""
+
+    def get_data(self) -> tuple[str, NDArray[np.uint8]]:
+        """Constructs and returns the filename and the serialized data package to be logged.
+
+        Returns:
+            A tuple of two elements. The first element is the name to use for the log file, which consists of
+            zero-padded source id and zero-padded time stamp, separated by an underscore. The second element is the
+            data to be logged as a one-dimensional bytes numpy array. THe logged data includes the original data object
+            and the pre-pended source id and time stamp.
+        """
+
+        # Prepares the data by serializing originally non-numpy inputs and concatenating all data into one array
+        serialized_time_stamp = np.frombuffer(buffer=np.uint64(self.time_stamp), dtype=np.uint8).copy()
+        serialized_source = np.frombuffer(buffer=np.uint8(self.source_id), dtype=np.uint8).copy()
+
+        # Note, it is assumed that each source produces the data sequentially and that timestamps are acquired with
+        # sufficiently high resolution to resolve the order of data acquisition.
+        # noinspection PyArgumentList
+        data = np.concatenate([serialized_source, serialized_time_stamp, self.serialized_data], dtype=np.uint8).copy()
+
+        # Zero-pads the timestamps. Uint64 allows for 19 zeroes in total, so pads to 19 digits. Statically appends the
+        # source id as the first number, using underscore to separate source and timestamps.
+        log_name = f"{self.source_id}_{self.time_stamp:019d}"
+
+        return log_name, data
+
+
 class DataLogger:
     """Saves input data as uncompressed byte numpy array (.npy) files using the requested number of cores and threads.
 
     This class instantiates and manages the runtime of a logger distributed over the requested number of cores and
     threads. The class exposes a shared multiprocessing Queue via the 'input_queue' property, which can be used to
-    buffer and pipe the data to the logger from other Processes. The class expects the data to consist of 4 elements:
-    the ID code of the source (integer), the sequence position of the data object for that source (integer), the
-    acquisition timestamp (integer) and the serialized data to log (the array of bytes (np.uint8)).
+    buffer and pipe the data to the logger from other Processes. The class expects the data to be first packaged into
+    LogPackage class instance also available from this library, before it is sent to the logger via the queue object.
 
     Notes:
         Initializing the class does not start the logger processes! Call start() method to initialize the logger
         processes.
+
+        Once the logger process(es) have been started, the class also initializes and maintains a watchdog thread that
+        monitors the runtime status of the processes. If a process shuts down, the thread will detect this and raise
+        the appropriate error to notify the user. Make sure the main process periodically releases GIL to allows the
+        thread to assess the state of the remote process!
 
         Do not instantiate more than a single instance of DataLogger class at a time! Since this class uses
         SharedMemoryArray with a fixed name to terminate the controller Processes, only one DataLogger instance can
@@ -86,7 +139,7 @@ class DataLogger:
         thread_count: int = 5,
         sleep_timer: int = 5000,
     ) -> None:
-        # Ensures inputs are not negative
+        # Ensures numeric inputs are not negative.
         self._process_count: int = process_count if process_count > 1 else 1
         self._thread_count: int = thread_count if thread_count > 1 else 1
         self._sleep_timer: int = sleep_timer if sleep_timer > 0 else 0
@@ -97,18 +150,16 @@ class DataLogger:
         # noinspection PyProtectedMember
         console._ensure_directory_exists(self._output_directory)  # This also ensures input is a valid Path object
 
+        # Initializes a variable that tracks whether the class has been started.
+        self._started: bool = False
+
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
         self._mp_manager: SyncManager = Manager()
         self._input_queue: MPQueue = self._mp_manager.Queue()  # type: ignore
 
-        self._terminator_array: SharedMemoryArray = SharedMemoryArray.create_array(
-            name=f"data_logger_terminator",  # This prevents more than one Logger from being active at the same time.
-            prototype=np.zeros(shape=1, dtype=np.uint8),
-        )  # Instantiation automatically connects the main process to the array.
-
-        # Pre-initializes assets used to store logger Processes and track logger active/inactive status
-        self._logger_processes: Optional[tuple[Process, ...]] = None
-        self._started: bool = False
+        self._terminator_array: Optional[SharedMemoryArray] = None
+        self._logger_processes: tuple[Process, ...] = tuple()
+        self._watchdog_thread: Optional[Thread] = None
 
     def __repr__(self) -> str:
         """Returns a string representation of the DataLogger instance."""
@@ -122,31 +173,24 @@ class DataLogger:
         """Ensures that logger resources are properly released when the class is garbage collected."""
         self.shutdown()
 
-        # Ensures the shared memory array is destroyed when the class is garbage-collected
-        self._terminator_array.disconnect()
-        self._terminator_array.destroy()
-
-    @staticmethod
-    def _vacate_shared_memory_buffer() -> None:  # pragma: no cover
-        """Clears the SharedMemory buffer with the same name as the one used by the class.
-
-        While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
-        class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
-        reinitialized. This method allows manually removing that buffer to reset the system.
-        """
-        buffer = SharedMemory(name=f"data_logger_terminator", create=False)
-        buffer.close()
-        buffer.unlink()
-
     def start(self) -> None:
-        """Starts the logger processes.
+        """Starts the logger processes and the assets used to control and ensure the processes are alive.
 
         Once this method is called, data submitted to the 'input_queue' of the class instance will be saved to disk via
         the started Processes.
         """
+
+        # Prevents re-starting an already started process
         if self._started:
             return
 
+        # Initializes the terminator array, used to control the logger process(es)
+        self._terminator_array = SharedMemoryArray.create_array(
+            name=f"data_logger_terminator",  # Static name ensures only one logger is active at a time.
+            prototype=np.zeros(shape=1, dtype=np.uint8),
+        )  # Instantiation automatically connects the main process to the array.
+
+        # Creates and pacakge processes into the tuple
         self._logger_processes = tuple(
             [
                 Process(
@@ -164,10 +208,21 @@ class DataLogger:
             ]
         )
 
+        # Creates the watchdog thread.
+        self._watchdog_thread = Thread(target=self._watchdog, daemon=True)
+
+        # Ensures that the terminator array is set appropriately to prevent processes from terminating
+        if self._terminator_array is not None:
+            self._terminator_array.write_data(index=0, data=np.uint8(0))
+
+        # Starts logger processes
         for process in self._logger_processes:
             process.start()
 
-        # Sets the tracker flag to enable shutdown()
+        # Starts the process watchdog thread
+        self._watchdog_thread.start()
+
+        # Sets the tracker flag. Among other things, this actually activates the watchdog thread.
         self._started = True
 
     def shutdown(self) -> None:
@@ -175,15 +230,57 @@ class DataLogger:
         if not self._started:
             return
 
-        self._terminator_array.write_data(0, 1)
+        # Amongst other things this soft-inactivates the watchdog thread.
+        self._started = False
 
-        # If check is to appease mypy
-        if self._logger_processes is not None:
-            for process in self._logger_processes:
-                process.join()
+        # Issues the shutdown command to the remote processes and the watchdog thread
+        if self._terminator_array is not None:
+            self._terminator_array.write_data(index=0, data=1)
+
+        # Waits until the process(es) shut down.
+        for process in self._logger_processes:
+            process.join()
 
         # Shuts down the multiprocessing manager, which automatically garbage-collects queue objects.
         self._mp_manager.shutdown()
+
+        # Waits for the watchdog thread to shut down.
+        if self._watchdog_thread is not None:
+            self._watchdog_thread.join()
+
+        # Ensures the shared memory array is destroyed when the class is garbage-collected
+        if self._terminator_array is not None:
+            self._terminator_array.disconnect()
+            self._terminator_array.destroy()
+
+    def _watchdog(self) -> None:
+        """This script should be used by the watchdog thread to ensure the logger processes are alive during runtime.
+
+        This script will raise a RuntimeError if it detects that a process has prematurely shut down. It will verify
+        process states every ~20 ms and will release the GIL between checking the states.
+        """
+
+        timer = PrecisionTimer(precision="ms")
+
+        # The watchdog script will ru until the global shutdown command is issued.
+        while not self._terminator_array.read_data(index=0):  # type: ignore
+            # Checks process state every 20 ms. Releases the GIL while waiting.
+            timer.delay_noblock(delay=20, allow_sleep=True)
+
+            if not self._started:
+                continue
+
+            # Only checks that processes are alive if they are started. The shutdown() flips the started tracker
+            # before actually shutting down the processes, so there should be no collisions here.
+            for num, process in enumerate(self._logger_processes, start=1):
+                # If a started process is not alive, it has encountered an error forcing it to shut down.
+                if not process.is_alive():
+                    message = (
+                        f"Data logger process {num} out of {len(self._logger_processes)} has been prematurely shut "
+                        f"down. This likely indicates that the process has encountered a runtime error that "
+                        f"terminated the process."
+                    )
+                    console.error(message=message, error=RuntimeError)
 
     @staticmethod
     def _save_data(filename: Path, data: NDArray[np.uint8]) -> None:  # pragma: no cover
@@ -222,87 +319,44 @@ class DataLogger:
         """
         # Connects to the shared memory array
         terminator_array.connect()
-        shutdown = False  # Pre-initializes the shutdown flag
 
-        # Creates thread pool for this process
+        # Creates thread pool for this process. It will manage the local saving threads
         executor = ThreadPoolExecutor(max_workers=thread_count)
 
-        # Instantiates a local queue for managing thread tasks
-        local_queue = queue.Queue()  # type: ignore
-
-        def process_local_queue() -> None:
-            """Worker function that distributes local tasks to worker threads."""
-            while True:
-                try:
-                    # Polls the queue without waiting
-                    file_name, data_to_save = local_queue.get_nowait()
-                    executor.submit(DataLogger._save_data, file_name, data_to_save)
-                    local_queue.task_done()
-                except Exception:
-                    # If the queue is empty, evaluates whether the shutdown flag is set. If so, terminates the thread
-                    if shutdown:
-                        break
-
-        # Starts worker threads
-        workers = []
-        for _ in range(thread_count):
-            worker = Thread(target=process_local_queue, daemon=True)
-            worker.start()
-            workers.append(worker)
-
-        # Initializes the timer instance used to briefly inactivate the process when it consumes all data to be logged.
+        # Initializes the timer instance used to temporarily pause the execution when there is no data to process
         sleep_timer = PrecisionTimer(precision="us")
 
         # Main process loop. This loop will run until BOTH the terminator flag is passed and the input queue is empty.
         while not terminator_array.read_data(index=0, convert_output=False) or not input_queue.empty():
-            data: NDArray[np.uint8]
-            source_id: int
-            object_count: int
-            time_stamp: int
             try:
-                # Gets data from input queue with timeout. Expects the data to be passed as a 4-element tuple.
-                source_id, object_count, time_stamp, serialized_data = input_queue.get_nowait()
+                # Gets data from input queue with timeout. The data is expected to be packaged into the LogPackage
+                # class.
+                package: LogPackage = input_queue.get_nowait()
 
-                # Prepares the data by serializing originally non-numpy inputs and concatenating all data into one array
-                serialized_time_stamp = np.frombuffer(buffer=np.uint64(time_stamp), dtype=np.uint8).copy()
-                serialized_source = np.frombuffer(buffer=np.uint8(source_id), dtype=np.uint8).copy()
+                # Pre-processes the data
+                file_name, data = package.get_data()
 
-                # Note, object_count is only needed to properly handle logging with multiple cores. It is assumed that
-                # each source produces the data sequentially and, therefore, that timestamps can be used to resolve the
-                # order of data acquisition.
-                data = np.concatenate(
-                    [serialized_source, serialized_time_stamp, serialized_data], dtype=np.uint8
-                ).copy()
+                # Generates the full name for the output log file by merging the name of the specific file with the
+                # path to the output directory
+                filename = output_directory.joinpath(file_name)
 
-                # Generates the filename for the data. This includes the source id, the process number, and a
-                # zero-padded object count. The object_count is padded to 20 zeroes, which should be enough for most
-                # envisioned runtimes.
-                filename = output_directory.joinpath(f"{source_id}_{object_count:020d}")
+                # Submits task to thread pool to be executed
+                executor.submit(DataLogger._save_data, filename, data)
 
-                # Adds the logging task to local queue for thread processing
-                local_queue.put((filename, data))
-
-            except Exception:
-                # If the queue becomes empty, blocks the process for the requested number of microseconds. With
-                # sufficiently log delays, this can help with managing the power draw and the thermal load of the host
-                # system.
+            # If the queue is empty, invokes the sleep timer to reduce CPU load.
+            except (Empty, KeyError):
                 sleep_timer.delay_noblock(delay=sleep_time, allow_sleep=True)
 
-        # If the loop above is escapes, the logger received the termination command.
-        # Sets the flag used to terminate the threads
-        shutdown = True
+            # If an unknown and unhandled exception occurs, prints and flushes the exception message to the terminal
+            # before re-raising the exception to terminate the process.
+            except Exception as e:
+                sys.stderr.write(str(e))
+                sys.stderr.flush()
+                raise e
 
-        # Waits for all thread tasks to complete
-        local_queue.join()
-
-        # Waits for worker threads to finish
-        for worker in workers:
-            worker.join()
-
-        # Shuts the thread pool down
+        # If the process escapes the loop due to encountering the shutdown command, shuts the executor threads and
+        # disconnects from the terminator array before ending the runtime.
         executor.shutdown(wait=True)
-
-        # Disconnects from the shared memory array
         terminator_array.disconnect()
 
     def compress_logs(self, remove_sources: bool = False, verbose: bool = False) -> None:
@@ -337,7 +391,7 @@ class DataLogger:
             source_id = int(file_path.stem.split("_")[0])
             source_files[source_id].append(file_path)
 
-        # Sorts files within each source_id group by sequence (object) number
+        # Sorts files within each source_id group by their integer-convertible timestamp
         for source_id in source_files:
             source_files[source_id].sort(key=lambda x: int(x.stem.split("_")[1]))
 
@@ -348,7 +402,10 @@ class DataLogger:
             for file_path in files:
                 stem = file_path.stem
                 source_data[f"{stem}"] = np.load(file_path)
-                console.echo(f"Compressing {stem} file with data {source_data[f'{stem}']}.", level=LogLevel.INFO)
+                if verbose:
+                    console.echo(
+                        message=f"Compressing {stem} file with data {source_data[f'{stem}']}.", level=LogLevel.INFO
+                    )
 
             # Compresses the data for each source into a separate .npz archive named after the source_id
             output_path = self._output_directory.joinpath(f"{source_id}_data_log.npz")
@@ -357,24 +414,36 @@ class DataLogger:
             # If source removal is requested, deletes all compressed .npy files
             if remove_sources:
                 for file in files:
-                    console.echo(f"Removing compressed file {file}.", level=LogLevel.INFO)
+                    if verbose:
+                        console.echo(message=f"Removing compressed file {file}.", level=LogLevel.INFO)
                     file.unlink()
 
-        console.echo(f"Log compression complete.", level=LogLevel.SUCCESS)
-
         if not was_enabled and verbose:
+            console.echo(message=f"Log compression complete.", level=LogLevel.SUCCESS)
             console.disable()  # Disables the Console if it was enabled by this runtime.
 
     @property
     def input_queue(self) -> MPQueue:  # type: ignore
         """Returns the multiprocessing Queue used to buffer and pipe the data to the logger processes.
 
-        Share this queue with all source processes that need to log data. Note, the queue expects the input data to be
-        a 4-element tuple in the following order:
-        -1 the ID code of the source (integer). Has to be unique across all systems that send data to be logged!
-        -2 the acquisition number of the data object (integer). This helps track the order in which data was acquired.
-        -3 the acquisition timestamp (integer). Tracks when the data was originally acquired.
-        -4 the serialized data (A uint8 NumPy array). This has to be a one-dimensional array.
-
+        Share this queue with all source processes that need to log data. To ensure correct data packaging, package the
+        data using the LogPackage class exposed by this library before putting it into the queue.
         """
         return self._input_queue
+
+    @staticmethod
+    def _vacate_shared_memory_buffer() -> None:  # pragma: no cover
+        """Clears the SharedMemory buffer with the same name as the one used by the class.
+
+        While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
+        class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
+        reinitialized. This method allows manually removing that buffer to reset the system.
+
+        The method will not do anything if the shared memory buffer does not exist.
+        """
+        try:
+            buffer = SharedMemory(name=f"data_logger_terminator", create=False)
+            buffer.close()
+            buffer.unlink()
+        except Exception:
+            pass

@@ -1,4 +1,7 @@
+from queue import Queue as Queue
 from pathlib import Path
+from operator import index as index
+from dataclasses import dataclass
 from multiprocessing import Queue as MPQueue
 
 import numpy as np
@@ -7,18 +10,45 @@ from numpy.typing import NDArray
 
 from ..shared_memory import SharedMemoryArray as SharedMemoryArray
 
+@dataclass(frozen=True)
+class LogPackage:
+    """Stores the data and ID information to be logged by the DataLogger class and exposes methods for packaging this
+    data into the format expected by the logger.
+
+    This class collects, preprocesses and stores the data to be logged by the DataLogger instance. To be logged, entries
+    have to be packed into this class instance and submitted (put) into the input_queue exposes by the DataLogger class.
+    All data to be logged has to come wrapped into this class instance!
+    """
+
+    source_id: int
+    time_stamp: int
+    serialized_data: NDArray[np.uint8]
+    def get_data(self) -> tuple[str, NDArray[np.uint8]]:
+        """Constructs and returns the filename and the serialized data package to be logged.
+
+        Returns:
+            A tuple of two elements. The first element is the name to use for the log file, which consists of
+            zero-padded source id and zero-padded time stamp, separated by an underscore. The second element is the
+            data to be logged as a one-dimensional bytes numpy array. THe logged data includes the original data object
+            and the pre-pended source id and time stamp.
+        """
+
 class DataLogger:
     """Saves input data as uncompressed byte numpy array (.npy) files using the requested number of cores and threads.
 
     This class instantiates and manages the runtime of a logger distributed over the requested number of cores and
     threads. The class exposes a shared multiprocessing Queue via the 'input_queue' property, which can be used to
-    buffer and pipe the data to the logger from other Processes. The class expects the data to consist of 4 elements:
-    the ID code of the source (integer), the sequence position of the data object for that source (integer), the
-    acquisition timestamp (integer) and the serialized data to log (the array of bytes (np.uint8)).
+    buffer and pipe the data to the logger from other Processes. The class expects the data to be first packaged into
+    LogPackage class instance also available from this library, before it is sent to the logger via the queue object.
 
     Notes:
         Initializing the class does not start the logger processes! Call start() method to initialize the logger
         processes.
+
+        Once the logger process(es) have been started, the class also initializes and maintains a watchdog thread that
+        monitors the runtime status of the processes. If a process shuts down, the thread will detect this and raise
+        the appropriate error to notify the user. Make sure the main process periodically releases GIL to allows the
+        thread to assess the state of the remote process!
 
         Do not instantiate more than a single instance of DataLogger class at a time! Since this class uses
         SharedMemoryArray with a fixed name to terminate the controller Processes, only one DataLogger instance can
@@ -62,11 +92,12 @@ class DataLogger:
     _thread_count: Incomplete
     _sleep_timer: Incomplete
     _output_directory: Incomplete
+    _started: bool
     _mp_manager: Incomplete
     _input_queue: Incomplete
     _terminator_array: Incomplete
     _logger_processes: Incomplete
-    _started: bool
+    _watchdog_thread: Incomplete
     def __init__(
         self, output_directory: Path, process_count: int = 1, thread_count: int = 5, sleep_timer: int = 5000
     ) -> None: ...
@@ -74,22 +105,20 @@ class DataLogger:
         """Returns a string representation of the DataLogger instance."""
     def __del__(self) -> None:
         """Ensures that logger resources are properly released when the class is garbage collected."""
-    @staticmethod
-    def _vacate_shared_memory_buffer() -> None:
-        """Clears the SharedMemory buffer with the same name as the one used by the class.
-
-        While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
-        class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
-        reinitialized. This method allows manually removing that buffer to reset the system.
-        """
     def start(self) -> None:
-        """Starts the logger processes.
+        """Starts the logger processes and the assets used to control and ensure the processes are alive.
 
         Once this method is called, data submitted to the 'input_queue' of the class instance will be saved to disk via
         the started Processes.
         """
     def shutdown(self) -> None:
         """Stops the logger processes once they save all buffered data and releases reserved resources."""
+    def _watchdog(self) -> None:
+        """This script should be used by the watchdog thread to ensure the logger processes are alive during runtime.
+
+        This script will raise a RuntimeError if it detects that a process has prematurely shut down. It will verify
+        process states every ~20 ms and will release the GIL between checking the states.
+        """
     @staticmethod
     def _save_data(filename: Path, data: NDArray[np.uint8]) -> None:
         """Thread worker function that saves the data.
@@ -147,11 +176,16 @@ class DataLogger:
     def input_queue(self) -> MPQueue:
         """Returns the multiprocessing Queue used to buffer and pipe the data to the logger processes.
 
-        Share this queue with all source processes that need to log data. Note, the queue expects the input data to be
-        a 4-element tuple in the following order:
-        -1 the ID code of the source (integer). Has to be unique across all systems that send data to be logged!
-        -2 the acquisition number of the data object (integer). This helps track the order in which data was acquired.
-        -3 the acquisition timestamp (integer). Tracks when the data was originally acquired.
-        -4 the serialized data (A uint8 NumPy array). This has to be a one-dimensional array.
+        Share this queue with all source processes that need to log data. To ensure correct data packaging, package the
+        data using the LogPackage class exposed by this library before putting it into the queue.
+        """
+    @staticmethod
+    def _vacate_shared_memory_buffer() -> None:
+        """Clears the SharedMemory buffer with the same name as the one used by the class.
 
+        While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
+        class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
+        reinitialized. This method allows manually removing that buffer to reset the system.
+
+        The method will not do anything if the shared memory buffer does not exist.
         """

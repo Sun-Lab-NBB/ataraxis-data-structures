@@ -835,7 +835,7 @@ ataraxis-transport-layer).
 Currently, a single DataLogger can be initialized at a time. Initializing a second instance until the first instance is
 garbage collected will run into an error due to internal binding of [SharedMemoryArray](#sharedmemoryarray) class.
 ```
-from ataraxis_data_structures import DataLogger
+from ataraxis_data_structures import DataLogger, LogPackage
 import numpy as np
 import tempfile
 import time as tm
@@ -855,22 +855,23 @@ if __name__ == '__main__':
     # log byte-serialized data.
     logger_queue = logger.input_queue
 
-    # Creates and submits example data to be logged as a 4-element tuple. See 'input_queue' docstrings on additional
-    # details about the purpose of each tuple element
+    # Creates and submits example data to be logged. Note, teh data has to be packaged into a LogPackage dataclass.
     source_id = 1
-    object_number = 1
-    timestamp = tm.time()
+    timestamp = tm.perf_counter_ns()  # timestamp has to be an integer
     data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)
-    logger_queue.put((source_id, object_number, timestamp, data))
+    package = LogPackage(source_id, timestamp, data)
+    logger_queue.put(package)
 
-    object_number = 2
-    timestamp = tm.time()
+    # The timer has to be precise enough to resolve two consecutive datapoints (timestamp has to differ for the two
+    # datapoints, so nanosecond or microsecond timers are best).
+    timestamp = tm.perf_counter_ns()
     data = np.array([6, 7, 8, 9, 10], dtype=np.uint8)
     # Same source id
-    logger_queue.put((source_id, object_number, timestamp, data))
+    package = LogPackage(source_id, timestamp, data)
+    logger_queue.put(package)
 
     # Shutdown ensures all buffered data is saved before the logger is terminated. At the end of this runtime, there
-    # should be 2 .npy files: 1_00000000000000000001.npy and 1_00000000000000000002.npy.
+    # should be 2 .npy files: 1_0000000000000000001.npy and 1_0000000000000000002.npy.
     logger.shutdown()
 
     # Verifies two .npy files were created

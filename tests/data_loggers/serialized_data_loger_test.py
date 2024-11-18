@@ -1,18 +1,20 @@
+import time as tm
+from multiprocessing import Process
+
 import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from ataraxis_data_structures import DataLogger
+from ataraxis_data_structures import DataLogger, LogPackage
 
 
 @pytest.fixture
-def sample_data() -> tuple[int, int, int, NDArray[np.uint8]]:
+def sample_data() -> tuple[int, int, NDArray[np.uint8]]:
     """Provides sample data for testing the DataLogger."""
     source_id = 1
-    object_count = 1
     timestamp = 1234567890
     data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)
-    return source_id, object_count, timestamp, data
+    return source_id, timestamp, data
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -25,8 +27,7 @@ def test_data_logger_initialization(tmp_path):
     assert logger._sleep_timer == 5000
     assert logger._output_directory == tmp_path / "data_log"
     assert logger._started is False
-    assert logger._logger_processes is None
-    del logger  # Since SharedMemoryArray is only unlinked when the class is deleted, forces class deletion
+    assert len(logger._logger_processes) == 0
 
     # Tests custom initialization
     logger = DataLogger(output_directory=tmp_path, process_count=2, thread_count=10, sleep_timer=1000)
@@ -54,13 +55,12 @@ def test_data_logger_start_stop(tmp_path):
     logger.start()
     logger.start()  # Ensures that calling start() twice does nothing.
     assert logger._started is True
-    assert logger._logger_processes is not None
-    assert len(logger._logger_processes) == 1  # Default process count
     assert all(process.is_alive() for process in logger._logger_processes)
 
     # Test shutdown
     logger.shutdown()
     assert all(not process.is_alive() for process in logger._logger_processes)
+    logger.shutdown()  # Verifies that calling shutdown twice does nothing
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -79,8 +79,10 @@ def test_data_logger_multiprocessing(tmp_path, process_count, thread_count, samp
 
     # Submit multiple data points
     for i in range(5):
-        source_id, _, timestamp, data = sample_data
-        logger.input_queue.put((source_id, i, timestamp, data))
+        source_id, timestamp, data = sample_data
+        timestamp += i
+        packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+        logger.input_queue.put(packed_data)
 
     # Allow some time for processing
     logger.shutdown()
@@ -97,8 +99,9 @@ def test_data_logger_data_integrity(tmp_path, sample_data):
     logger = DataLogger(output_directory=tmp_path)
     logger.start()
 
-    source_id, object_count, timestamp, data = sample_data
-    logger.input_queue.put((source_id, object_count, timestamp, data))
+    source_id, timestamp, data = sample_data
+    packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+    logger.input_queue.put(packed_data)
 
     logger.shutdown()
 
@@ -128,8 +131,10 @@ def test_data_logger_compression(tmp_path, sample_data):
     # Submit multiple data points with different source IDs
     source_ids = [1, 1, 2, 2]
     for i, source_id in enumerate(source_ids):
-        _, obj_count, timestamp, data = sample_data
-        logger.input_queue.put((source_id, i, timestamp, data))
+        _, timestamp, data = sample_data
+        timestamp += i
+        packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+        logger.input_queue.put(packed_data)
 
     logger.shutdown()
 
@@ -154,8 +159,10 @@ def test_data_logger_concurrent_access(tmp_path, sample_data):
     from concurrent.futures import ThreadPoolExecutor
 
     def submit_data(i):
-        source_id, _, timestamp, data = sample_data
-        logger.input_queue.put((source_id, i, timestamp, data))
+        source_id, timestamp, data = sample_data
+        timestamp += i
+        packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+        logger.input_queue.put(packed_data)
 
     # Submit data concurrently
     with ThreadPoolExecutor(max_workers=5) as executor:
@@ -189,8 +196,9 @@ def test_data_logger_sleep_timer(tmp_path, sleep_timer, sample_data):
     logger = DataLogger(output_directory=tmp_path, sleep_timer=sleep_timer)
     logger.start()
 
-    source_id, object_count, timestamp, data = sample_data
-    logger.input_queue.put((source_id, object_count, timestamp, data))
+    source_id, timestamp, data = sample_data
+    packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+    logger.input_queue.put(packed_data)
 
     # Allow time for processing
     logger.shutdown()

@@ -169,7 +169,7 @@ class SharedMemoryArray:
         This method should be called once for each Python process that uses this class, before calling any other
         methods. It is called automatically as part of the create_array() method runtime.
         """
-        self._buffer = SharedMemory(name=self._name)  # Connects to the buffer
+        self._buffer = SharedMemory(name=self._name, create=False)  # Connects to the buffer
         # Re-initializes the internal _array with the data from the shared memory buffer.
         self._array = np.ndarray(shape=self._shape, dtype=self._datatype, buffer=self._buffer.buf)
         self._is_connected = True
