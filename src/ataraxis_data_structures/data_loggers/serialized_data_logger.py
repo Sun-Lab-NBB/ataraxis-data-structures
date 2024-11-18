@@ -7,10 +7,9 @@ byte-serialized payloads stored in Numpy arrays.
 """
 
 import sys
-from queue import Empty, Queue
+from queue import Empty
 from typing import Optional
 from pathlib import Path
-from operator import index
 from threading import Thread
 from collections import defaultdict
 from dataclasses import dataclass
@@ -36,9 +35,9 @@ class LogPackage:
     """Stores the data and ID information to be logged by the DataLogger class and exposes methods for packaging this
     data into the format expected by the logger.
 
-    This class collects, preprocesses and stores the data to be logged by the DataLogger instance. To be logged, entries
-    have to be packed into this class instance and submitted (put) into the input_queue exposes by the DataLogger class.
-    All data to be logged has to come wrapped into this class instance!
+    This class collects, preprocesses, and stores the data to be logged by the DataLogger instance. To be logged,
+    entries have to be packed into this class instance and submitted (put) into the input_queue exposes by the
+    DataLogger class. All data to be logged has to come wrapped into this class instance!
     """
 
     source_id: int
@@ -66,7 +65,7 @@ class LogPackage:
         serialized_source = np.frombuffer(buffer=np.uint8(self.source_id), dtype=np.uint8).copy()
 
         # Note, it is assumed that each source produces the data sequentially and that timestamps are acquired with
-        # sufficiently high resolution to resolve the order of data acquisition.
+        # high enough resolution to resolve the order of data acquisition.
         # noinspection PyArgumentList
         data = np.concatenate([serialized_source, serialized_time_stamp, self.serialized_data], dtype=np.uint8).copy()
 
@@ -91,7 +90,7 @@ class DataLogger:
 
         Once the logger process(es) have been started, the class also initializes and maintains a watchdog thread that
         monitors the runtime status of the processes. If a process shuts down, the thread will detect this and raise
-        the appropriate error to notify the user. Make sure the main process periodically releases GIL to allows the
+        the appropriate error to notify the user. Make sure the main process periodically releases GIL to allow the
         thread to assess the state of the remote process!
 
         Do not instantiate more than a single instance of DataLogger class at a time! Since this class uses
@@ -340,7 +339,7 @@ class DataLogger:
                 # path to the output directory
                 filename = output_directory.joinpath(file_name)
 
-                # Submits task to thread pool to be executed
+                # Submits the task to thread pool to be executed
                 executor.submit(DataLogger._save_data, filename, data)
 
             # If the queue is empty, invokes the sleep timer to reduce CPU load.
