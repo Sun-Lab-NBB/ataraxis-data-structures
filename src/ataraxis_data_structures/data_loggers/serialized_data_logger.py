@@ -124,11 +124,12 @@ class DataLogger:
             each process.
         _sleep_timer: The time in microseconds to delay between polling the queue.
         _output_directory: The directory where the log folder will be created.
+        _started: A boolean flag used to track whether Logger processes are running.
         _mp_manager: A manager object used to instantiate and manage the multiprocessing Queue.
         _input_queue: The multiprocessing Queue used to buffer and pipe the data to the logger processes.
-        _terminator_array: A shared memory array used to terminate (shut down) the logger processes.
         _logger_processes: A tuple of Process objects, each representing a logger process.
-        _started: A boolean flag used to track whether Logger processes are running.
+        _terminator_array: A shared memory array used to terminate (shut down) the logger processes.
+        _watchdog_thread: A thread used to monitor the runtime status of remote logger processes.
     """
 
     def __init__(
