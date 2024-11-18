@@ -254,15 +254,15 @@ class DataLogger:
             self._terminator_array.destroy()
 
     def _watchdog(self) -> None:
-        """This script should be used by the watchdog thread to ensure the logger processes are alive during runtime.
+        """This function should be used by the watchdog thread to ensure the logger processes are alive during runtime.
 
-        This script will raise a RuntimeError if it detects that a process has prematurely shut down. It will verify
+        This function will raise a RuntimeError if it detects that a process has prematurely shut down. It will verify
         process states every ~20 ms and will release the GIL between checking the states.
         """
 
         timer = PrecisionTimer(precision="ms")
 
-        # The watchdog script will ru until the global shutdown command is issued.
+        # The watchdog function will run until the global shutdown command is issued.
         while not self._terminator_array.read_data(index=0):  # type: ignore
             # Checks process state every 20 ms. Releases the GIL while waiting.
             timer.delay_noblock(delay=20, allow_sleep=True)
