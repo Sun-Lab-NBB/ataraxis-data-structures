@@ -159,6 +159,12 @@ class NestedDictionary:
             # Updates the set with the name of the types found in the current key tuple (path)
             unique_types.update(type(key).__name__ for key in keys)
 
+        # If the dictionary is empty, defaults to using the 'string' key datatype. This avoids a problem present for
+        # empty dictionaries, where the class does not allow new data to be added using string paths despite the
+        # dictionary having no keys at all.
+        if len(unique_types) == 0:
+            unique_types.add(type(str()).__name__)
+
         # Returns extracted key datatype names to caller
         return unique_types
 
@@ -414,7 +420,7 @@ class NestedDictionary:
                         paths.extend(_inner_extract(input_dict=value, make_raw=make_raw, current_path=new_path))
                     else:
                         # If the key references a non-dictionary variable, formats the constructed key sequence as a
-                        # tuple or as a delimited string and appends it to the path list, prior to returning it to
+                        # tuple or as a delimited string and appends it to the path list, before returning it to
                         # caller. The append operation ensures the path is kept as a separate list object within the
                         # final output list.
                         paths.append(tuple(new_path) if make_raw else self._path_delimiter.join(map(str, new_path)))
@@ -446,7 +452,7 @@ class NestedDictionary:
         Raises:
             KeyError: If any key in the variable_path is not found at the expected nested dictionary level.
                 If a non-terminal key in the key sequence returns a non-dictionary value, forcing the retrieval to
-                be aborted prior to fully evaluating the entire variable path.
+                be aborted before fully evaluating the entire variable path.
         """
         # Extracts the keys from the input variable path
         keys: tuple[Any, ...] = self._convert_variable_path_to_keys(variable_path=variable_path)

@@ -338,7 +338,8 @@ class SharedMemoryArray:
 
         Returns:
             The data at the specified index or slice. When a single data-value is extracted, it is returned as a
-            scalar. When multiple data-values are extracted, they are returned as an iterable.
+            scalar. When multiple data-values are extracted, they are returned as iterable (list, tuple, or numpy
+            array).
 
         Raises:
             RuntimeError: If the class instance is not connected to a shared memory buffer.

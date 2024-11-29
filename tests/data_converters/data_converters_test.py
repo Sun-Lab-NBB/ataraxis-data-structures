@@ -1,10 +1,8 @@
 """Contains tests for classes and methods stored inside the data_converters module of the data_converters pacakge."""
 
-import re
-import textwrap
-
 import numpy as np
 import pytest
+from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures.data_converters import (
     NoneConverter,
@@ -14,21 +12,6 @@ from ataraxis_data_structures.data_converters import (
     NumpyDataConverter,
     PythonDataConverter,
 )
-
-
-def error_format(message: str) -> str:
-    """Formats the input message to match the default Console format and escapes it using re, so that it can be used to
-    verify raised exceptions.
-
-    This method is used to set up pytest 'match' clauses to verify raised exceptions.
-
-    Args:
-        message: The message to format and escape, according to standard Ataraxis testing parameters.
-
-    Returns:
-        Formatted and escape message that can be used as the 'match' argument of pytest.raises() method.
-    """
-    return re.escape(textwrap.fill(message, width=120, break_long_words=False, break_on_hyphens=False))
 
 
 @pytest.mark.parametrize(

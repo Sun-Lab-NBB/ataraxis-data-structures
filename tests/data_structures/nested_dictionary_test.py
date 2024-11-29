@@ -1,37 +1,21 @@
 """Contains tests for classes and methods stored inside the nested_dictionary module of the data_structures pacakge."""
 
-import re
 from typing import Any, Union, Literal, Optional
-import textwrap
 
 import numpy as np
 import pytest
+from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures.data_structures import NestedDictionary
-
-
-def error_format(message: str) -> str:
-    """Formats the input message to match the default Console format and escapes it using re, so that it can be used to
-    verify raised exceptions.
-
-    This method is used to set up pytest 'match' clauses to verify raised exceptions.
-
-    Args:
-        message: The message to format and escape, according to standard Ataraxis testing parameters.
-
-    Returns:
-        Formatted and escape message that can be used as the 'match' argument of pytest.raises() method.
-    """
-    return re.escape(textwrap.fill(message, width=120, break_long_words=False, break_on_hyphens=False))
 
 
 @pytest.mark.parametrize(
     "seed_dictionary, path_delimiter, expected_key_datatypes",
     [
         # Initialization with None (default empty dictionary)
-        (None, ".", set()),
+        (None, ".", {"str"}),
         # Initialization with an empty dictionary
-        ({}, ".", set()),
+        ({}, ".", {"str"}),
         # Simple nested dictionary with string keys and default delimiter
         ({"a": 1, "b": {"c": 2}}, ".", {"str"}),
         # Simple nested dictionary with string keys and custom delimiter
@@ -53,7 +37,7 @@ def error_format(message: str) -> str:
         # Deeply nested dictionary
         ({"a": 1, "b": {"c": {"d": {"e": 5}}}}, ".", {"str"}),
         # Empty dictionary with custom delimiter
-        ({}, "::", set()),
+        ({}, "::", {"str"}),
         # Complex nested dictionary with multiple branches and key types
         ({1: {2: {3: {4: {5: 6}}}}, "a": {"b": {"c": {"d": "e"}}}}, ".", {"int", "str"}),
     ],
@@ -163,7 +147,7 @@ def test_nested_dictionary_properties_and_setters():
 
     # Test key_datatypes with empty dictionary
     empty_nd = NestedDictionary()
-    assert empty_nd.key_datatypes == tuple()
+    assert empty_nd.key_datatypes == ("str",)
 
     # Test key_datatypes with single datatype
     single_type_nd = NestedDictionary({1: "a", 2: "b", 3: "c"})
@@ -254,7 +238,7 @@ def test_nested_dictionary_repr():
         # Flat structure with all valid datatypes (except bool)
         ({1: "a", "b": 2, 3.0: True, None: False}, {"int", "str", "float", "NoneType"}),
         # Empty dictionary
-        ({}, set()),  # Empty dictionary should return an empty set
+        ({}, {"str"}),  # Empty dictionary should return a string type
     ],
 )
 def test_extract_key_datatypes(nested_dict: dict, expected_types: set):

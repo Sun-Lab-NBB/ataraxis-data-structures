@@ -1,11 +1,10 @@
 """Contains tests for SharedMemoryArray class and related methods, stored in the shared_memory package."""
 
-import re
-import textwrap
 from multiprocessing import Process
 
 import numpy as np
 import pytest
+from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import SharedMemoryArray
 
@@ -32,21 +31,6 @@ def bool_array():
 def string_array():
     """Returns a string numpy array prototype used by the tests below."""
     return np.array(["a", "b", "c", "d", "e"], dtype="<U1")
-
-
-def error_format(message: str) -> str:
-    """Formats the input message to match the default Console format and escapes it using re, so that it can be used to
-    verify raised exceptions.
-
-    This method is used to set up pytest 'match' clauses to verify raised exceptions.
-
-    Args:
-        message: The message to format and escape, according to standard Ataraxis testing parameters.
-
-    Returns:
-        Formatted and escape message that can be used as the 'match' argument of pytest.raises() method.
-    """
-    return re.escape(textwrap.fill(message, width=120, break_long_words=False, break_on_hyphens=False))
 
 
 def test_create_array(int_array):
@@ -422,6 +406,7 @@ def test_write_data_error(int_array):
         f"5. The index is outside the valid start index range (0:4)."
     )
     with pytest.raises(IndexError, match=error_format(message)):
+        # noinspection PyTypeChecker
         sma.write_data(5, 10)
 
     # Tests index out of bounds (negative)
@@ -430,6 +415,7 @@ def test_write_data_error(int_array):
         f"-6. The index is outside the valid start index range (0:4)."
     )
     with pytest.raises(IndexError, match=error_format(message)):
+        # noinspection PyTypeChecker
         sma.write_data(-6, 10)
 
     # Tests stop index out of bounds
@@ -438,6 +424,7 @@ def test_write_data_error(int_array):
         f"6. The index is outside the valid stop index range (1:5)."
     )
     with pytest.raises(IndexError, match=error_format(message)):
+        # noinspection PyTypeChecker
         sma.write_data((0, 6), [1, 2, 3, 4, 5, 6])
 
     # Tests start index greater than stop index
@@ -447,6 +434,7 @@ def test_write_data_error(int_array):
         f"allowed."
     )
     with pytest.raises(ValueError, match=error_format(message)):
+        # noinspection PyTypeChecker
         sma.write_data((3, 2), [1, 2])
 
     # Tests writing an invalid data type
@@ -456,6 +444,7 @@ def test_write_data_error(int_array):
         f"to the array: invalid literal for int() with base 10: 'invalid_data'."
     )
     with pytest.raises(ValueError, match=error_format(message)):
+        # noinspection PyTypeChecker
         sma.write_data(0, "invalid_data")
 
     # Tests writing to a disconnected array
@@ -465,6 +454,7 @@ def test_write_data_error(int_array):
         f"connected to the shared memory buffer. Use connect() method prior to calling other class methods."
     )
     with pytest.raises(RuntimeError, match=error_format(message)):
+        # noinspection PyTypeChecker
         sma.write_data(0, 10)
 
     # Tests invalid an index type
@@ -503,6 +493,7 @@ def read_write_worker(sma: SharedMemoryArray):
     # Connects to the input array
     sma.connect()
     # Writes and verifies that the test payload has been written
+    # noinspection PyTypeChecker
     sma.write_data(index=2, data=42, with_lock=False)
     assert sma.read_data(index=2, with_lock=False) == 42
     # Disconnects from the array and terminates the process
