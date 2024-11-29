@@ -1,6 +1,4 @@
-from queue import Queue as Queue
 from pathlib import Path
-from operator import index as index
 from dataclasses import dataclass
 from multiprocessing import Queue as MPQueue
 
@@ -15,9 +13,9 @@ class LogPackage:
     """Stores the data and ID information to be logged by the DataLogger class and exposes methods for packaging this
     data into the format expected by the logger.
 
-    This class collects, preprocesses and stores the data to be logged by the DataLogger instance. To be logged, entries
-    have to be packed into this class instance and submitted (put) into the input_queue exposes by the DataLogger class.
-    All data to be logged has to come wrapped into this class instance!
+    This class collects, preprocesses, and stores the data to be logged by the DataLogger instance. To be logged,
+    entries have to be packed into this class instance and submitted (put) into the input_queue exposes by the
+    DataLogger class. All data to be logged has to come wrapped into this class instance!
     """
 
     source_id: int
@@ -34,7 +32,8 @@ class LogPackage:
         """
 
 class DataLogger:
-    """Saves input data as uncompressed byte numpy array (.npy) files using the requested number of cores and threads.
+    """Saves input data as an uncompressed byte numpy array (.npy) files using the requested number of cores and
+    threads.
 
     This class instantiates and manages the runtime of a logger distributed over the requested number of cores and
     threads. The class exposes a shared multiprocessing Queue via the 'input_queue' property, which can be used to
@@ -47,7 +46,7 @@ class DataLogger:
 
         Once the logger process(es) have been started, the class also initializes and maintains a watchdog thread that
         monitors the runtime status of the processes. If a process shuts down, the thread will detect this and raise
-        the appropriate error to notify the user. Make sure the main process periodically releases GIL to allows the
+        the appropriate error to notify the user. Make sure the main process periodically releases GIL to allow the
         thread to assess the state of the remote process!
 
         Do not instantiate more than a single instance of DataLogger class at a time! Since this class uses
@@ -81,11 +80,12 @@ class DataLogger:
             each process.
         _sleep_timer: The time in microseconds to delay between polling the queue.
         _output_directory: The directory where the log folder will be created.
+        _started: A boolean flag used to track whether Logger processes are running.
         _mp_manager: A manager object used to instantiate and manage the multiprocessing Queue.
         _input_queue: The multiprocessing Queue used to buffer and pipe the data to the logger processes.
-        _terminator_array: A shared memory array used to terminate (shut down) the logger processes.
         _logger_processes: A tuple of Process objects, each representing a logger process.
-        _started: A boolean flag used to track whether Logger processes are running.
+        _terminator_array: A shared memory array used to terminate (shut down) the logger processes.
+        _watchdog_thread: A thread used to monitor the runtime status of remote logger processes.
     """
 
     _process_count: Incomplete
@@ -114,9 +114,9 @@ class DataLogger:
     def shutdown(self) -> None:
         """Stops the logger processes once they save all buffered data and releases reserved resources."""
     def _watchdog(self) -> None:
-        """This script should be used by the watchdog thread to ensure the logger processes are alive during runtime.
+        """This function should be used by the watchdog thread to ensure the logger processes are alive during runtime.
 
-        This script will raise a RuntimeError if it detects that a process has prematurely shut down. It will verify
+        This function will raise a RuntimeError if it detects that a process has prematurely shut down. It will verify
         process states every ~20 ms and will release the GIL between checking the states.
         """
     @staticmethod

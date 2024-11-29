@@ -1,6 +1,3 @@
-import time as tm
-from multiprocessing import Process
-
 import numpy as np
 import pytest
 from numpy.typing import NDArray

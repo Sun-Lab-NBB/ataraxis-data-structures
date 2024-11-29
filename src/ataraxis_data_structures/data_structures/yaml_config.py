@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 
 import yaml
 from dacite import Config, from_dict
-from ataraxis_base_utilities import console
+from ataraxis_base_utilities import console, ensure_directory_exists
 
 
 @dataclass
@@ -44,7 +44,7 @@ class YamlConfig:
             ValueError: If the output path does not point to a file with a '.yaml' or '.yml' extension.
         """
 
-        # Defines YAML formatting options. The purpose of these settings is to make yaml blocks more readable when
+        # Defines YAML formatting options. The purpose of these settings is to make YAML blocks more readable when
         # being edited offline.
         yaml_formatting = {
             "default_style": "",  # Use single or double quotes for scalars as needed
@@ -68,7 +68,7 @@ class YamlConfig:
         # Ensures that the output directory exists. Co-opts a method used by Console class to ensure log file directory
         # exists.
         # noinspection PyProtectedMember
-        console._ensure_directory_exists(config_path)
+        ensure_directory_exists(config_path)
 
         # Writes the data to a .yaml file using custom formatting defined at the top of this method.
         with open(config_path, "w") as yaml_file:

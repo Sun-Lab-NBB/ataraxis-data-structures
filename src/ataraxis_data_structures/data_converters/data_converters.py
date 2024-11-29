@@ -403,7 +403,7 @@ class StringConverter:
 
         When string-options are provided, the class converts them to lower-case regardless of other parameters.
         Validated strings are also converted to lower-case before checking them against the options. This design
-        intentionally makes the class case-insensitive.
+        intentionally makes class initialization arguments case-insensitive.
 
     Args:
         string_options: Optional. A tuple or list of strings that are considered valid string values. Any input not
@@ -617,7 +617,7 @@ class PythonDataConverter:
         _raise_errors: Determines whether to return inputs that failed validation as None or to raise ValueError when
             an input fails validation.
         _allowed_outputs: A set that stores all output types that are supported by the current class configuration.
-        _supported_iterables: A dictionary that maps supported output iterable keys to callable types.
+        _supported_iterables: A dictionary that maps supported output iterables to callable types.
 
     Raises:
         TypeError: If any of the input arguments are not of the expected type.
@@ -785,7 +785,7 @@ class PythonDataConverter:
 
     @classmethod
     def supported_iterables(cls) -> tuple[str, ...]:
-        """Returns a tuple that stores string-names of the supported output iterable types.
+        """Returns a tuple that stores string-names of the supported iterable types.
 
         These names are valid inputs to class 'iterable_output_type' initialization argument.
         """

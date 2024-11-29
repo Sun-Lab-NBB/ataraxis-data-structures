@@ -185,7 +185,7 @@ class NestedDictionary:
         Raises:
             KeyError: If any key in the variable_path is not found at the expected nested dictionary level.
                 If a non-terminal key in the key sequence returns a non-dictionary value, forcing the retrieval to
-                be aborted prior to fully evaluating the entire variable path.
+                be aborted before fully evaluating the entire variable path.
         """
     def write_nested_value(
         self,

@@ -25,7 +25,7 @@ from multiprocessing.shared_memory import SharedMemory
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_time import PrecisionTimer
-from ataraxis_base_utilities import LogLevel, console
+from ataraxis_base_utilities import LogLevel, console, ensure_directory_exists
 
 from ..shared_memory import SharedMemoryArray
 
@@ -77,7 +77,8 @@ class LogPackage:
 
 
 class DataLogger:
-    """Saves input data as uncompressed byte numpy array (.npy) files using the requested number of cores and threads.
+    """Saves input data as an uncompressed byte numpy array (.npy) files using the requested number of cores and
+    threads.
 
     This class instantiates and manages the runtime of a logger distributed over the requested number of cores and
     threads. The class exposes a shared multiprocessing Queue via the 'input_queue' property, which can be used to
@@ -147,8 +148,7 @@ class DataLogger:
         # If necessary, ensures that the output directory tree exists. This involves creating an additional folder
         # 'data_log', to which the data will be saved in an uncompressed format.
         self._output_directory: Path = output_directory.joinpath("data_log")
-        # noinspection PyProtectedMember
-        console._ensure_directory_exists(self._output_directory)  # This also ensures input is a valid Path object
+        ensure_directory_exists(self._output_directory)  # This also ensures input is a valid Path object
 
         # Initializes a variable that tracks whether the class has been started.
         self._started: bool = False
@@ -379,7 +379,7 @@ class DataLogger:
             verbose: Determines whether to print processed arrays to console. This option is mostly useful for debugging
                 other Ataraxis libraries and should be disabled by default.
         """
-        was_enabled = console.is_enabled  # Records the initial console status
+        was_enabled = console.enabled  # Records the initial console status
         if verbose and not was_enabled:
             console.enable()  # Ensures Console is enabled if verbose mode is enabled.
 
