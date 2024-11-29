@@ -8,11 +8,11 @@ build-backend = "hatchling.build"
 # Project metdata section. Provides the general ID information about the project.
 [project]
 name = "ataraxis-data-structures"
-version = "1.1.4"
+version = "2.0.0"
 description = "Provides classes and structures for storing, manipulating, and sharing data between Python processes."
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
     { name = "Edwin Chen", email = "ec769@cornell.edu" },
@@ -21,7 +21,7 @@ maintainers = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
 ]
 
-keywords = ['data-structures', 'data-manipulation', 'nested-dictionary', 'shared-memory', 'ataraxis']
+keywords = ['data structures', 'data manipulation', 'nested dictionary', 'shared memory', 'ataraxis']
 
 classifiers = [
     # Development status
@@ -32,9 +32,9 @@ classifiers = [
     # License
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     # Supported Python Versions
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     # Supported OS systems
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
@@ -44,8 +44,8 @@ classifiers = [
 # Runtime project dependencies. This overlaps with 'condarun' optional list.
 dependencies = [
     "numpy>=2,<3",
-    "ataraxis-base-utilities>=2,<3",
-    "ataraxis-time>=2,<3",
+    "ataraxis-base-utilities>=3,<4",
+    "ataraxis-time>=3,<4",
     "dacite>=1,<2",
     "pyyaml>=6,<7",
 ]
@@ -69,9 +69,6 @@ condarun = [
 
 # Dependencies known to be installable with conda for all development platforms (OSX ARM64, WIN AMD64, LIN AMD64).
 conda = [
-    # Tox
-    "tox>=4,<5",
-
     # Testing
     "pytest>=8,<9",
     "pytest-cov>=6,<7",
@@ -104,20 +101,21 @@ conda = [
 
     # Miscellaneous helpers
     "black>=24,<25",
-    "uv>=0,<1"
 ]
 
 # Dependencies known to not be installable with conda for at least one supported development platform
 # (OSX ARM64, WIN AMD64, LIN AMD64).
 noconda =[
     # Tox
+    "tox>=4,<5",
     "tox-uv>=1,<2",
+    "uv>=0,<1",
 
     # Building
     "build>=1,<2",
 
     # Automation
-    "ataraxis-automation>=3,<4",
+    "ataraxis-automation>=4,<5",
 ]
 
 # A shorthand specification that installs tox and all packages required for development tasks. This specification can
@@ -143,7 +141,7 @@ packages = ["src/ataraxis_data_structures"]
 [tool.ruff]
 line-length = 120         # Maximum column length is set to 120 for this project.
 indent-width = 4          # Same as black, indents are 4 spaces
-target-version = "py310"  # Targets the lowest supported version of python 3.10
+target-version = "py311"  # Targets the lowest supported version of python
 src = ["src"]             # The name of the source directory
 
 # Excludes 'service' .py files, such as the sphinx configuration file from linting.
@@ -156,10 +154,7 @@ lint.select = ["ALL"]
 lint.ignore = [
     "COM812",  # Conflicts with the formatter
     "ISC001",  # Conflicts with the formatter
-    "ANN101",  # "missing-type-self"
     "PT001",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
-    "PT004",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
-    "PT005",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "PT023",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "D107",    # Project-specific, __init__ is documented inside the main class docstring where applicable
     "D205",    # Bugs out for file descriptions
