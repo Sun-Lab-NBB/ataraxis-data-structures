@@ -31,7 +31,7 @@ ___
 - Provides a set of classes for converting between a wide range of Python and NumPy scalar and iterable datatypes.
 - Extends standard Python dataclass to enable it to save and load itself to / from YAML files.
 - Pure-python API.
-- Provides a massively-scalable data logger optimized for saving byte-serialized data from multiple input Processes.
+- Provides a massively scalable data logger optimized for saving byte-serialized data from multiple input Processes.
 - GPL 3 License.
 
 ___
@@ -281,7 +281,7 @@ except ValueError as e:
 #### NumpyDataConverter
 The NumpyDataConverter class extends the functionality of PythonDataConverter class to support converting to and from
 NumPy datatypes. The fundamental difference between Python and NumPy data is that NumPy uses c-extensions and, 
-therefore, requires input and output data to be strictly typed before it is processed. In the context of data 
+therefore, requires the input and output data to be strictly typed before it is processed. In the context of data 
 conversion, this typically means that there is a single NumPy datatype into which we need to 'funnel' one or more 
 Python types.
 
@@ -832,8 +832,8 @@ for saving serialized byte arrays used by other Ataraxis libraries (notably: ata
 ataraxis-transport-layer).
 
 #### Logger creation and use
-Currently, a single DataLogger can be initialized at a time. Initializing a second instance until the first instance is
-garbage collected will run into an error due to internal binding of [SharedMemoryArray](#sharedmemoryarray) class.
+DataLogger is intended to only be initialized once, which should be enough for most use cases. However, it is possible 
+to initialize multiple DataLogger instances by overriding the default 'instance_name' argument value.
 ```
 from ataraxis_data_structures import DataLogger, LogPackage
 import numpy as np
@@ -846,7 +846,9 @@ if __name__ == '__main__':
     # The Logger only needs to be provided with the path to the output directory to be used. However, it can be further
     # customized to control the number of processes and threads used to log the data. See class docstrings for details.
     tempdir = tempfile.TemporaryDirectory()  # A temporary directory for illustration purposes
-    logger = DataLogger(output_directory=Path(tempdir.name))  # The logger will create a new folder: 'tempdir/data_log'
+    logger = DataLogger(output_directory=Path(tempdir.name), instance_name='my_name')  
+    
+    # The logger will create a new folder: 'tempdir/my_name_data_log'
 
     # Before the logger starts saving data, its saver processes need to be initialized.
     logger.start()
@@ -962,8 +964,8 @@ To install the development environment for your OS:
     1. **_Preferred Method_**: Install [tox](https://tox.wiki/en/latest/user_guide.html) or use another
        environment with already installed tox and call ```tox -e import```.
     2. **_Alternative Method_**: Run ```conda env create -f ENVNAME.yml``` or ```mamba env create -f ENVNAME.yml```. 
-       Replace 'ENVNAME.yml' with the name of the environment you want to install (axbu_dev_osx for OSx, 
-       axbu_dev_win for Windows, and axbu_dev_lin for Linux).
+       Replace 'ENVNAME.yml' with the name of the environment you want to install (axds_dev_osx for OSx, 
+       axds_dev_win for Windows, and axds_dev_lin for Linux).
 
 **Hint:** while only the platforms mentioned above were explicitly evaluated, this project is likely to work on any 
 common OS, but may require additional configurations steps.

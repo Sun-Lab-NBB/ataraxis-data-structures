@@ -2,7 +2,7 @@
 different Processes.
 
 DataLogger works by creating the requested number of multithreaded logger processes and exposing a single shared Queue
-that is sued to buffer and pipe the data to be logged to the saver processes. The class is optimized for working with
+that is used to buffer and pipe the data to be logged to the saver processes. The class is optimized for working with
 byte-serialized payloads stored in Numpy arrays.
 """
 
@@ -50,7 +50,7 @@ class LogPackage:
     serialized_data: NDArray[np.uint8]
     """The data to be logged, stored as a one-dimensional bytes numpy array."""
 
-    def get_data(self) -> tuple[str, NDArray[np.uint8]]:
+    def get_data(self) -> tuple[str, NDArray[np.uint8]]:  # pragma: no cover
         """Constructs and returns the filename and the serialized data package to be logged.
 
         Returns:
@@ -94,9 +94,9 @@ class DataLogger:
         the appropriate error to notify the user. Make sure the main process periodically releases GIL to allow the
         thread to assess the state of the remote process!
 
-        Do not instantiate more than a single instance of DataLogger class at a time! Since this class uses
-        SharedMemoryArray with a fixed name to terminate the controller Processes, only one DataLogger instance can
-        exist at a given time. Delete the class instance if you need to recreate it for any reason.
+        This class is designed to only be instantiated once. However, for particularly demanding use cases with many
+        data producers, the shared Queue may become the bottleneck. In this case, you can initialize multiple
+        DataLogger instances, each using a unique instance_name argument.
 
         Tweak the number of processes and threads as necessary to comply with the load and share the input_queue of the
         initialized DataLogger with all other classes that need to log serialized data. For most use cases, using a
@@ -110,6 +110,9 @@ class DataLogger:
 
     Args:
         output_directory: The directory where the log folder will be created.
+        instance_name: The name of the data logger instance. Critically, this is the name used to initialize the
+            SharedMemory buffer used to control the child processes, so it has to be unique across all other
+            Ataraxis codebase instances that also use shared memory.
         process_count: The number of processes to use for logging data.
         thread_count: The number of threads to use for logging data. Note, this number of threads will be created for
             each process.
@@ -124,6 +127,7 @@ class DataLogger:
         _thread_count: The number of threads to use for data saving. Note, this number of threads will be created for
             each process.
         _sleep_timer: The time in microseconds to delay between polling the queue.
+        _name: Stores the name of the data logger instance.
         _output_directory: The directory where the log folder will be created.
         _started: A boolean flag used to track whether Logger processes are running.
         _mp_manager: A manager object used to instantiate and manage the multiprocessing Queue.
@@ -136,6 +140,7 @@ class DataLogger:
     def __init__(
         self,
         output_directory: Path,
+        instance_name: str = "data_logger",
         process_count: int = 1,
         thread_count: int = 5,
         sleep_timer: int = 5000,
@@ -144,10 +149,12 @@ class DataLogger:
         self._process_count: int = process_count if process_count > 1 else 1
         self._thread_count: int = thread_count if thread_count > 1 else 1
         self._sleep_timer: int = sleep_timer if sleep_timer > 0 else 0
+        self._name = str(instance_name)
 
         # If necessary, ensures that the output directory tree exists. This involves creating an additional folder
-        # 'data_log', to which the data will be saved in an uncompressed format.
-        self._output_directory: Path = output_directory.joinpath("data_log")
+        # 'data_log', to which the data will be saved in an uncompressed format. The folder also includes the logger
+        # instance name
+        self._output_directory: Path = output_directory.joinpath(f"{self._name}_data_log")
         ensure_directory_exists(self._output_directory)  # This also ensures input is a valid Path object
 
         # Initializes a variable that tracks whether the class has been started.
@@ -164,14 +171,15 @@ class DataLogger:
     def __repr__(self) -> str:
         """Returns a string representation of the DataLogger instance."""
         message = (
-            f"DataLogger(output_directory={self._output_directory}, process_count={self._process_count}, "
-            f"thread_count={self._thread_count}, sleep_timer={self._sleep_timer} microseconds, started={self._started})"
+            f"DataLogger(name={self._name}, output_directory={self._output_directory}, "
+            f"process_count={self._process_count}, thread_count={self._thread_count}, "
+            f"sleep_timer={self._sleep_timer} microseconds, started={self._started})"
         )
         return message
 
     def __del__(self) -> None:
         """Ensures that logger resources are properly released when the class is garbage collected."""
-        self.shutdown()
+        self.stop()
 
     def start(self) -> None:
         """Starts the logger processes and the assets used to control and ensure the processes are alive.
@@ -186,7 +194,7 @@ class DataLogger:
 
         # Initializes the terminator array, used to control the logger process(es)
         self._terminator_array = SharedMemoryArray.create_array(
-            name=f"data_logger_terminator",  # Static name ensures only one logger is active at a time.
+            name=f"{self._name}_terminator",
             prototype=np.zeros(shape=1, dtype=np.uint8),
         )  # Instantiation automatically connects the main process to the array.
 
@@ -225,7 +233,7 @@ class DataLogger:
         # Sets the tracker flag. Among other things, this actually activates the watchdog thread.
         self._started = True
 
-    def shutdown(self) -> None:
+    def stop(self) -> None:
         """Stops the logger processes once they save all buffered data and releases reserved resources."""
         if not self._started:
             return
@@ -235,7 +243,7 @@ class DataLogger:
 
         # Issues the shutdown command to the remote processes and the watchdog thread
         if self._terminator_array is not None:
-            self._terminator_array.write_data(index=0, data=1)
+            self._terminator_array.write_data(index=0, data=np.uint8(1))
 
         # Waits until the process(es) shut down.
         for process in self._logger_processes:
@@ -274,9 +282,9 @@ class DataLogger:
             # before actually shutting down the processes, so there should be no collisions here.
             for num, process in enumerate(self._logger_processes, start=1):
                 # If a started process is not alive, it has encountered an error forcing it to shut down.
-                if not process.is_alive():
+                if not process.is_alive():  # pragma: no cover
                     message = (
-                        f"Data logger process {num} out of {len(self._logger_processes)} has been prematurely shut "
+                        f"DataLogger process {num} out of {len(self._logger_processes)} has been prematurely shut "
                         f"down. This likely indicates that the process has encountered a runtime error that "
                         f"terminated the process."
                     )
@@ -431,9 +439,8 @@ class DataLogger:
         """
         return self._input_queue
 
-    @staticmethod
-    def _vacate_shared_memory_buffer() -> None:  # pragma: no cover
-        """Clears the SharedMemory buffer with the same name as the one used by the class.
+    def _vacate_shared_memory_buffer(self) -> None:  # pragma: no cover
+        """Clears the SharedMemory buffer that uses instance-specific name.
 
         While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
         class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
@@ -442,8 +449,18 @@ class DataLogger:
         The method will not do anything if the shared memory buffer does not exist.
         """
         try:
-            buffer = SharedMemory(name=f"data_logger_terminator", create=False)
+            buffer = SharedMemory(name=f"{self._name}_terminator", create=False)
             buffer.close()
             buffer.unlink()
         except Exception:
             pass
+
+    @property
+    def name(self) -> str:
+        """Returns the name of the DataLogger instance."""
+        return self._name
+
+    @property
+    def started(self) -> bool:
+        """Returns True if the DataLogger has been started and is actively logging data."""
+        return self._started
