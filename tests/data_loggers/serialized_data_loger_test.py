@@ -22,7 +22,7 @@ def test_data_logger_initialization(tmp_path):
     assert logger._process_count == 1
     assert logger._thread_count == 5
     assert logger._sleep_timer == 5000
-    assert logger._output_directory == tmp_path / "data_log"
+    assert logger._output_directory == tmp_path / f"{logger.name}_data_log"
     assert logger._started is False
     assert len(logger._logger_processes) == 0
 
@@ -38,26 +38,32 @@ def test_data_logger_initialization(tmp_path):
 def test_data_logger_directory_creation(tmp_path):
     """Verifies that the DataLogger creates the necessary output directory."""
     logger = DataLogger(output_directory=tmp_path)
-    assert (tmp_path / "data_log").exists()
-    assert (tmp_path / "data_log").is_dir()
-    logger.shutdown()
+    assert (tmp_path / f"{logger.name}_data_log").exists()
+    assert (tmp_path / f"{logger.name}_data_log").is_dir()
 
 
 @pytest.mark.xdist_group(name="group1")
 def test_data_logger_start_stop(tmp_path):
-    """Verifies the start and shutdown functionality of the DataLogger."""
+    """Verifies the start and stop functionality of the DataLogger."""
     logger = DataLogger(output_directory=tmp_path)
+    assert not logger.started
 
     # Test start
     logger.start()
+    assert logger.started
     logger.start()  # Ensures that calling start() twice does nothing.
     assert logger._started is True
     assert all(process.is_alive() for process in logger._logger_processes)
 
-    # Test shutdown
-    logger.shutdown()
+    # Tests activating multiple concurrent loggers with different instance names
+    logger_2 = DataLogger(output_directory=tmp_path, instance_name="custom_name")
+    logger_2.start()
+
+    # Test stop
+    logger.stop()
+    assert not logger.started
     assert all(not process.is_alive() for process in logger._logger_processes)
-    logger.shutdown()  # Verifies that calling shutdown twice does nothing
+    logger.stop()  # Verifies that calling stop twice does nothing
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -82,10 +88,10 @@ def test_data_logger_multiprocessing(tmp_path, process_count, thread_count, samp
         logger.input_queue.put(packed_data)
 
     # Allow some time for processing
-    logger.shutdown()
+    logger.stop()
 
     # Verify files were created
-    log_dir = tmp_path / "data_log"
+    log_dir = tmp_path / f"{logger.name}_data_log"
     files = list(log_dir.glob("*.npy"))
     assert len(files) > 0
 
@@ -100,10 +106,10 @@ def test_data_logger_data_integrity(tmp_path, sample_data):
     packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
     logger.input_queue.put(packed_data)
 
-    logger.shutdown()
+    logger.stop()
 
     # Verify the saved file
-    saved_files = list((tmp_path / "data_log").glob("*.npy"))
+    saved_files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
     assert len(saved_files) == 1
 
     # Load and verify the saved data
@@ -133,7 +139,7 @@ def test_data_logger_compression(tmp_path, sample_data):
         packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
         logger.input_queue.put(packed_data)
 
-    logger.shutdown()
+    logger.stop()
 
     # Test compression
     logger.compress_logs(remove_sources=True, verbose=True)
@@ -143,7 +149,7 @@ def test_data_logger_compression(tmp_path, sample_data):
     assert len(compressed_files) == 2  # One for each unique source_id
 
     # Verify original files were removed
-    original_files = list((tmp_path / "data_log").glob("*.npy"))
+    original_files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
     assert len(original_files) == 0
 
 
@@ -165,10 +171,10 @@ def test_data_logger_concurrent_access(tmp_path, sample_data):
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(submit_data, range(20))
 
-    logger.shutdown()
+    logger.stop()
 
     # Verify all files were created
-    files = list((tmp_path / "data_log").glob("*.npy"))
+    files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
     assert len(files) == 20
 
 
@@ -178,11 +184,11 @@ def test_data_logger_empty_queue_shutdown(tmp_path):
     logger = DataLogger(output_directory=tmp_path)
     logger.start()
 
-    # Immediate shutdown without any data
-    logger.shutdown()
+    # Immediate stop without any data
+    logger.stop()
 
     # Verify no files were created
-    files = list((tmp_path / "data_log").glob("*.npy"))
+    files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
     assert len(files) == 0
 
 
@@ -198,8 +204,8 @@ def test_data_logger_sleep_timer(tmp_path, sleep_timer, sample_data):
     logger.input_queue.put(packed_data)
 
     # Allow time for processing
-    logger.shutdown()
+    logger.stop()
 
     # Verify data was saved regardless of sleep timer
-    files = list((tmp_path / "data_log").glob("*.npy"))
+    files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
     assert len(files) == 1

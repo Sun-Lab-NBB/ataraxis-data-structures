@@ -7,7 +7,7 @@ as an alternative to Queue objects.
 """
 
 from copy import copy
-from typing import Any, Union, Iterable, Optional, Generator
+from typing import Any, Iterable, Optional, Generator
 from contextlib import contextmanager
 from multiprocessing import Lock
 from multiprocessing.shared_memory import SharedMemory
@@ -400,19 +400,19 @@ class SharedMemoryArray:
     def write_data(
         self,
         index: int | tuple[int, ...],
-        data: Union[
-            NDArray[Any],
-            list[Any],
-            tuple[Any],
-            np.unsignedinteger[Any],
-            np.signedinteger[Any],
-            np.floating[Any],
-            int,
-            float,
-            bool,
-            str,
-            None,
-        ],
+        data: (
+            NDArray[Any]
+            | list[Any]
+            | tuple[Any]
+            | np.unsignedinteger[Any]
+            | np.signedinteger[Any]
+            | np.floating[Any]
+            | int
+            | float
+            | bool
+            | str
+            | None
+        ),
         with_lock: bool = True,
     ) -> None:
         """Writes data to the shared memory array at the specified index or indices (via slice).
@@ -438,6 +438,7 @@ class SharedMemoryArray:
                 converted to positive numbers (this is done internally, input indices can be negative).
             IndexError: If the input index or slice is outside the array boundaries.
         """
+
         # Ensures the class is connected to the shared memory buffer
         if not self._is_connected or self._array is None:
             message: str = (

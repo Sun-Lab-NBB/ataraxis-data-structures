@@ -49,9 +49,9 @@ class DataLogger:
         the appropriate error to notify the user. Make sure the main process periodically releases GIL to allow the
         thread to assess the state of the remote process!
 
-        Do not instantiate more than a single instance of DataLogger class at a time! Since this class uses
-        SharedMemoryArray with a fixed name to terminate the controller Processes, only one DataLogger instance can
-        exist at a given time. Delete the class instance if you need to recreate it for any reason.
+        This class is designed to only be instantiated once. However, for particularly demanding use cases with many
+        data producers, the shared Queue may become the bottleneck. In this case, you can initialize multiple
+        DataLogger instances, each using a unique instance_name argument.
 
         Tweak the number of processes and threads as necessary to comply with the load and share the input_queue of the
         initialized DataLogger with all other classes that need to log serialized data. For most use cases, using a
@@ -65,6 +65,9 @@ class DataLogger:
 
     Args:
         output_directory: The directory where the log folder will be created.
+        instance_name: The name of the data logger instance. Critically, this is the name used to initialize the
+            SharedMemory buffer used to control the child processes, so it has to be unique across all other
+            Ataraxis codebase instances that also use shared memory.
         process_count: The number of processes to use for logging data.
         thread_count: The number of threads to use for logging data. Note, this number of threads will be created for
             each process.
@@ -79,6 +82,7 @@ class DataLogger:
         _thread_count: The number of threads to use for data saving. Note, this number of threads will be created for
             each process.
         _sleep_timer: The time in microseconds to delay between polling the queue.
+        _name: Stores the name of the data logger instance.
         _output_directory: The directory where the log folder will be created.
         _started: A boolean flag used to track whether Logger processes are running.
         _mp_manager: A manager object used to instantiate and manage the multiprocessing Queue.
@@ -91,6 +95,7 @@ class DataLogger:
     _process_count: Incomplete
     _thread_count: Incomplete
     _sleep_timer: Incomplete
+    _name: Incomplete
     _output_directory: Incomplete
     _started: bool
     _mp_manager: Incomplete
@@ -99,7 +104,12 @@ class DataLogger:
     _logger_processes: Incomplete
     _watchdog_thread: Incomplete
     def __init__(
-        self, output_directory: Path, process_count: int = 1, thread_count: int = 5, sleep_timer: int = 5000
+        self,
+        output_directory: Path,
+        instance_name: str = "data_logger",
+        process_count: int = 1,
+        thread_count: int = 5,
+        sleep_timer: int = 5000,
     ) -> None: ...
     def __repr__(self) -> str:
         """Returns a string representation of the DataLogger instance."""
@@ -111,7 +121,7 @@ class DataLogger:
         Once this method is called, data submitted to the 'input_queue' of the class instance will be saved to disk via
         the started Processes.
         """
-    def shutdown(self) -> None:
+    def stop(self) -> None:
         """Stops the logger processes once they save all buffered data and releases reserved resources."""
     def _watchdog(self) -> None:
         """This function should be used by the watchdog thread to ensure the logger processes are alive during runtime.
@@ -179,9 +189,8 @@ class DataLogger:
         Share this queue with all source processes that need to log data. To ensure correct data packaging, package the
         data using the LogPackage class exposed by this library before putting it into the queue.
         """
-    @staticmethod
-    def _vacate_shared_memory_buffer() -> None:
-        """Clears the SharedMemory buffer with the same name as the one used by the class.
+    def _vacate_shared_memory_buffer(self) -> None:
+        """Clears the SharedMemory buffer that uses instance-specific name.
 
         While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
         class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
@@ -189,3 +198,9 @@ class DataLogger:
 
         The method will not do anything if the shared memory buffer does not exist.
         """
+    @property
+    def name(self) -> str:
+        """Returns the name of the DataLogger instance."""
+    @property
+    def started(self) -> bool:
+        """Returns True if the DataLogger has been started and is actively logging data."""
