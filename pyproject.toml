@@ -89,6 +89,7 @@ conda = [
 
     # Types
     "types-pyyaml>=6,<7",
+    "types-tqdm>=4,<5",
 
     # Building
     "hatchling>=1,<2",

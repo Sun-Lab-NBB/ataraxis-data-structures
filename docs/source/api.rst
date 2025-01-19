@@ -3,7 +3,6 @@
 
 Shared Memory Array
 ===================
-
 .. automodule:: ataraxis_data_structures.shared_memory.shared_memory_array
    :members:
    :undoc-members:
@@ -19,13 +18,6 @@ Nested Dictionary
 Yaml Config
 ===========
 .. automodule:: ataraxis_data_structures.data_structures.yaml_config
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Data Converters
-===============
-.. automodule:: ataraxis_data_structures.data_converters.data_converters
    :members:
    :undoc-members:
    :show-inheritance:

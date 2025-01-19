@@ -205,9 +205,7 @@ class DataLogger:
 
         # Initializes the terminator array, used to control the logger process(es)
         self._terminator_array = SharedMemoryArray.create_array(
-            name=f"{self._name}_terminator",
-            prototype=np.zeros(shape=1, dtype=np.uint8),
-            exist_ok=self._exist_ok
+            name=f"{self._name}_terminator", prototype=np.zeros(shape=1, dtype=np.uint8), exist_ok=self._exist_ok
         )  # Instantiation automatically connects the main process to the array.
 
         # Creates and pacakge processes into the tuple
@@ -301,7 +299,7 @@ class DataLogger:
                     )
                     # Since the raised error terminates class runtime, destroys the SharedMemory buffer before
                     # terminating class runtime.
-                    self._terminator_array.destroy()
+                    self._terminator_array.destroy()  # type: ignore
                     console.error(message=message, error=RuntimeError)
 
     @staticmethod
@@ -494,7 +492,7 @@ class DataLogger:
         """
         # Resolves the number of threads to use
         if max_workers is None:
-            max_workers = os.cpu_count() - 4
+            max_workers = os.cpu_count() - 4  # type: ignore
         elif not isinstance(max_workers, int) or max_workers <= 0:
             max_workers = 1  # Minimum of 1 worker
 
