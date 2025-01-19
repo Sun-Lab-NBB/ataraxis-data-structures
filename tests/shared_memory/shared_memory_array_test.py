@@ -54,6 +54,10 @@ def test_create_array(int_array):
 
     # Verifies that the buffer has been freed up
     sma = SharedMemoryArray.create_array("test_create_array", int_array)
+    sma.disconnect()
+
+    # Verifies that exist_ok flag works as expecting by recreating an already existing buffer
+    sma = SharedMemoryArray.create_array("test_create_array", int_array, exist_ok=True)
 
     # Cleans up after the runtime
     sma.disconnect()
@@ -301,8 +305,9 @@ def test_create_array_error():
     _x = SharedMemoryArray.create_array(name="existing_array", prototype=np.array([1, 2, 3]))
     message = (
         f"Unable to create SharedMemoryArray object using name 'existing_array', as object with this name already "
-        f"exists. This is likely due to calling create_array() method from a child process. "
-        f"Use connect() method to connect to the SharedMemoryArray from a child process."
+        f"exists. If this method is called from a child process, use connect() method to connect to the "
+        f"SharedMemoryArray from a child process. To recreate the buffer left over from a previous "
+        f"runtime, run this method with the 'exist_ok' flag set to True."
     )
     with pytest.raises(FileExistsError, match=error_format(message)):
         SharedMemoryArray.create_array(name="existing_array", prototype=np.array([4, 5, 6]))

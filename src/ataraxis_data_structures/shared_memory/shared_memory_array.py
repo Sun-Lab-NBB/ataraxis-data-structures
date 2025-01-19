@@ -35,7 +35,9 @@ class SharedMemoryArray:
     Notes:
         Shared memory objects are garbage-collected differently depending on the host OS. On Windows, garbage collection
         is handed off to the OS and cannot be enforced manually. On Unix (OSx and Linux), the buffer can be
-        garbage-collected via appropriate commands.
+        garbage-collected via appropriate commands. Make sure you call the destroy() method as part of your cleanup
+        routine for each process that creates the SharedMemoryArray instance on Unix platforms, or your system will be
+        hogged by leftover Sharedmemory buffers.
 
     Args:
         name: The descriptive name to use for the shared memory array. The OS uses names to identify shared
@@ -80,11 +82,16 @@ class SharedMemoryArray:
             f"connected={self.is_connected})"
         )
 
+    def __del__(self) -> None:
+        """Ensures the class is disconnected from the shared memory buffer when it is garbage-collected."""
+        self.disconnect()
+
     @classmethod
     def create_array(
         cls,
         name: str,
         prototype: NDArray[Any],
+        exist_ok: bool = False,
     ) -> "SharedMemoryArray":
         """Creates a SharedMemoryArray class instance using the input one-dimensional prototype array.
 
@@ -103,6 +110,10 @@ class SharedMemoryArray:
                 Currently, this class only works with flat (one-dimensional) numpy arrays. If you want to use it for
                 multidimensional arrays, consider using np.ravel() or np.ndarray.flatten() methods to flatten your
                 array.
+            exist_ok: Determines how the method handles the case where the Sharedmemory buffer with the same name
+                already exists. If the flag is False, the class will raise an exception and abort SharedMemoryArray
+                creation. If the flag is True, the class will destroy the old buffer and recreate the new buffer using
+                the vacated name.
 
         Returns:
             The configured SharedMemoryArray class instance. This instance should be passed to each of the processes
@@ -135,12 +146,23 @@ class SharedMemoryArray:
         try:
             buffer: SharedMemory = SharedMemory(name=name, create=True, size=prototype.nbytes)
         except FileExistsError:
-            message = (
-                f"Unable to create SharedMemoryArray object using name '{name}', as object with this name already "
-                f"exists. This is likely due to calling create_array() method from a child process. "
-                f"Use connect() method to connect to the SharedMemoryArray from a child process."
-            )
-            console.error(message=message, error=FileExistsError)
+            # If the buffer already exists, but the method is configured to recreate the buffer, destroys the old buffer
+            if exist_ok:
+                # Destroys the existing shared memory buffer
+                SharedMemory(name=name, create=False).unlink()
+
+                # Recreates the shared memory buffer using the freed buffer name
+                buffer = SharedMemory(name=name, create=True, size=prototype.nbytes)
+
+            # Otherwise, raises an exception
+            else:
+                message = (
+                    f"Unable to create SharedMemoryArray object using name '{name}', as object with this name already "
+                    f"exists. If this method is called from a child process, use connect() method to connect to the "
+                    f"SharedMemoryArray from a child process. To recreate the buffer left over from a previous "
+                    f"runtime, run this method with the 'exist_ok' flag set to True."
+                )
+                console.error(message=message, error=FileExistsError)
 
         # Instantiates a numpy ndarray using the shared memory buffer and copies prototype array data into the shared
         # array instance.
