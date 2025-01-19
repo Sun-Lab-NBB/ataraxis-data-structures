@@ -125,6 +125,11 @@ class DataLogger:
             activity. It is likely that delays below 1 millisecond (1000 microseconds) will not produce a measurable
             impact, as the cores execute a 'busy' wait sequence for very short delay periods. Set this argument to 0 to
             disable delays entirely.
+        exist_ok: Determines how the class behaves if a SharedMemory buffer with the same name as the one used by the
+            class already exists. If this argument is set to True, the class will destroy the existing buffer and
+            make a new buffer for itself. If the class is used correctly, the only case where a buffer would already
+            exist is if the class ran into an error during the previous runtime, so setting this to True should be
+            safe for most runtimes.
 
     Attributes:
         _process_count: The number of processes to use for data saving.
@@ -139,6 +144,7 @@ class DataLogger:
         _logger_processes: A tuple of Process objects, each representing a logger process.
         _terminator_array: A shared memory array used to terminate (shut down) the logger processes.
         _watchdog_thread: A thread used to monitor the runtime status of remote logger processes.
+        _exist_ok: Determines how the class handles already existing shared memory buffer errors.
     """
 
     def __init__(
@@ -148,6 +154,7 @@ class DataLogger:
         process_count: int = 1,
         thread_count: int = 5,
         sleep_timer: int = 5000,
+        exist_ok: bool = False,
     ) -> None:
         # Initializes a variable that tracks whether the class has been started.
         self._started: bool = False
@@ -157,6 +164,7 @@ class DataLogger:
         self._thread_count: int = max(1, thread_count)
         self._sleep_timer: int = max(0, sleep_timer)
         self._name = str(instance_name)
+        self._exist_ok = exist_ok
 
         # If necessary, ensures that the output directory tree exists. This involves creating an additional folder
         # 'data_log', to which the data will be saved in an uncompressed format. The folder also includes the logger
@@ -199,6 +207,7 @@ class DataLogger:
         self._terminator_array = SharedMemoryArray.create_array(
             name=f"{self._name}_terminator",
             prototype=np.zeros(shape=1, dtype=np.uint8),
+            exist_ok=self._exist_ok
         )  # Instantiation automatically connects the main process to the array.
 
         # Creates and pacakge processes into the tuple
