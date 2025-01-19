@@ -6,9 +6,9 @@ that is used to buffer and pipe the data to be logged to the saver processes. Th
 byte-serialized payloads stored in Numpy arrays.
 """
 
+import os
 import sys
 from queue import Empty
-from typing import Optional
 from pathlib import Path
 from threading import Thread
 from collections import defaultdict
@@ -18,14 +18,14 @@ from multiprocessing import (
     Manager,
     Process,
 )
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing.managers import SyncManager
-from multiprocessing.shared_memory import SharedMemory
 
+from tqdm import tqdm
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_time import PrecisionTimer
-from ataraxis_base_utilities import LogLevel, console, ensure_directory_exists
+from ataraxis_base_utilities import console, ensure_directory_exists
 
 from ..shared_memory import SharedMemoryArray
 
@@ -36,15 +36,20 @@ class LogPackage:
     data into the format expected by the logger.
 
     This class collects, preprocesses, and stores the data to be logged by the DataLogger instance. To be logged,
-    entries have to be packed into this class instance and submitted (put) into the input_queue exposes by the
-    DataLogger class. All data to be logged has to come wrapped into this class instance!
+    entries have to be packed into this class instance and submitted (put) into the logger input queue exposed by the
+    DataLogger class.
+
+    Notes:
+        This class is optimized for working with other Ataraxis libraries. It expects the time to come from
+        ataraxis-time (PrecisionTimer) and other data from Ataraxis libraries designed to interface with various
+        hardware.
     """
 
-    source_id: int
+    source_id: np.uint8
     """The ID code of the source that produced the data. Has to be unique across all systems that send data
-    to be logged during a single runtime!"""
+    to same DataLogger instance during runtime, as this information is used to identify sources inside log files!"""
 
-    time_stamp: int
+    time_stamp: np.uint64
     """The data acquisition time. Tracks when the data was originally acquired."""
 
     serialized_data: NDArray[np.uint8]
@@ -56,22 +61,21 @@ class LogPackage:
         Returns:
             A tuple of two elements. The first element is the name to use for the log file, which consists of
             zero-padded source id and zero-padded time stamp, separated by an underscore. The second element is the
-            data to be logged as a one-dimensional bytes numpy array. THe logged data includes the original data object
+            data to be logged as a one-dimensional bytes numpy array. The logged data includes the original data object
             and the pre-pended source id and time stamp.
         """
-
-        # Prepares the data by serializing originally non-numpy inputs and concatenating all data into one array
-        serialized_time_stamp = np.frombuffer(buffer=np.uint64(self.time_stamp), dtype=np.uint8).copy()
-        serialized_source = np.frombuffer(buffer=np.uint8(self.source_id), dtype=np.uint8).copy()
+        # Prepares the data by converting zero-dimensional numpy inputs to arrays and concatenating all data into one
+        # array
+        serialized_time_stamp = np.frombuffer(buffer=self.time_stamp, dtype=np.uint8).copy()
+        serialized_source = np.frombuffer(buffer=self.source_id, dtype=np.uint8).copy()
 
         # Note, it is assumed that each source produces the data sequentially and that timestamps are acquired with
         # high enough resolution to resolve the order of data acquisition.
-        # noinspection PyArgumentList
         data = np.concatenate([serialized_source, serialized_time_stamp, self.serialized_data], dtype=np.uint8).copy()
 
-        # Zero-pads the timestamps. Uint64 allows for 19 zeroes in total, so pads to 19 digits. Statically appends the
-        # source id as the first number, using underscore to separate source and timestamps.
-        log_name = f"{self.source_id}_{self.time_stamp:019d}"
+        # Zero-pads ID and timestamp. Uses the correct number of zeroes to represent the number of digits that fits into
+        # each datatype (uint16 and uint64).
+        log_name = f"{self.source_id:05d}_{self.time_stamp:020d}"
 
         return log_name, data
 
@@ -98,10 +102,10 @@ class DataLogger:
         data producers, the shared Queue may become the bottleneck. In this case, you can initialize multiple
         DataLogger instances, each using a unique instance_name argument.
 
-        Tweak the number of processes and threads as necessary to comply with the load and share the input_queue of the
-        initialized DataLogger with all other classes that need to log serialized data. For most use cases, using a
+        Tweak the number of processes and threads as necessary to keep up with the load and share the input_queue of the
+        initialized DataLogger with all classes that need to log serialized data. For most use cases, using a
         single process (core) with 5-10 threads will be enough to prevent the buffer from filling up.
-        For demanding runtimes, you can increase the number of cores as necessary to comply with the demand.
+        For demanding runtimes, you can increase the number of cores as necessary to keep up with the demand.
 
         This class will log data from all sources and Processes into the same directory to allow for the most efficient
         post-runtime compression. Since all arrays are saved using the source_id as part of the filename, it is possible
@@ -145,10 +149,13 @@ class DataLogger:
         thread_count: int = 5,
         sleep_timer: int = 5000,
     ) -> None:
+        # Initializes a variable that tracks whether the class has been started.
+        self._started: bool = False
+
         # Ensures numeric inputs are not negative.
-        self._process_count: int = process_count if process_count > 1 else 1
-        self._thread_count: int = thread_count if thread_count > 1 else 1
-        self._sleep_timer: int = sleep_timer if sleep_timer > 0 else 0
+        self._process_count: int = max(1, process_count)
+        self._thread_count: int = max(1, thread_count)
+        self._sleep_timer: int = max(0, sleep_timer)
         self._name = str(instance_name)
 
         # If necessary, ensures that the output directory tree exists. This involves creating an additional folder
@@ -157,16 +164,13 @@ class DataLogger:
         self._output_directory: Path = output_directory.joinpath(f"{self._name}_data_log")
         ensure_directory_exists(self._output_directory)  # This also ensures input is a valid Path object
 
-        # Initializes a variable that tracks whether the class has been started.
-        self._started: bool = False
-
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
         self._mp_manager: SyncManager = Manager()
         self._input_queue: MPQueue = self._mp_manager.Queue()  # type: ignore
 
-        self._terminator_array: Optional[SharedMemoryArray] = None
+        self._terminator_array: SharedMemoryArray | None = None
         self._logger_processes: tuple[Process, ...] = tuple()
-        self._watchdog_thread: Optional[Thread] = None
+        self._watchdog_thread: Thread | None = None
 
     def __repr__(self) -> str:
         """Returns a string representation of the DataLogger instance."""
@@ -187,7 +191,6 @@ class DataLogger:
         Once this method is called, data submitted to the 'input_queue' of the class instance will be saved to disk via
         the started Processes.
         """
-
         # Prevents re-starting an already started process
         if self._started:
             return
@@ -267,7 +270,6 @@ class DataLogger:
         This function will raise a RuntimeError if it detects that a process has prematurely shut down. It will verify
         process states every ~20 ms and will release the GIL between checking the states.
         """
-
         timer = PrecisionTimer(precision="ms")
 
         # The watchdog function will run until the global shutdown command is issued.
@@ -288,6 +290,9 @@ class DataLogger:
                         f"down. This likely indicates that the process has encountered a runtime error that "
                         f"terminated the process."
                     )
+                    # Since the raised error terminates class runtime, destroys the SharedMemory buffer before
+                    # terminating class runtime.
+                    self._terminator_array.destroy()
                     console.error(message=message, error=RuntimeError)
 
     @staticmethod
@@ -360,6 +365,11 @@ class DataLogger:
             except Exception as e:
                 sys.stderr.write(str(e))
                 sys.stderr.flush()
+
+                # If the class runs into a runtime error, ensures proper termination of remote process resources.
+                executor.shutdown(wait=True)
+                terminator_array.disconnect()
+
                 raise e
 
         # If the process escapes the loop due to encountering the shutdown command, shuts the executor threads and
@@ -367,34 +377,120 @@ class DataLogger:
         executor.shutdown(wait=True)
         terminator_array.disconnect()
 
-    def compress_logs(self, remove_sources: bool = False, verbose: bool = False) -> None:
-        """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
+    def _compress_source(self, source_id: int, files: list[Path], remove_sources: bool, mem_map: bool) -> int:
+        """Compresses all log entries for a single source into a single .npz archive.
 
-        Individual .npy files are grouped by acquisition number before being compressed. Sources are demixed to allow
-        for more efficient data processing and reduce the RAM requirements when compressing sizable chunks of data.
+        This helper function is used by the compress_log() method to compress all available sources in-parallel to
+        improve runtime efficiency.
 
         Notes:
-            This method requires all data from the same source to be loaded into RAM before it is added to the .npz
-            archive. While this should not be a problem for most runtimes, you can modify this method to use memory
-            mapping if your specific use circumstance runs into RAM issues.
+            If this function is instructed to remove source files, deletes individual .npy files after compressing them
+            as .npz archive. The method ensures that all compressed entries match source entries, before deleting source
+            .npy files. Therefore, it is always safe to delete source files.
 
-            If 'verbose' flag is set to True, the method will enable the Console class to print data to the terminal.
-            Overall, this flag should not be enabled together with other 'verbose' ataraxis runtimes, when possible.
+        Args:
+            source_id: The ID-code for the source, whose logs are compressed by this function.
+            files: The list of paths to the .npy log files of the processed source.
+            remove_sources: Determines whether to remove original .npy files after generating the compressed .npz
+                archive.
+            mem_map: Determines whether to load all original entries into memory (RAM) before compression or whether to
+                load them via memory-mapping. Setting this to False is faster, but may lead to error when processing
+                many large datasets in-parallel.
+
+        Raises:
+            ValueError: If the function is instructed to delete source files and one of the compressed entries does not
+                match the original source entry. This indicates that compression altered the original data.
+        """
+        # Collects all .npy files for the processed source
+        source_data = {}
+        for file_path in files:
+            stem = file_path.stem
+            # If the function is not running in memory-mapping mode, directly loads the data from each array into
+            # memory (RAM). This is faster than memory-mapping but, depending on the use case, may lead to out-of-memory
+            # errors.
+            if not mem_map:
+                source_data[f"{stem}"] = np.load(file_path)
+
+            # Alternatively, instead of loading data into memory, generates a memory-mapped view of each source array.
+            # This is slower than using RAM, but may be necessary for some use cases.
+            else:
+                array_data = np.load(file_path, mmap_mode="r")
+                source_data[f"{stem}"] = array_data
+
+        # Compresses individual entries into a single .npz archive
+        output_path = self._output_directory.joinpath(f"{source_id}_log.npz")
+        np.savez_compressed(output_path, **source_data)
+
+        # If requested, cleans up no longer necessary source files
+        if remove_sources:
+            # Verifies each file individually, keeping only one entry in memory at a time. Loading an .npz file
+            # automatically uses memory mapping, unless a specific array is accessed.
+            with np.load(output_path) as compressed_data:
+                for file_path in files:
+                    stem = file_path.stem
+
+                    # Loads and verifies one original file at a time. This should have minimal RAM footprint.
+                    original = source_data[f"{stem}"]
+                    compressed = compressed_data[f"{stem}"]
+
+                    # If verification is failed, triggers an error
+                    if not np.array_equal(original, compressed):  # pragma: no cover
+                        message = (
+                            f"Unable to compress the log entries for the source {source_id} logged by DataLogger "
+                            f"{self.name}. Data integrity check failed for entry {stem}. Compressed data does not "
+                            f"match original, so cannot remove the original file."
+                        )
+                        console.error(message=message, error=ValueError)
+
+            # If this point is reached, it is safe to remove all original files.
+            for file in files:
+                file.unlink()
+
+        # Returns teh source id to, if necessary, update the progress bar
+        return source_id
+
+    def compress_logs(
+        self,
+        remove_sources: bool = False,
+        memory_mapping: bool = True,
+        verbose: bool = False,
+        max_workers: int | None = None,
+    ) -> None:
+        """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
+
+        All entries within each source are grouped by their acquisition timestamp value before compression. The
+        compressed archive names include the ID code of the source that generated original log entries
+
+        Notes:
+            To improve runtime efficiency, the method processes all log sources in-parallel, using multithreading.
+            The exact number of parallel threads used by the method depends on the number of available CPU cores. This
+            number can be further adjusting by modifying the max_workers argument.
+
+            This method requires all data from the same source to be loaded into RAM before it is added to the .npz
+            archive. While this should not be a problem for most use cases, it may lead to out-of-memory errors. To
+            avoid this, the method uses memory-mapping by default, to reduce the RAM requirements. If your machine
+            has sufficient RAM, disable this by setting the memory_mapping argument to False.
 
         Args:
             remove_sources: Determines whether to remove the individual .npy files after they have been consolidated
-                into .npz archives. Usually, this is a safe option that saves disk space.
-            verbose: Determines whether to print processed arrays to console. This option is mostly useful for debugging
-                other Ataraxis libraries and should be disabled by default.
+                into .npz archives. The method ensures that all compressed entries match the original entries before
+                deleting source files, so this option is safe for all use cases.
+            memory_mapping: Determines whether the method uses memory-mapping (disk) to stage the data before
+                compression or loads all data into RAM. Disabling this option makes the method considerably faster, but
+                may lead to out-of-memory errors in certain use cases.
+            verbose: Determines whether to print compression progress to terminal. Due to a generally fast compression
+                time, this option is generally not needed for most runtimes.
+            max_workers: Determines the number of threads use to process logs entries from different sources
+                in-parallel. If set to None, the method uses the number of CPU cores - 4 threads.
         """
-        was_enabled = console.enabled  # Records the initial console status
-        if verbose and not was_enabled:
-            console.enable()  # Ensures Console is enabled if verbose mode is enabled.
-
-        # Groups files by source_id
-        source_files: dict[int, list[Path]] = defaultdict(list)
+        # Resolves the number of threads to use
+        if max_workers is None:
+            max_workers = os.cpu_count() - 4
+        elif not isinstance(max_workers, int) or max_workers <= 0:
+            max_workers = 1  # Minimum of 1 worker
 
         # Collects all .npy files and groups them by source_id
+        source_files: dict[int, list[Path]] = defaultdict(list)
         for file_path in self._output_directory.glob("*.npy"):
             source_id = int(file_path.stem.split("_")[0])
             source_files[source_id].append(file_path)
@@ -403,32 +499,26 @@ class DataLogger:
         for source_id in source_files:
             source_files[source_id].sort(key=lambda x: int(x.stem.split("_")[1]))
 
-        # Compresses all .npy files for each source into a single source-specific compressed .npz file
-        source_data = {}
-        for source_id, files in source_files.items():
-            # Loads and uses the array data to fill a temporary dictionary that will be used for .npz archive creation.
-            for file_path in files:
-                stem = file_path.stem
-                source_data[f"{stem}"] = np.load(file_path)
-                if verbose:
-                    console.echo(
-                        message=f"Compressing {stem} file with data {source_data[f'{stem}']}.", level=LogLevel.INFO
-                    )
+        # Processes sources in parallel using threads. Since compression is primarily done by numpy and I/O processors,
+        # this is likely the most efficient way of processing multiple sources.
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit each source for compression in-parallel
+            future_to_source = {
+                executor.submit(self._compress_source, source_id, files, remove_sources, memory_mapping): source_id
+                for source_id, files in source_files.items()
+            }
 
-            # Compresses the data for each source into a separate .npz archive named after the source_id
-            output_path = self._output_directory.joinpath(f"{source_id}_data_log.npz")
-            np.savez_compressed(output_path, **source_data)
-
-            # If source removal is requested, deletes all compressed .npy files
-            if remove_sources:
-                for file in files:
-                    if verbose:
-                        console.echo(message=f"Removing compressed file {file}.", level=LogLevel.INFO)
-                    file.unlink()
-
-        if not was_enabled and verbose:
-            console.echo(message=f"Log compression complete.", level=LogLevel.SUCCESS)
-            console.disable()  # Disables the Console if it was enabled by this runtime.
+            # If the method is called in verbose mode, displays progress to user via the progress bar
+            with tqdm(
+                total=len(source_files),
+                desc="Generating compressed archives for sources",
+                unit="sources",
+                disable=not verbose,
+            ) as pbar:
+                # Progress bar is updated with each processed source
+                for future in as_completed(future_to_source):
+                    future.result()
+                    pbar.update(1)
 
     @property
     def input_queue(self) -> MPQueue:  # type: ignore
@@ -439,22 +529,6 @@ class DataLogger:
         """
         return self._input_queue
 
-    def _vacate_shared_memory_buffer(self) -> None:  # pragma: no cover
-        """Clears the SharedMemory buffer that uses instance-specific name.
-
-        While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
-        class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
-        reinitialized. This method allows manually removing that buffer to reset the system.
-
-        The method will not do anything if the shared memory buffer does not exist.
-        """
-        try:
-            buffer = SharedMemory(name=f"{self._name}_terminator", create=False)
-            buffer.close()
-            buffer.unlink()
-        except Exception:
-            pass
-
     @property
     def name(self) -> str:
         """Returns the name of the DataLogger instance."""
@@ -464,3 +538,8 @@ class DataLogger:
     def started(self) -> bool:
         """Returns True if the DataLogger has been started and is actively logging data."""
         return self._started
+
+    @property
+    def output_directory(self) -> Path:
+        """Returns the path to the directory where the data is saved."""
+        return self._output_directory

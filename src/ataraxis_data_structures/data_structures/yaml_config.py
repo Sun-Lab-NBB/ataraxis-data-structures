@@ -43,7 +43,6 @@ class YamlConfig:
         Raises:
             ValueError: If the output path does not point to a file with a '.yaml' or '.yml' extension.
         """
-
         # Defines YAML formatting options. The purpose of these settings is to make YAML blocks more readable when
         # being edited offline.
         yaml_formatting = {
@@ -57,7 +56,7 @@ class YamlConfig:
         }
 
         # Ensures that the output file path points to a .yaml (or .yml) file
-        if not config_path.suffix == ".yaml" and not config_path.suffix == ".yml":
+        if config_path.suffix != ".yaml" and config_path.suffix != ".yml":
             message: str = (
                 f"Invalid file path provided when attempting to write the YamlConfig class instance to a yaml file. "
                 f"Expected a path ending in the '.yaml' or '.yml' extension, but encountered {config_path}. Provide a "
@@ -95,9 +94,8 @@ class YamlConfig:
         Raises:
             ValueError: If the provided file path does not point to a .yaml or .yml file.
         """
-
         # Ensures that config_path points to a .yaml / .yml file.
-        if not config_path.suffix == ".yaml" and not config_path.suffix == ".yml":
+        if config_path.suffix != ".yaml" and config_path.suffix != ".yml":
             message: str = (
                 f"Invalid file path provided when attempting to create the YamlConfig class instance from a yaml file. "
                 f"Expected a path ending in the '.yaml' or '.yml' extension, but encountered {config_path}. Provide a "
@@ -110,7 +108,7 @@ class YamlConfig:
 
         # Opens and reads the .yaml file. Note, safe_load may not work for reading python tuples, so it is advised
         # to avoid using tuple in configuration files.
-        with open(config_path, "r") as yml_file:
+        with open(config_path) as yml_file:
             data = yaml.safe_load(yml_file)
 
         # Converts the imported data to a python dictionary.

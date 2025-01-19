@@ -72,7 +72,7 @@ def test_repr(int_array):
     """
     sma = SharedMemoryArray.create_array("test_repr", int_array)
     expected_repr = (
-        f"SharedMemoryArray(name='test_repr', shape={int_array.shape}, " f"datatype={int_array.dtype}, connected=True)"
+        f"SharedMemoryArray(name='test_repr', shape={int_array.shape}, datatype={int_array.dtype}, connected=True)"
     )
     assert repr(sma) == expected_repr
 

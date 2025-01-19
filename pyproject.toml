@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 # Project metdata section. Provides the general ID information about the project.
 [project]
 name = "ataraxis-data-structures"
-version = "2.0.1"
+version = "3.0.0"
 description = "Provides classes and structures for storing, manipulating, and sharing data between Python processes."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -28,7 +28,6 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     # Intended audience and project topic
     "Intended Audience :: Developers",
-    "Topic :: Multimedia :: Video",
     # License
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     # Supported Python Versions
@@ -82,8 +81,7 @@ conda = [
     "sphinx>=8,<9",
     "importlib_metadata>=8,<9",
     "sphinx-rtd-theme>=3,<4",
-    "sphinx-click>=6,<7",
-    "sphinx-autodoc-typehints>=2,<3",
+    "sphinx-autodoc-typehints>=3,<4",
 
     # Linting and Stub-generation
     "mypy>=1,<2",
@@ -96,11 +94,8 @@ conda = [
     "hatchling>=1,<2",
 
     # Distribution
-    "twine>=5,<6",
+    "twine>=6,<7",
     "grayskull>=2,<3",
-
-    # Miscellaneous helpers
-    "black>=24,<25",
 ]
 
 # Dependencies known to not be installable with conda for at least one supported development platform
@@ -110,6 +105,9 @@ noconda =[
     "tox>=4,<5",
     "tox-uv>=1,<2",
     "uv>=0,<1",
+
+    # Documentation
+    "sphinx-rtd-dark-mode>=1,<2",
 
     # Building
     "build>=1,<2",
@@ -135,7 +133,7 @@ exclude = [".github", "recipe"]
 
 # Specifies the library structure.
 [tool.hatch.build.targets.wheel]
-packages = ["src/ataraxis_data_structures"]
+packages = ["src/ataraxis_data_structures", "examples"]
 
 # Ruff Configuration.
 [tool.ruff]
@@ -214,3 +212,20 @@ source = ["src/", ".tox/*/lib/python*/site-packages/"]
 # Same as above, specifies the output directory for the coverage .html report
 [tool.coverage.html]
 directory = "reports/coverage_html"
+
+# Optimizes coverage generation for parallel testing
+[tool.coverage.run]
+parallel = true
+
+# Specifies additional ignore directives
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "def __del__",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "\\.\\.\\."
+]

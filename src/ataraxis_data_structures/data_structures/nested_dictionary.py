@@ -9,7 +9,7 @@ methods of the class conveniently simplify complex operations like replacing the
 
 import copy
 from types import NoneType
-from typing import Any, Type, Literal, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 from numpy.typing import NDArray
@@ -59,7 +59,7 @@ class NestedDictionary:
         TypeError: If input arguments are not of the supported type.
     """
 
-    def __init__(self, seed_dictionary: Optional[dict[Any, Any]] = None, path_delimiter: str = ".") -> None:
+    def __init__(self, seed_dictionary: dict[Any, Any] | None = None, path_delimiter: str = ".") -> None:
         # Stores supported key datatypes
         self._valid_datatypes: tuple[str, str, str, str] = ("int", "str", "float", "NoneType")
 
@@ -95,7 +95,6 @@ class NestedDictionary:
 
     def __repr__(self) -> str:
         """Returns a string representation of the class instance."""
-
         id_string: str = (
             f"NestedDictionary(key_datatypes={', '.join(self.key_datatypes)}, "
             f"path_delimiter='{self._path_delimiter}', data={self._nested_dictionary})"
@@ -163,7 +162,7 @@ class NestedDictionary:
         # empty dictionaries, where the class does not allow new data to be added using string paths despite the
         # dictionary having no keys at all.
         if len(unique_types) == 0:
-            unique_types.add(type(str()).__name__)
+            unique_types.add(str.__name__)
 
         # Returns extracted key datatype names to caller
         return unique_types
@@ -190,7 +189,7 @@ class NestedDictionary:
                 converted to the requested datatype.
         """
         # Matches datatype names to their respective classes using a shallow dictionary to improve the code layout below
-        datatypes: dict[str, Type[str | float | int]] = {
+        datatypes: dict[str, type[str | float | int]] = {
             "str": str,
             "int": int,
             "float": float,
@@ -201,17 +200,16 @@ class NestedDictionary:
         if datatype != "NoneType" and datatype in datatypes:
             return datatypes[datatype](key)
         # NoneType datatype is returned as None regardless of the key value
-        elif datatype == "NoneType":
+        if datatype == "NoneType":
             return None
         # If datatype is not found in datatype dictionary, triggers ValueError
-        else:
-            message: str = (
-                f"Unexpected datatype '{datatype}' encountered when converting key '{key}' to the requested "
-                f"datatype. Select one of the supported datatypes: {self._valid_datatypes}."
-            )
-            console.error(message=message, error=ValueError)
-            # This is just to appease mypy.
-            raise ValueError(message)  # pragma: no cover
+        message: str = (
+            f"Unexpected datatype '{datatype}' encountered when converting key '{key}' to the requested "
+            f"datatype. Select one of the supported datatypes: {self._valid_datatypes}."
+        )
+        console.error(message=message, error=ValueError)
+        # This is just to appease mypy.
+        raise ValueError(message)  # pragma: no cover
 
     def _convert_variable_path_to_keys(
         self, variable_path: str | NDArray[Any] | tuple[Any, ...] | list[Any]
@@ -244,7 +242,6 @@ class NestedDictionary:
                 If the input numpy array has more than a single dimension. If the dictionary has an undefined
                 key_datatypes property (most often an empty set), likely due to the class wrapping an empty dictionary.
         """
-
         # For string variable paths, converts the input path keys (formatted as string) into the datatype used by
         # the dictionary keys.
         if isinstance(variable_path, str):
@@ -356,7 +353,7 @@ class NestedDictionary:
 
         def _inner_extract(
             input_dict: dict[Any, Any],
-            current_path: Optional[list[Any]] = None,
+            current_path: list[Any] | None = None,
             *,
             make_raw: bool = False,
         ) -> list[tuple[Any, ...]] | list[str]:
@@ -382,7 +379,6 @@ class NestedDictionary:
             Returns:
                 A list of key tuples if return_raw (make_raw) is True and a list of strings otherwise.
             """
-
             # If current_path is None, creates a new list object to hold the keys. Note, this cannot be a set, as keys
             # at different dictionary levels do not have to be unique, relative to each-other. Therefore, a set may
             # encounter and remove one of the valid duplicated keys along the path. This list is used during recursive
@@ -618,8 +614,7 @@ class NestedDictionary:
             return None
         # Otherwise, constructs a new NestedDictionary instance around the altered dictionary and returns this to
         # caller.
-        else:
-            return NestedDictionary(seed_dictionary=altered_dict, path_delimiter=self._path_delimiter)
+        return NestedDictionary(seed_dictionary=altered_dict, path_delimiter=self._path_delimiter)
 
     def delete_nested_value(
         self,
@@ -703,7 +698,6 @@ class NestedDictionary:
                 KeyError: If any of the target keys are missing from the evaluated dictionary view, and missing keys are
                     not allowed.
             """
-
             # If recursion has reached the lowest level, deletes the variable referenced by the terminal key.
             # Note, this step is called only for the lowest level of recursion (terminal key) and for this final step,
             # only this clause is evaluated.
@@ -719,7 +713,7 @@ class NestedDictionary:
                 elif not missing_ok:
                     # Generates a list of lists, with each inner list storing the value and datatype for each key in
                     # current dictionary view.
-                    available_keys_and_types: list[list[str]] = [[k, type(k).__name__] for k in traversed_dict.keys()]
+                    available_keys_and_types: list[list[str]] = [[k, type(k).__name__] for k in traversed_dict]
                     message = (
                         f"Unable to delete the variable matching the final key '{final_key}' of type "
                         f"'{type(final_key).__name__}' from nested dictionary as the key is not found along the "
@@ -743,7 +737,7 @@ class NestedDictionary:
                 if not missing_ok:
                     # Generates a list of lists, with each inner list storing the value and datatype for each key in
                     # current dictionary view.
-                    available_keys_and_types = [[k, type(k).__name__] for k in traversed_dict.keys()]
+                    available_keys_and_types = [[k, type(k).__name__] for k in traversed_dict]
                     message = (
                         f"Unable to find the intermediate key '{next_key}' of type '{type(next_key).__name__}' from "
                         f"variable path '{whole_path}' while deleting nested value from dictionary. Make sure the "
@@ -810,8 +804,7 @@ class NestedDictionary:
 
         # Otherwise, constructs a new NestedDictionary instance around the modified dictionary and returns it to the
         # caller.
-        else:
-            return NestedDictionary(seed_dictionary=processed_dict, path_delimiter=self._path_delimiter)
+        return NestedDictionary(seed_dictionary=processed_dict, path_delimiter=self._path_delimiter)
 
     def find_nested_variable_path(
         self,
@@ -861,7 +854,6 @@ class NestedDictionary:
             TypeError: If the input target_key argument is not of the correct type.
             ValueError: If the input search_mode is not one of the supported options.
         """
-
         # Stores currently supported search modes, which is used for error checking and messaging purposes.
         supported_modes = ("terminal_only", "intermediate_only", "all")
 
@@ -931,22 +923,20 @@ class NestedDictionary:
             if return_raw:
                 if len(passed_paths) > 1:  # For many paths, returns tuple of tuples
                     return tuple(storage_list)
-                else:  # For a single path, returns the path as a tuple of keys
-                    return storage_list.pop(0)
+                # For a single path, returns the path as a tuple of keys
+                return storage_list.pop(0)
 
             # String formatting: paths are returned as delimited strings
-            else:
-                # If strings are requested, loops over all discovered path tuples and converts them to
-                # class-delimiter-delimited strings
-                string_list: list[str] = [self._path_delimiter.join(map(str, path)) for path in storage_list]
-                if len(passed_paths) > 1:  # For many paths, returns tuple of strings
-                    return tuple(string_list)
-                else:  # For a single path, returns the path as a string
-                    return string_list.pop(0)
+            # If strings are requested, loops over all discovered path tuples and converts them to
+            # class-delimiter-delimited strings
+            string_list: list[str] = [self._path_delimiter.join(map(str, path)) for path in storage_list]
+            if len(passed_paths) > 1:  # For many paths, returns tuple of strings
+                return tuple(string_list)
+            # For a single path, returns the path as a string
+            return string_list.pop(0)
 
         # Otherwise, returns None to indicate that no matching paths were found.
-        else:
-            return None
+        return None
 
     def convert_all_keys_to_datatype(
         self,
@@ -1002,7 +992,7 @@ class NestedDictionary:
         except Exception as e:
             message = (
                 f"Unable to convert dictionary keys to '{datatype}' datatype when converting the nested dictionary "
-                f"keys to use a specific datatype. Specifically, encountered the following error: {str(e)}"
+                f"keys to use a specific datatype. Specifically, encountered the following error: {e!s}"
             )
             console.error(message=message, error=RuntimeError)
 
@@ -1033,7 +1023,7 @@ class NestedDictionary:
             message = (
                 f"Unable to recreate the dictionary using converted paths when converting the nested dictionary "
                 f"keys to use the '{datatype}' datatype. This is most likely because the conversion resulted in having "
-                f"at least one pair of duplicated keys at the same hierarchy level. Specific error message: {str(e)}"
+                f"at least one pair of duplicated keys at the same hierarchy level. Specific error message: {e!s}"
             )
             console.error(message=message, error=RuntimeError)
 
@@ -1047,5 +1037,4 @@ class NestedDictionary:
 
             return None
         # Otherwise, returns the newly constructed NestedDictionary instance
-        else:
-            return converted_dict
+        return converted_dict
