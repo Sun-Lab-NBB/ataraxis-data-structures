@@ -74,8 +74,8 @@ class LogPackage:
         data = np.concatenate([serialized_source, serialized_time_stamp, self.serialized_data], dtype=np.uint8).copy()
 
         # Zero-pads ID and timestamp. Uses the correct number of zeroes to represent the number of digits that fits into
-        # each datatype (uint16 and uint64).
-        log_name = f"{self.source_id:05d}_{self.time_stamp:020d}"
+        # each datatype (uint8 and uint64).
+        log_name = f"{self.source_id:03d}_{self.time_stamp:020d}"
 
         return log_name, data
 

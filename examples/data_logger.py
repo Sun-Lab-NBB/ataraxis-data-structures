@@ -8,7 +8,6 @@ from ataraxis_data_structures import DataLogger, LogPackage
 
 # Due to the internal use of Process classes, the logger has to be protected by the __main__ guard.
 if __name__ == "__main__":
-
     # As a minimum, each DataLogger has to be given the output folder and the name to use for the shared buffer. The
     # name has to be unique across all DataLogger instances used at the same time.
     tempdir = tempfile.TemporaryDirectory()  # A temporary directory for illustration purposes
@@ -24,7 +23,7 @@ if __name__ == "__main__":
     logger_queue = logger.input_queue
 
     # The data to be logged has to be packaged into a LogPackage dataclass before being submitted to the Queue.
-    source_id = np.uint16(1)  # Has to be an unit16
+    source_id = np.uint8(1)  # Has to be an unit8
     timestamp = np.uint64(tm.perf_counter_ns())  # Has to be an uint64
     data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)  # Has to be an uint8 numpy array
     logger_queue.put(LogPackage(source_id, timestamp, data))

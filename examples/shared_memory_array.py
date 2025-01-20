@@ -1,11 +1,13 @@
 # This example demonstrates the use of SharedMemoryArray in a multiprocessing context.
 
-import numpy as np
-from ataraxis_data_structures import SharedMemoryArray
 from multiprocessing import Process
 
+import numpy as np
 
-def concurrent_worker(shared_memory_object: SharedMemoryArray, index: int):
+from ataraxis_data_structures import SharedMemoryArray
+
+
+def concurrent_worker(shared_memory_object: SharedMemoryArray, index: int) -> None:
     """This worker will run in a different process.
 
     It increments a shared memory array variable by 1 if the variable is even. Since each increment will

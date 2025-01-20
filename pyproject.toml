@@ -217,6 +217,7 @@ directory = "reports/coverage_html"
 # Optimizes coverage generation for parallel testing
 [tool.coverage.run]
 parallel = true
+concurrency = ["multiprocessing", "thread"]
 
 # Specifies additional ignore directives
 [tool.coverage.report]
