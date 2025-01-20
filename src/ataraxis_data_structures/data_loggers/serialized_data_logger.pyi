@@ -14,12 +14,17 @@ class LogPackage:
     data into the format expected by the logger.
 
     This class collects, preprocesses, and stores the data to be logged by the DataLogger instance. To be logged,
-    entries have to be packed into this class instance and submitted (put) into the input_queue exposes by the
-    DataLogger class. All data to be logged has to come wrapped into this class instance!
+    entries have to be packed into this class instance and submitted (put) into the logger input queue exposed by the
+    DataLogger class.
+
+    Notes:
+        This class is optimized for working with other Ataraxis libraries. It expects the time to come from
+        ataraxis-time (PrecisionTimer) and other data from Ataraxis libraries designed to interface with various
+        hardware.
     """
 
-    source_id: int
-    time_stamp: int
+    source_id: np.uint8
+    time_stamp: np.uint64
     serialized_data: NDArray[np.uint8]
     def get_data(self) -> tuple[str, NDArray[np.uint8]]:
         """Constructs and returns the filename and the serialized data package to be logged.
@@ -27,7 +32,7 @@ class LogPackage:
         Returns:
             A tuple of two elements. The first element is the name to use for the log file, which consists of
             zero-padded source id and zero-padded time stamp, separated by an underscore. The second element is the
-            data to be logged as a one-dimensional bytes numpy array. THe logged data includes the original data object
+            data to be logged as a one-dimensional bytes numpy array. The logged data includes the original data object
             and the pre-pended source id and time stamp.
         """
 
@@ -53,10 +58,10 @@ class DataLogger:
         data producers, the shared Queue may become the bottleneck. In this case, you can initialize multiple
         DataLogger instances, each using a unique instance_name argument.
 
-        Tweak the number of processes and threads as necessary to comply with the load and share the input_queue of the
-        initialized DataLogger with all other classes that need to log serialized data. For most use cases, using a
+        Tweak the number of processes and threads as necessary to keep up with the load and share the input_queue of the
+        initialized DataLogger with all classes that need to log serialized data. For most use cases, using a
         single process (core) with 5-10 threads will be enough to prevent the buffer from filling up.
-        For demanding runtimes, you can increase the number of cores as necessary to comply with the demand.
+        For demanding runtimes, you can increase the number of cores as necessary to keep up with the demand.
 
         This class will log data from all sources and Processes into the same directory to allow for the most efficient
         post-runtime compression. Since all arrays are saved using the source_id as part of the filename, it is possible
@@ -76,6 +81,11 @@ class DataLogger:
             activity. It is likely that delays below 1 millisecond (1000 microseconds) will not produce a measurable
             impact, as the cores execute a 'busy' wait sequence for very short delay periods. Set this argument to 0 to
             disable delays entirely.
+        exist_ok: Determines how the class behaves if a SharedMemory buffer with the same name as the one used by the
+            class already exists. If this argument is set to True, the class will destroy the existing buffer and
+            make a new buffer for itself. If the class is used correctly, the only case where a buffer would already
+            exist is if the class ran into an error during the previous runtime, so setting this to True should be
+            safe for most runtimes.
 
     Attributes:
         _process_count: The number of processes to use for data saving.
@@ -90,14 +100,16 @@ class DataLogger:
         _logger_processes: A tuple of Process objects, each representing a logger process.
         _terminator_array: A shared memory array used to terminate (shut down) the logger processes.
         _watchdog_thread: A thread used to monitor the runtime status of remote logger processes.
+        _exist_ok: Determines how the class handles already existing shared memory buffer errors.
     """
 
+    _started: bool
     _process_count: Incomplete
     _thread_count: Incomplete
     _sleep_timer: Incomplete
     _name: Incomplete
+    _exist_ok: Incomplete
     _output_directory: Incomplete
-    _started: bool
     _mp_manager: Incomplete
     _input_queue: Incomplete
     _terminator_array: Incomplete
@@ -110,6 +122,7 @@ class DataLogger:
         process_count: int = 1,
         thread_count: int = 5,
         sleep_timer: int = 5000,
+        exist_ok: bool = False,
     ) -> None: ...
     def __repr__(self) -> str:
         """Returns a string representation of the DataLogger instance."""
@@ -162,25 +175,64 @@ class DataLogger:
             sleep_time: The time in microseconds to delay between polling the queue once it has been emptied. If the
                 queue is not empty, this process will not sleep.
         """
-    def compress_logs(self, remove_sources: bool = False, verbose: bool = False) -> None:
-        """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
+    def _compress_source(self, source_id: int, files: list[Path], remove_sources: bool, mem_map: bool) -> int:
+        """Compresses all log entries for a single source into a single .npz archive.
 
-        Individual .npy files are grouped by acquisition number before being compressed. Sources are demixed to allow
-        for more efficient data processing and reduce the RAM requirements when compressing sizable chunks of data.
+        This helper function is used by the compress_log() method to compress all available sources in-parallel to
+        improve runtime efficiency.
 
         Notes:
-            This method requires all data from the same source to be loaded into RAM before it is added to the .npz
-            archive. While this should not be a problem for most runtimes, you can modify this method to use memory
-            mapping if your specific use circumstance runs into RAM issues.
+            If this function is instructed to remove source files, deletes individual .npy files after compressing them
+            as .npz archive. The method ensures that all compressed entries match source entries, before deleting source
+            .npy files. Therefore, it is always safe to delete source files.
 
-            If 'verbose' flag is set to True, the method will enable the Console class to print data to the terminal.
-            Overall, this flag should not be enabled together with other 'verbose' ataraxis runtimes, when possible.
+        Args:
+            source_id: The ID-code for the source, whose logs are compressed by this function.
+            files: The list of paths to the .npy log files of the processed source.
+            remove_sources: Determines whether to remove original .npy files after generating the compressed .npz
+                archive.
+            mem_map: Determines whether to load all original entries into memory (RAM) before compression or whether to
+                load them via memory-mapping. Setting this to False is faster, but may lead to error when processing
+                many large datasets in-parallel.
+
+        Raises:
+            ValueError: If the function is instructed to delete source files and one of the compressed entries does not
+                match the original source entry. This indicates that compression altered the original data.
+        """
+    def compress_logs(
+        self,
+        remove_sources: bool = False,
+        memory_mapping: bool = True,
+        verbose: bool = False,
+        max_workers: int | None = None,
+    ) -> None:
+        """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
+
+        All entries within each source are grouped by their acquisition timestamp value before compression. The
+        compressed archive names include the ID code of the source that generated original log entries
+
+        Notes:
+            To improve runtime efficiency, the method processes all log sources in-parallel, using multithreading.
+            The exact number of parallel threads used by the method depends on the number of available CPU cores. This
+            number can be further adjusting by modifying the max_workers argument.
+
+            This method requires all data from the same source to be loaded into RAM before it is added to the .npz
+            archive. While this should not be a problem for most use cases, it may lead to out-of-memory errors. To
+            avoid this, the method uses memory-mapping by default, to reduce the RAM requirements. If your machine
+            has sufficient RAM, disable this by setting the memory_mapping argument to False.
 
         Args:
             remove_sources: Determines whether to remove the individual .npy files after they have been consolidated
-                into .npz archives. Usually, this is a safe option that saves disk space.
-            verbose: Determines whether to print processed arrays to console. This option is mostly useful for debugging
-                other Ataraxis libraries and should be disabled by default.
+                into .npz archives. The method ensures that all compressed entries match the original entries before
+                deleting source files, so this option is safe for all use cases.
+            memory_mapping: Determines whether the method uses memory-mapping (disk) to stage the data before
+                compression or loads all data into RAM. Disabling this option makes the method considerably faster, but
+                may lead to out-of-memory errors in certain use cases. Note, due to collisions with Windows not
+                releasing memory-mapped files, this argument does not do anything on Windows.
+            verbose: Determines whether to print compression progress to terminal. Due to a generally fast compression
+                time, this option is generally not needed for most runtimes.
+            max_workers: Determines the number of threads use to process logs entries from different sources
+                in-parallel. If set to None, the method uses the number of CPU cores - 4 threads.
         """
     @property
     def input_queue(self) -> MPQueue:
@@ -189,18 +241,12 @@ class DataLogger:
         Share this queue with all source processes that need to log data. To ensure correct data packaging, package the
         data using the LogPackage class exposed by this library before putting it into the queue.
         """
-    def _vacate_shared_memory_buffer(self) -> None:
-        """Clears the SharedMemory buffer that uses instance-specific name.
-
-        While this method should not be needed when DataLogger used correctly, there is a possibility that invalid
-        class termination leaves behind non-garbage-collected SharedMemory buffer, preventing the DataLogger from being
-        reinitialized. This method allows manually removing that buffer to reset the system.
-
-        The method will not do anything if the shared memory buffer does not exist.
-        """
     @property
     def name(self) -> str:
         """Returns the name of the DataLogger instance."""
     @property
     def started(self) -> bool:
         """Returns True if the DataLogger has been started and is actively logging data."""
+    @property
+    def output_directory(self) -> Path:
+        """Returns the path to the directory where the data is saved."""

@@ -653,7 +653,7 @@ def test_read_nested_value_error():
 
     # Tests for attempting to access nested keys on a non-dictionary value (using simple_nd)
     invalid_nested_path = "a.nested"
-    message = f"Unable to fully crawl the path '{invalid_nested_path}', when reading nested value from " f"dictionary."
+    message = f"Unable to fully crawl the path '{invalid_nested_path}', when reading nested value from dictionary."
     with pytest.raises(KeyError, match=error_format(message)):
         simple_nd.read_nested_value(invalid_nested_path)
 
@@ -740,7 +740,7 @@ def test_write_nested_value_error():
     intermediate_path = ["b", "c", "d"]
     intermediate_value = 3
     message = (
-        f"Unable to traverse the intermediate key 'c' when writing nested value to " f"dictionary using variable path "
+        f"Unable to traverse the intermediate key 'c' when writing nested value to dictionary using variable path "
     )
     with pytest.raises(KeyError, match=error_format(message)):
         nd.write_nested_value(intermediate_path, intermediate_value, allow_intermediate_overwrite=False)

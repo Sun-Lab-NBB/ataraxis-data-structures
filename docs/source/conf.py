@@ -4,7 +4,7 @@ import importlib_metadata
 # -- Project information -----------------------------------------------------
 project = 'ataraxis-data-structures'
 # noinspection PyShadowingBuiltins
-copyright = '2024, Ivan Kondratyev & Sun Lab'
+copyright = '2024, Ivan Kondratyev (Inkaros) & Sun Lab'
 authors = ['Ivan Kondratyev (Inkaros)', 'Edwin Chen']
 release = importlib_metadata.version("ataraxis-data-structures")  # Extracts the project version from the .toml file.
 
@@ -14,7 +14,7 @@ extensions = [
     'sphinx.ext.napoleon',       # To read google-style docstrings (works with autodoc module).
     'sphinx_autodoc_typehints',  # To parse typehints into documentation
     'sphinx_rtd_theme',          # To format the documentation html using ReadTheDocs format.
-    'sphinx_click',              # To read docstrings and command-line arguments from click-wrapped python functions.
+    'sphinx_rtd_dark_mode',       # Enables dark mode for RTD theme.
 ]
 
 templates_path = ['_templates']
@@ -43,6 +43,9 @@ simplify_optional_unions = True
 typehints_formatter = None
 typehints_use_signature = False
 typehints_use_signature_return = False
+
+# RTD dark mode starts in light mode
+default_dark_mode = False
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = 'sphinx_rtd_theme'  # Directs sphinx to use RTD theme

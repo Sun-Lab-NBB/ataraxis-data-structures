@@ -38,8 +38,8 @@ def test_data_logger_initialization(tmp_path):
 def test_data_logger_directory_creation(tmp_path):
     """Verifies that the DataLogger creates the necessary output directory."""
     logger = DataLogger(output_directory=tmp_path)
-    assert (tmp_path / f"{logger.name}_data_log").exists()
-    assert (tmp_path / f"{logger.name}_data_log").is_dir()
+    assert logger.output_directory.exists()
+    assert logger.output_directory.is_dir()
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -84,7 +84,7 @@ def test_data_logger_multiprocessing(tmp_path, process_count, thread_count, samp
     for i in range(5):
         source_id, timestamp, data = sample_data
         timestamp += i
-        packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+        packed_data = LogPackage(source_id=np.uint16(source_id), time_stamp=np.uint64(timestamp), serialized_data=data)
         logger.input_queue.put(packed_data)
 
     # Allow some time for processing
@@ -103,22 +103,22 @@ def test_data_logger_data_integrity(tmp_path, sample_data):
     logger.start()
 
     source_id, timestamp, data = sample_data
-    packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+    packed_data = LogPackage(source_id=np.uint16(source_id), time_stamp=np.uint64(timestamp), serialized_data=data)
     logger.input_queue.put(packed_data)
 
     logger.stop()
 
     # Verify the saved file
-    saved_files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
+    saved_files = list(logger.output_directory.glob("*.npy"))
     assert len(saved_files) == 1
 
     # Load and verify the saved data
     saved_data = np.load(saved_files[0])
 
     # Extract components from saved data
-    saved_source_id = int.from_bytes(saved_data[:1].tobytes(), byteorder="little")
-    saved_timestamp = int.from_bytes(saved_data[1:9].tobytes(), byteorder="little")
-    saved_content = saved_data[9:]
+    saved_source_id = int.from_bytes(saved_data[:2].tobytes(), byteorder="little")
+    saved_timestamp = int.from_bytes(saved_data[2:10].tobytes(), byteorder="little")
+    saved_content = saved_data[10:]
 
     assert saved_source_id == source_id
     assert saved_timestamp == timestamp
@@ -136,7 +136,7 @@ def test_data_logger_compression(tmp_path, sample_data):
     for i, source_id in enumerate(source_ids):
         _, timestamp, data = sample_data
         timestamp += i
-        packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+        packed_data = LogPackage(source_id=np.uint16(source_id), time_stamp=np.uint64(timestamp), serialized_data=data)
         logger.input_queue.put(packed_data)
 
     logger.stop()
@@ -149,7 +149,7 @@ def test_data_logger_compression(tmp_path, sample_data):
     assert len(compressed_files) == 2  # One for each unique source_id
 
     # Verify original files were removed
-    original_files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
+    original_files = list(logger.output_directory.glob("*.npy"))
     assert len(original_files) == 0
 
 
@@ -164,7 +164,7 @@ def test_data_logger_concurrent_access(tmp_path, sample_data):
     def submit_data(i):
         source_id, timestamp, data = sample_data
         timestamp += i
-        packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+        packed_data = LogPackage(source_id=np.uint16(source_id), time_stamp=np.uint64(timestamp), serialized_data=data)
         logger.input_queue.put(packed_data)
 
     # Submit data concurrently
@@ -174,8 +174,15 @@ def test_data_logger_concurrent_access(tmp_path, sample_data):
     logger.stop()
 
     # Verify all files were created
-    files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
+    files = list(logger.output_directory.glob("*.npy"))
     assert len(files) == 20
+
+    # Verifies log compression with source deletion and not memory mapping
+    logger.compress_logs(remove_sources=True, memory_mapping=False)
+    files = list(logger.output_directory.glob("*.npy"))
+    assert len(files) == 0
+    files = list(logger.output_directory.glob("*.npz"))
+    assert len(files) == 1
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -188,7 +195,7 @@ def test_data_logger_empty_queue_shutdown(tmp_path):
     logger.stop()
 
     # Verify no files were created
-    files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
+    files = list(logger.output_directory.glob("*.npy"))
     assert len(files) == 0
 
 
@@ -200,12 +207,12 @@ def test_data_logger_sleep_timer(tmp_path, sleep_timer, sample_data):
     logger.start()
 
     source_id, timestamp, data = sample_data
-    packed_data = LogPackage(source_id=source_id, time_stamp=timestamp, serialized_data=data)
+    packed_data = LogPackage(source_id=np.uint16(source_id), time_stamp=np.uint64(timestamp), serialized_data=data)
     logger.input_queue.put(packed_data)
 
     # Allow time for processing
     logger.stop()
 
     # Verify data was saved regardless of sleep timer
-    files = list((tmp_path / f"{logger.name}_data_log").glob("*.npy"))
+    files = list(logger.output_directory.glob("*.npy"))
     assert len(files) == 1

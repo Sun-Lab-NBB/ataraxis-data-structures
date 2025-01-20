@@ -1,4 +1,5 @@
-from typing import Any, Generator
+from typing import Any
+from collections.abc import Generator
 from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
@@ -23,7 +24,9 @@ class SharedMemoryArray:
     Notes:
         Shared memory objects are garbage-collected differently depending on the host OS. On Windows, garbage collection
         is handed off to the OS and cannot be enforced manually. On Unix (OSx and Linux), the buffer can be
-        garbage-collected via appropriate commands.
+        garbage-collected via appropriate commands. Make sure you call the destroy() method as part of your cleanup
+        routine for each process that creates the SharedMemoryArray instance on Unix platforms, or your system will be
+        hogged by leftover Sharedmemory buffers.
 
     Args:
         name: The descriptive name to use for the shared memory array. The OS uses names to identify shared
@@ -56,8 +59,10 @@ class SharedMemoryArray:
     ) -> None: ...
     def __repr__(self) -> str:
         """Generates and returns a class representation string."""
+    def __del__(self) -> None:
+        """Ensures the class is disconnected from the shared memory buffer when it is garbage-collected."""
     @classmethod
-    def create_array(cls, name: str, prototype: NDArray[Any]) -> SharedMemoryArray:
+    def create_array(cls, name: str, prototype: NDArray[Any], exist_ok: bool = False) -> SharedMemoryArray:
         """Creates a SharedMemoryArray class instance using the input one-dimensional prototype array.
 
         This method uses the input prototype to generate a new numpy array that uses a shared memory buffer to store
@@ -75,6 +80,10 @@ class SharedMemoryArray:
                 Currently, this class only works with flat (one-dimensional) numpy arrays. If you want to use it for
                 multidimensional arrays, consider using np.ravel() or np.ndarray.flatten() methods to flatten your
                 array.
+            exist_ok: Determines how the method handles the case where the Sharedmemory buffer with the same name
+                already exists. If the flag is False, the class will raise an exception and abort SharedMemoryArray
+                creation. If the flag is True, the class will destroy the old buffer and recreate the new buffer using
+                the vacated name.
 
         Returns:
             The configured SharedMemoryArray class instance. This instance should be passed to each of the processes

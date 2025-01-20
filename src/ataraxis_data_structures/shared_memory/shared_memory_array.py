@@ -7,8 +7,9 @@ as an alternative to Queue objects.
 """
 
 from copy import copy
-from typing import Any, Iterable, Optional, Generator
+from typing import Any
 from contextlib import contextmanager
+from collections.abc import Iterable, Generator
 from multiprocessing import Lock
 from multiprocessing.shared_memory import SharedMemory
 
@@ -35,7 +36,9 @@ class SharedMemoryArray:
     Notes:
         Shared memory objects are garbage-collected differently depending on the host OS. On Windows, garbage collection
         is handed off to the OS and cannot be enforced manually. On Unix (OSx and Linux), the buffer can be
-        garbage-collected via appropriate commands.
+        garbage-collected via appropriate commands. Make sure you call the destroy() method as part of your cleanup
+        routine for each process that creates the SharedMemoryArray instance on Unix platforms, or your system will be
+        hogged by leftover Sharedmemory buffers.
 
     Args:
         name: The descriptive name to use for the shared memory array. The OS uses names to identify shared
@@ -61,16 +64,16 @@ class SharedMemoryArray:
         name: str,
         shape: tuple[int, ...],
         datatype: np.dtype[Any],
-        buffer: Optional[SharedMemory],
+        buffer: SharedMemory | None,
     ):
         # Initialization method only saves input data into attributes. The method that actually sets up the class is
         # the create_array() class method.
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
-        self._buffer: Optional[SharedMemory] = buffer
+        self._buffer: SharedMemory | None = buffer
         self._lock = Lock()
-        self._array: Optional[NDArray[Any]] = None
+        self._array: NDArray[Any] | None = None
         self._is_connected: bool = False
 
     def __repr__(self) -> str:
@@ -80,11 +83,16 @@ class SharedMemoryArray:
             f"connected={self.is_connected})"
         )
 
+    def __del__(self) -> None:
+        """Ensures the class is disconnected from the shared memory buffer when it is garbage-collected."""
+        self.disconnect()
+
     @classmethod
     def create_array(
         cls,
         name: str,
         prototype: NDArray[Any],
+        exist_ok: bool = False,
     ) -> "SharedMemoryArray":
         """Creates a SharedMemoryArray class instance using the input one-dimensional prototype array.
 
@@ -103,6 +111,10 @@ class SharedMemoryArray:
                 Currently, this class only works with flat (one-dimensional) numpy arrays. If you want to use it for
                 multidimensional arrays, consider using np.ravel() or np.ndarray.flatten() methods to flatten your
                 array.
+            exist_ok: Determines how the method handles the case where the Sharedmemory buffer with the same name
+                already exists. If the flag is False, the class will raise an exception and abort SharedMemoryArray
+                creation. If the flag is True, the class will destroy the old buffer and recreate the new buffer using
+                the vacated name.
 
         Returns:
             The configured SharedMemoryArray class instance. This instance should be passed to each of the processes
@@ -135,12 +147,23 @@ class SharedMemoryArray:
         try:
             buffer: SharedMemory = SharedMemory(name=name, create=True, size=prototype.nbytes)
         except FileExistsError:
-            message = (
-                f"Unable to create SharedMemoryArray object using name '{name}', as object with this name already "
-                f"exists. This is likely due to calling create_array() method from a child process. "
-                f"Use connect() method to connect to the SharedMemoryArray from a child process."
-            )
-            console.error(message=message, error=FileExistsError)
+            # If the buffer already exists, but the method is configured to recreate the buffer, destroys the old buffer
+            if exist_ok:
+                # Destroys the existing shared memory buffer
+                SharedMemory(name=name, create=False).unlink()
+
+                # Recreates the shared memory buffer using the freed buffer name
+                buffer = SharedMemory(name=name, create=True, size=prototype.nbytes)
+
+            # Otherwise, raises an exception
+            else:
+                message = (
+                    f"Unable to create SharedMemoryArray object using name '{name}', as object with this name already "
+                    f"exists. If this method is called from a child process, use connect() method to connect to the "
+                    f"SharedMemoryArray from a child process. To recreate the buffer left over from a previous "
+                    f"runtime, run this method with the 'exist_ok' flag set to True."
+                )
+                console.error(message=message, error=FileExistsError)
 
         # Instantiates a numpy ndarray using the shared memory buffer and copies prototype array data into the shared
         # array instance.
@@ -217,10 +240,9 @@ class SharedMemoryArray:
         Raises:
             ValueError: If the input tuple contains an invalid number of elements.
         """
-
         # Parses the index tuple into slicing arguments (start and stop)
         start: int
-        stop: Optional[int]
+        stop: int | None
         if isinstance(index, tuple):
             # Start only
             if len(index) == 1:
@@ -232,15 +254,14 @@ class SharedMemoryArray:
                 stop = int(index[1])
                 return start, stop
             # Invalid input
-            else:
-                message: str = (
-                    f"Unable to convert the index tuple into slice arguments for {self.name} SharedMemoryArray "
-                    f"instance. Expected a tuple with 1 or 2 elements (start and stop), but instead encountered "
-                    f"a tuple with {len(index)} elements."
-                )
-                console.error(message=message, error=ValueError)
-                # Fallback to appease mypy, should not be reachable
-                raise ValueError(message)  # pragma: no cover
+            message: str = (
+                f"Unable to convert the index tuple into slice arguments for {self.name} SharedMemoryArray "
+                f"instance. Expected a tuple with 1 or 2 elements (start and stop), but instead encountered "
+                f"a tuple with {len(index)} elements."
+            )
+            console.error(message=message, error=ValueError)
+            # Fallback to appease mypy, should not be reachable
+            raise ValueError(message)  # pragma: no cover
 
     @contextmanager
     def _optional_lock(self, with_lock: bool) -> Generator[Any, Any, None]:
@@ -261,7 +282,7 @@ class SharedMemoryArray:
         else:
             yield
 
-    def _verify_indices(self, start: int, stop: Optional[int]) -> tuple[int, Optional[int]]:
+    def _verify_indices(self, start: int, stop: int | None) -> tuple[int, int | None]:
         """Converts start and stop indices used to slice the shared numpy array to positive values (if needed) and
         verifies them against array boundaries.
 
@@ -348,7 +369,6 @@ class SharedMemoryArray:
                 converted to positive numbers (this is done internally, input indices can be negative).
             IndexError: If the input index or slice is outside the array boundaries.
         """
-
         # Ensures the class is connected to the shared memory buffer
         if not self._is_connected or self._array is None:
             message: str = (
@@ -359,7 +379,7 @@ class SharedMemoryArray:
 
         # If index is a tuple, decomposes it into slice operands to use on the array
         start: int = 0
-        stop: Optional[int] = None
+        stop: int | None = None
         if isinstance(index, tuple):
             # noinspection PyTypeChecker
             start, stop = self._convert_to_slice(index=index)
@@ -390,12 +410,10 @@ class SharedMemoryArray:
         if convert_output:
             if data.size != 1:
                 return data.tolist()
-            else:
-                return data.item()
-        elif data.size != 1:
+            return data.item()
+        if data.size != 1:
             return data
-        else:
-            return data[0]
+        return data[0]
 
     def write_data(
         self,
@@ -438,7 +456,6 @@ class SharedMemoryArray:
                 converted to positive numbers (this is done internally, input indices can be negative).
             IndexError: If the input index or slice is outside the array boundaries.
         """
-
         # Ensures the class is connected to the shared memory buffer
         if not self._is_connected or self._array is None:
             message: str = (
@@ -449,7 +466,7 @@ class SharedMemoryArray:
 
         # If index is a tuple, decomposes it into slice operands to use on the array
         start: int = 0
-        stop: Optional[int] = None
+        stop: int | None = None
         if isinstance(index, tuple):
             # noinspection PyTypeChecker
             start, stop = self._convert_to_slice(index=index)
