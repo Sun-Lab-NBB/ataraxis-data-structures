@@ -10,6 +10,7 @@ import os
 import sys
 from queue import Empty
 from pathlib import Path
+import platform
 from threading import Thread
 from collections import defaultdict
 from dataclasses import dataclass
@@ -289,18 +290,31 @@ class DataLogger:
 
             # Only checks that processes are alive if they are started. The shutdown() flips the started tracker
             # before actually shutting down the processes, so there should be no collisions here.
-            for num, process in enumerate(self._logger_processes, start=1):
+            process_number = 0
+            error = False
+            for num, process in enumerate(self._logger_processes, start=1):  # pragma: no cover
                 # If a started process is not alive, it has encountered an error forcing it to shut down.
-                if not process.is_alive():  # pragma: no cover
-                    message = (
-                        f"DataLogger process {num} out of {len(self._logger_processes)} has been prematurely shut "
-                        f"down. This likely indicates that the process has encountered a runtime error that "
-                        f"terminated the process."
-                    )
-                    # Since the raised error terminates class runtime, destroys the SharedMemory buffer before
-                    # terminating class runtime.
-                    self._terminator_array.destroy()  # type: ignore
-                    console.error(message=message, error=RuntimeError)
+                if not process.is_alive():
+                    error = True
+                    process_number = num
+
+            # The error is raised outside teh checking context to allow gracefully shutting down all assets before
+            # terminating runtime with an error message.
+            if error:
+                message = (
+                    f"DataLogger process {process_number} out of {len(self._logger_processes)} has been prematurely "
+                    f"shut down. This likely indicates that the process has encountered a runtime error that "
+                    f"terminated the process."
+                )
+                # Since the raised error terminates class runtime, cleans up all resources, just like how stop() does it
+                self._terminator_array.write_data(index=0, data=np.uint8(1))  # type: ignore
+                for process in self._logger_processes:
+                    process.join()
+                self._mp_manager.shutdown()
+                self._terminator_array.disconnect()  # type: ignore
+                self._terminator_array.destroy()  # type: ignore
+                self._started = False  # Prevents stop() from running via __del__
+                console.error(message=message, error=RuntimeError)
 
     @staticmethod
     def _save_data(filename: Path, data: NDArray[np.uint8]) -> None:  # pragma: no cover
@@ -484,7 +498,8 @@ class DataLogger:
                 deleting source files, so this option is safe for all use cases.
             memory_mapping: Determines whether the method uses memory-mapping (disk) to stage the data before
                 compression or loads all data into RAM. Disabling this option makes the method considerably faster, but
-                may lead to out-of-memory errors in certain use cases.
+                may lead to out-of-memory errors in certain use cases. Note, due to collisions with Windows not
+                releasing memory-mapped files, this argument does not do anything on Windows.
             verbose: Determines whether to print compression progress to terminal. Due to a generally fast compression
                 time, this option is generally not needed for most runtimes.
             max_workers: Determines the number of threads use to process logs entries from different sources
@@ -505,6 +520,11 @@ class DataLogger:
         # Sorts files within each source_id group by their integer-convertible timestamp
         for source_id in source_files:
             source_files[source_id].sort(key=lambda x: int(x.stem.split("_")[1]))
+
+        # Due to erratic interaction between memory mapping and Windows (as always), disables memory mapping on
+        # Windows. Use max_workers to avoid out-of-memory errors on Windows.
+        if memory_mapping and platform.system() == "Windows":
+            memory_mapping = False
 
         # Processes sources in parallel using threads. Since compression is primarily done by numpy and I/O processors,
         # this is likely the most efficient way of processing multiple sources.

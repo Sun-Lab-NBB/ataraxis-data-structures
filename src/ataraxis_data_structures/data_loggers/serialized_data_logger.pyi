@@ -227,7 +227,8 @@ class DataLogger:
                 deleting source files, so this option is safe for all use cases.
             memory_mapping: Determines whether the method uses memory-mapping (disk) to stage the data before
                 compression or loads all data into RAM. Disabling this option makes the method considerably faster, but
-                may lead to out-of-memory errors in certain use cases.
+                may lead to out-of-memory errors in certain use cases. Note, due to collisions with Windows not
+                releasing memory-mapped files, this argument does not do anything on Windows.
             verbose: Determines whether to print compression progress to terminal. Due to a generally fast compression
                 time, this option is generally not needed for most runtimes.
             max_workers: Determines the number of threads use to process logs entries from different sources
