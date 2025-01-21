@@ -103,7 +103,7 @@ def test_data_logger_data_integrity(tmp_path, sample_data):
     logger.start()
 
     source_id, timestamp, data = sample_data
-    packed_data = LogPackage(source_id=np.uint16(source_id), time_stamp=np.uint64(timestamp), serialized_data=data)
+    packed_data = LogPackage(source_id=np.uint8(source_id), time_stamp=np.uint64(timestamp), serialized_data=data)
     logger.input_queue.put(packed_data)
 
     logger.stop()
@@ -116,9 +116,9 @@ def test_data_logger_data_integrity(tmp_path, sample_data):
     saved_data = np.load(saved_files[0])
 
     # Extract components from saved data
-    saved_source_id = int.from_bytes(saved_data[:2].tobytes(), byteorder="little")
-    saved_timestamp = int.from_bytes(saved_data[2:10].tobytes(), byteorder="little")
-    saved_content = saved_data[10:]
+    saved_source_id = int.from_bytes(saved_data[:1].tobytes(), byteorder="little")
+    saved_timestamp = int.from_bytes(saved_data[1:9].tobytes(), byteorder="little")
+    saved_content = saved_data[9:]
 
     assert saved_source_id == source_id
     assert saved_timestamp == timestamp
