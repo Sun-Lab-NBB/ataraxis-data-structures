@@ -216,3 +216,13 @@ def test_data_logger_sleep_timer(tmp_path, sleep_timer, sample_data):
     # Verify data was saved regardless of sleep timer
     files = list(logger.output_directory.glob("*.npy"))
     assert len(files) == 1
+
+
+@pytest.mark.xdist_group(name="group1")
+def test_data_logger_start_stop_cycling(tmp_path) -> None:
+    """Verifies that cycling start and stop method of DataLogger does not produce errors."""
+    logger = DataLogger(output_directory=tmp_path)
+    logger.start()
+    logger.start()
+    logger.start()
+    logger.stop()
