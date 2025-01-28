@@ -193,6 +193,7 @@ class DataLogger:
     def __del__(self) -> None:
         """Ensures that logger resources are properly released when the class is garbage collected."""
         self.stop()
+        self._mp_manager.shutdown()  # Destroys the queue buffers used by the object
 
     def start(self) -> None:
         """Starts the logger processes and the assets used to control and ensure the processes are alive.
@@ -260,9 +261,6 @@ class DataLogger:
         for process in self._logger_processes:
             process.join()
 
-        # Shuts down the multiprocessing manager, which automatically garbage-collects queue objects.
-        self._mp_manager.shutdown()
-
         # Waits for the watchdog thread to shut down.
         if self._watchdog_thread is not None:
             self._watchdog_thread.join()
@@ -310,7 +308,6 @@ class DataLogger:
                 self._terminator_array.write_data(index=0, data=np.uint8(1))  # type: ignore
                 for process in self._logger_processes:
                     process.join()
-                self._mp_manager.shutdown()
                 self._terminator_array.disconnect()  # type: ignore
                 self._terminator_array.destroy()  # type: ignore
                 self._started = False  # Prevents stop() from running via __del__
