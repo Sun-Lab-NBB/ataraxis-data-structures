@@ -159,6 +159,8 @@ class DataLogger:
     ) -> None:
         # Initializes a variable that tracks whether the class has been started.
         self._started: bool = False
+        # Since __del__ now terminates the manager, it is a good idea to keep it high on the initialization order
+        self._mp_manager: SyncManager = Manager()
 
         # Ensures numeric inputs are not negative.
         self._process_count: int = max(1, process_count)
@@ -174,7 +176,6 @@ class DataLogger:
         ensure_directory_exists(self._output_directory)  # This also ensures input is a valid Path object
 
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
-        self._mp_manager: SyncManager = Manager()
         self._input_queue: MPQueue = self._mp_manager.Queue()  # type: ignore
 
         self._terminator_array: SharedMemoryArray | None = None
