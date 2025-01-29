@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 # Project metdata section. Provides the general ID information about the project.
 [project]
 name = "ataraxis-data-structures"
-version = "3.0.1"
+version = "3.0.2"
 description = "Provides classes and structures for storing, manipulating, and sharing data between Python processes."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -213,11 +213,6 @@ source = ["src/", ".tox/*/lib/python*/site-packages/"]
 # Same as above, specifies the output directory for the coverage .html report
 [tool.coverage.html]
 directory = "reports/coverage_html"
-
-# Optimizes coverage generation for parallel testing
-[tool.coverage.run]
-parallel = true
-concurrency = ["multiprocessing", "thread"]
 
 # Specifies additional ignore directives
 [tool.coverage.report]

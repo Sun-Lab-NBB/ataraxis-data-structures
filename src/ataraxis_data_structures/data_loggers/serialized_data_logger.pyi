@@ -104,13 +104,13 @@ class DataLogger:
     """
 
     _started: bool
+    _mp_manager: Incomplete
     _process_count: Incomplete
     _thread_count: Incomplete
     _sleep_timer: Incomplete
     _name: Incomplete
     _exist_ok: Incomplete
     _output_directory: Incomplete
-    _mp_manager: Incomplete
     _input_queue: Incomplete
     _terminator_array: Incomplete
     _logger_processes: Incomplete
