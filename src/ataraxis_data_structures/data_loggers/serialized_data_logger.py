@@ -9,6 +9,7 @@ byte-serialized payloads stored in Numpy arrays.
 import os
 import sys
 from queue import Empty
+from typing import Any
 from pathlib import Path
 import platform
 from threading import Thread
@@ -26,6 +27,7 @@ from tqdm import tqdm
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_time import PrecisionTimer
+import numpy.lib.npyio
 from ataraxis_base_utilities import console, ensure_directory_exists
 
 from ..shared_memory import SharedMemoryArray
@@ -396,7 +398,33 @@ class DataLogger:
         executor.shutdown(wait=True)
         terminator_array.disconnect()
 
-    def _compress_source(self, source_id: int, files: list[Path], remove_sources: bool, mem_map: bool) -> int:
+    @staticmethod
+    def _load_numpy_file(file_path: Path, mem_map: bool = False) -> tuple[str, NDArray[Any]]:
+        """Loads a single numpy file either into memory or as memory-mapped array.
+
+        Args:
+            file_path: Path to the .npy file to load.
+            mem_map: Determines whether to memory-map the file or load it into RAM.
+
+        Returns:
+            A tuple of two elements. The first element contains the file stem (file name without extension) and the
+            second stores the array with data.
+        """
+        if mem_map:
+            array_data = np.load(file_path, mmap_mode="r")
+        else:
+            array_data = np.load(file_path)
+        return file_path.stem, array_data
+
+    def _compress_source(
+        self,
+        source_id: int,
+        source_data: dict[str, NDArray[Any]],
+        files: tuple[Path, ...],
+        remove_sources: bool,
+        compress: bool,
+        verify_integrity: bool,
+    ) -> int:
         """Compresses all log entries for a single source into a single .npz archive.
 
         This helper function is used by the compress_log() method to compress all available sources in-parallel to
@@ -404,68 +432,60 @@ class DataLogger:
 
         Notes:
             If this function is instructed to remove source files, deletes individual .npy files after compressing them
-            as .npz archive. The method ensures that all compressed entries match source entries, before deleting source
-            .npy files. Therefore, it is always safe to delete source files.
+            as .npz archive. When removing sources, it is advised to enable verify_integrity flag to ensure compressed
+            files match the original files, although it is highly unlikely to encounter data loss during this process.
 
         Args:
             source_id: The ID-code for the source, whose logs are compressed by this function.
-            files: The list of paths to the .npy log files of the processed source.
+            source_data: A dictionary that uses log-entries as keys and stores the loaded or memory-mapped source data
+                as a numpy array value for each key.
+            files: The tuple of paths to the .npy log files of the processed source.
             remove_sources: Determines whether to remove original .npy files after generating the compressed .npz
                 archive.
-            mem_map: Determines whether to load all original entries into memory (RAM) before compression or whether to
-                load them via memory-mapping. Setting this to False is faster, but may lead to error when processing
-                many large datasets in-parallel.
+            compress: Determines whether to compress the output archive. If this flag is false, the data is saved as
+                an uncompressed .npz archive, which can be considerably faster than compressing data for large log
+                files.
+            verify_integrity; Determines whether to verify the integrity of the compressed log entries against the
+                original data before removing the source files. This is only used if remove_sources is True.
 
         Raises:
             ValueError: If the function is instructed to delete source files and one of the compressed entries does not
                 match the original source entry. This indicates that compression altered the original data.
         """
-        # Collects all .npy files for the processed source
-        source_data = {}
-        for file_path in files:
-            stem = file_path.stem
-            # If the function is not running in memory-mapping mode, directly loads the data from each array into
-            # memory (RAM). This is faster than memory-mapping but, depending on the use case, may lead to out-of-memory
-            # errors.
-            if not mem_map:
-                source_data[f"{stem}"] = np.load(file_path)
-
-            # Alternatively, instead of loading data into memory, generates a memory-mapped view of each source array.
-            # This is slower than using RAM, but may be necessary for some use cases.
-            else:
-                array_data = np.load(file_path, mmap_mode="r")
-                source_data[f"{stem}"] = array_data
-
-        # Compresses individual entries into a single .npz archive
+        # Pre-computes the output path
         output_path = self._output_directory.joinpath(f"{source_id}_log.npz")
-        np.savez_compressed(output_path, **source_data)
 
-        # If requested, cleans up no longer necessary source files
+        # Compresses individual entries into a single .npz archive. Since version 3.1.2, the data can also be saved as
+        # uncompressed .npz archive to optimize processing speed.
+        if compress:
+            np.savez_compressed(output_path, **source_data)  # type: ignore
+        else:
+            np.savez(output_path, **source_data)  # type: ignore
+
+        # If requested, cleans up no longer necessary source files.
         if remove_sources:
-            # Verifies each file individually, keeping only one entry in memory at a time. Loading an .npz file
-            # automatically uses memory mapping, unless a specific array is accessed.
-            with np.load(output_path) as compressed_data:
-                for file_path in files:
-                    stem = file_path.stem
+            # If verification is requested, ensures compressed log entries match the original data entries.
+            if verify_integrity:
+                compressed_data: numpy.lib.npyio.NpzFile
+                with np.load(output_path) as compressed_data:
+                    for file_path in files:
+                        stem = file_path.stem
+                        original = source_data[stem]
+                        compressed = compressed_data[stem]
 
-                    # Loads and verifies one original file at a time. This should have minimal RAM footprint.
-                    original = source_data[f"{stem}"]
-                    compressed = compressed_data[f"{stem}"]
+                        if not np.array_equal(original, compressed):
+                            message = (
+                                f"Unable to compress the log entries for the source {source_id} logged by DataLogger "
+                                f"{self.name}. Data integrity check failed for entry {stem}. Compressed data does not "
+                                f"match original, so cannot remove the original file."
+                            )
+                            console.error(message=message, error=ValueError)
 
-                    # If verification is failed, triggers an error
-                    if not np.array_equal(original, compressed):  # pragma: no cover
-                        message = (
-                            f"Unable to compress the log entries for the source {source_id} logged by DataLogger "
-                            f"{self.name}. Data integrity check failed for entry {stem}. Compressed data does not "
-                            f"match original, so cannot remove the original file."
-                        )
-                        console.error(message=message, error=ValueError)
-
-            # If this point is reached, it is safe to remove all original files.
+            # If verification passed or wasn't requested, removes teh source files
             for file in files:
                 file.unlink()
 
-        # Returns teh source id to, if necessary, update the progress bar
+        # Returns the source id to update the progress bar
         return source_id
 
     def compress_logs(
@@ -473,6 +493,8 @@ class DataLogger:
         remove_sources: bool = False,
         memory_mapping: bool = True,
         verbose: bool = False,
+        compress: bool = True,
+        verify_integrity: bool = True,
         max_workers: int | None = None,
     ) -> None:
         """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
@@ -500,6 +522,13 @@ class DataLogger:
                 releasing memory-mapped files, this argument does not do anything on Windows.
             verbose: Determines whether to print compression progress to terminal. Due to a generally fast compression
                 time, this option is generally not needed for most runtimes.
+            compress: Determines whether to compress the output .npz archive file for each source. While the intention
+                behind this method is to compress archive data, it is possible to use the method to just aggregate the
+                data into .npz files without compression. This processing mode is usually desirable for runtimes that
+                need to minimize the time spent on processing the data.
+            verify_integrity: Determines whether to verify the integrity of compressed data against the original log
+                entries before removing sources. While it is highly unlikely that compression alters the data, it is
+                recommended to have this option enabled to ensure data integrity.
             max_workers: Determines the number of threads use to process logs entries from different sources
                 in-parallel. If set to None, the method uses the number of CPU cores - 4 threads.
         """
@@ -524,12 +553,45 @@ class DataLogger:
         if memory_mapping and platform.system() == "Windows":
             memory_mapping = False
 
+        # Loads or memory-maps all source files. Since sources are individual files, we can access all of them
+        # in-parallel to optimize runtime speed.
+        loaded_data = {source_id: {} for source_id in source_files}  # type: ignore
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submits all loading tasks
+            futures = []
+            total_files = sum(len(files) for files in source_files.values())
+            for source_id, files in source_files.items():
+                for file_path in files:
+                    future = executor.submit(self._load_numpy_file, file_path, memory_mapping)
+                    futures.append((source_id, file_path, future))
+
+            # Collects results as they complete
+            with tqdm(
+                total=total_files,
+                desc="Loading source data for all sources",
+                unit="files",
+                disable=not verbose,
+            ) as pbar:
+                # Progress bar is updated with each processed file
+                for source_id, file_path, future in futures:
+                    stem, array = future.result()
+                    loaded_data[source_id][stem] = array
+                    pbar.update(1)
+
         # Processes sources in parallel using threads. Since compression is primarily done by numpy and I/O processors,
         # this is likely the most efficient way of processing multiple sources.
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit each source for compression in-parallel
             future_to_source = {
-                executor.submit(self._compress_source, source_id, files, remove_sources, memory_mapping): source_id
+                executor.submit(
+                    self._compress_source,
+                    source_id,
+                    loaded_data[source_id],
+                    tuple(files),
+                    remove_sources,
+                    compress,
+                    verify_integrity,
+                ): source_id
                 for source_id, files in source_files.items()
             }
 
@@ -541,7 +603,7 @@ class DataLogger:
                 disable=not verbose,
             ) as pbar:
                 # Progress bar is updated with each processed source
-                for future in as_completed(future_to_source):
+                for future in as_completed(future_to_source):  # type: ignore
                     future.result()
                     pbar.update(1)
 

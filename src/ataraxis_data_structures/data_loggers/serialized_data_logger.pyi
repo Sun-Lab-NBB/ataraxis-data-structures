@@ -1,3 +1,4 @@
+from typing import Any
 from pathlib import Path
 from dataclasses import dataclass
 from multiprocessing import Queue as MPQueue
@@ -175,7 +176,27 @@ class DataLogger:
             sleep_time: The time in microseconds to delay between polling the queue once it has been emptied. If the
                 queue is not empty, this process will not sleep.
         """
-    def _compress_source(self, source_id: int, files: list[Path], remove_sources: bool, mem_map: bool) -> int:
+    @staticmethod
+    def _load_numpy_file(file_path: Path, mem_map: bool = False) -> tuple[str, NDArray[Any]]:
+        """Loads a single numpy file either into memory or as memory-mapped array.
+
+        Args:
+            file_path: Path to the .npy file to load.
+            mem_map: Determines whether to memory-map the file or load it into RAM.
+
+        Returns:
+            A tuple of two elements. The first element contains the file stem (file name without extension) and the
+            second stores the array with data.
+        """
+    def _compress_source(
+        self,
+        source_id: int,
+        source_data: dict[str, NDArray[Any]],
+        files: tuple[Path, ...],
+        remove_sources: bool,
+        compress: bool,
+        verify_integrity: bool,
+    ) -> int:
         """Compresses all log entries for a single source into a single .npz archive.
 
         This helper function is used by the compress_log() method to compress all available sources in-parallel to
@@ -183,17 +204,21 @@ class DataLogger:
 
         Notes:
             If this function is instructed to remove source files, deletes individual .npy files after compressing them
-            as .npz archive. The method ensures that all compressed entries match source entries, before deleting source
-            .npy files. Therefore, it is always safe to delete source files.
+            as .npz archive. When removing sources, it is advised to enable verify_integrity flag to ensure compressed
+            files match the original files, although it is highly unlikely to encounter data loss during this process.
 
         Args:
             source_id: The ID-code for the source, whose logs are compressed by this function.
-            files: The list of paths to the .npy log files of the processed source.
+            source_data: A dictionary that uses log-entries as keys and stores the loaded or memory-mapped source data
+                as a numpy array value for each key.
+            files: The tuple of paths to the .npy log files of the processed source.
             remove_sources: Determines whether to remove original .npy files after generating the compressed .npz
                 archive.
-            mem_map: Determines whether to load all original entries into memory (RAM) before compression or whether to
-                load them via memory-mapping. Setting this to False is faster, but may lead to error when processing
-                many large datasets in-parallel.
+            compress: Determines whether to compress the output archive. If this flag is false, the data is saved as
+                an uncompressed .npz archive, which can be considerably faster than compressing data for large log
+                files.
+            verify_integrity; Determines whether to verify the integrity of the compressed log entries against the
+                original data before removing the source files. This is only used if remove_sources is True.
 
         Raises:
             ValueError: If the function is instructed to delete source files and one of the compressed entries does not
@@ -204,6 +229,8 @@ class DataLogger:
         remove_sources: bool = False,
         memory_mapping: bool = True,
         verbose: bool = False,
+        compress: bool = True,
+        verify_integrity: bool = True,
         max_workers: int | None = None,
     ) -> None:
         """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
@@ -231,6 +258,13 @@ class DataLogger:
                 releasing memory-mapped files, this argument does not do anything on Windows.
             verbose: Determines whether to print compression progress to terminal. Due to a generally fast compression
                 time, this option is generally not needed for most runtimes.
+            compress: Determines whether to compress the output .npz archive file for each source. While the intention
+                behind this method is to compress archive data, it is possible to use the method to just aggregate the
+                data into .npz files without compression. This processing mode is usually desirable for runtimes that
+                need to minimize the time spent on processing the data.
+            verify_integrity: Determines whether to verify the integrity of compressed data against the original log
+                entries before removing sources. While it is highly unlikely that compression alters the data, it is
+                recommended to have this option enabled to ensure data integrity.
             max_workers: Determines the number of threads use to process logs entries from different sources
                 in-parallel. If set to None, the method uses the number of CPU cores - 4 threads.
         """
