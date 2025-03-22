@@ -6,6 +6,6 @@ ataraxis-transport-layer).
 See serialized_data_logger.py for more details on the class and its methods.
 """
 
-from .serialized_data_logger import DataLogger, LogPackage
+from .serialized_data_logger import DataLogger, LogPackage, compress_npy_logs
 
-__all__ = ["DataLogger", "LogPackage"]
+__all__ = ["DataLogger", "LogPackage", "compress_npy_logs"]

@@ -47,12 +47,12 @@ class SharedMemoryArray:
         _is_connected: Tracks whether the shared memory array wrapped by this class has been connected to.
     """
 
-    _name: Incomplete
-    _shape: Incomplete
-    _datatype: Incomplete
-    _buffer: Incomplete
+    _name: str
+    _shape: tuple[int, ...]
+    _datatype: np.dtype[Any]
+    _buffer: SharedMemory | None
     _lock: Incomplete
-    _array: Incomplete
+    _array: NDArray[Any] | None
     _is_connected: bool
     def __init__(
         self, name: str, shape: tuple[int, ...], datatype: np.dtype[Any], buffer: SharedMemory | None

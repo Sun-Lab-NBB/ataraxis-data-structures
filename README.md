@@ -437,14 +437,27 @@ if __name__ == "__main__":
 
     # The logger also provides a method for compressing all .npy files into .npz archives. This method is intended to be
     # called after the 'online' runtime is over to optimize the memory occupied by data. To achieve minimal disk space
-    # usage, call the method wit the remove_sources argument. The method verifies compressed data against the original
-    # entries before removing source files, so it is always safe to delete source files.
+    # usage, call the method with the remove_sources argument.
     logger.compress_logs(remove_sources=True)
 
     # The compression creates a single .npz file named after the source_id
     assert len(list(logger.output_directory.glob("**/*.npy"))) == 0
     assert len(list(logger.output_directory.glob("**/*.npz"))) == 1
 ```
+
+#### Log compression
+To optimize runtime performance (log writing speed), all log entries are saved to disk as serialized NumPy arrays, each
+stored in a separate .npy file. While this format is adequate during time-critical runtimes, it is not optimal for 
+long-term storage and data transfer.
+
+To facilitate long-term log storage, the library exposes a global, multiprocessing-safe, and instance-independent 
+function `compress_npy_logs()`. This function behaves exactly like the instance-bound log compression method does, but 
+can be used to compress log entries without the need to have an initialized DataLogger instance. You can
+use the `output_directory` property of an initialized DataLogger instance to get the path to the directory that stores 
+uncompressed log entries, which is a required argument for the instance-independent log compression function.
+
+Alternatively, you can also use the `compress_logs` method exposed by the DataLogger instance to compress the logs 
+immediately after runtime. Overall, it is highly encouraged to compress the logs as soon as possible.
 ___
 
 ## API Documentation

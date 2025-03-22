@@ -20,17 +20,335 @@ from multiprocessing import (
     Manager,
     Process,
 )
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from multiprocessing.managers import SyncManager
 
 from tqdm import tqdm
 import numpy as np
 from numpy.typing import NDArray
 from ataraxis_time import PrecisionTimer
-import numpy.lib.npyio
 from ataraxis_base_utilities import console, ensure_directory_exists
 
 from ..shared_memory import SharedMemoryArray
+
+
+def _load_numpy_files(
+    file_paths: tuple[Path, ...], mem_map: bool = False
+) -> tuple[tuple[str, ...], tuple[NDArray[Any], ...]]:
+    """Loads multiple .npy files either into memory or as a memory-mapped array.
+
+    This is a service function used during log compression to load all raw log files into memory in-parallel for faster
+    processing. This function should be used by a parallel executor to process the entire raw .npy dataset evenly split
+    between all available workers to achieve maximum loading speed.
+
+    Args:
+        file_paths: The paths to the .npy files to load.
+        mem_map: Determines whether to memory-map the files or load them into RAM.
+
+    Returns:
+        A tuple of two elements. The first element stores a tuple of loaded file names (without extension), and the
+        second stores a tuple of loaded data arrays.
+    """
+    names = []
+    arrays = []
+    for file_path in file_paths:
+        if mem_map:
+            array_data = np.load(file_path, mmap_mode="r")
+        else:
+            array_data = np.load(file_path)
+        names.append(file_path.stem)
+        arrays.append(array_data)
+    return tuple(names), tuple(arrays)
+
+
+def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:
+    """Loads a numpy .npz archive containing multiple arrays as a dictionary.
+
+    This is a service function used during compressed log verification to load all entries from a compressed log archive
+    into memory in-parallel. To achieve the best runtime performance, this function should be passed to a process
+    executor. Assuming archives are compressed with Deflate (default behavior of the log compression method), this is
+    usually the longest step of the log processing sequence.
+
+    Args:
+        file_path: the path to the .npz log archive to load.
+
+    Returns:
+        A dictionary that uses log entry names as keys and loaded log entry data arrays as values.
+    """
+    # Loads the data and formats it as a dictionary before returning it to caller
+    with np.load(file_path) as npz_data:
+        return {key: npz_data[key] for key in npz_data.files}
+
+
+def _compress_source(
+    output_directory: Path,
+    source_id: int,
+    source_data: dict[str, NDArray[Any]],
+    compress: bool,
+) -> tuple[int, Path]:
+    """Compresses all log entries for a single source (producer) into an .npz archive.
+
+    This helper function is used during log compression to compress all available sources in parallel. If compression
+    is enabled, the function uses the default NumPy compression method (Deflate), which typically has a fast compression
+    speed, but very slow decompression speed.
+
+    Notes:
+        Depending on the 'compression' flag, this function can be used to either aggregate the log entries into a file
+        or to both aggregate and compress the entries. While it is recommended to always compress the log entries, this
+        is not required.
+
+    Args:
+        source_id: The ID-code for the source whose data will be compressed by the function.
+        source_data: A dictionary that uses log-entries (entry names) as keys and stores the loaded or memory-mapped
+            source data as a NumPy array value for each key.
+        compress: Determines whether to compress the output archive. If this flag is false, the data is saved as
+            an uncompressed .npz archive. Note, compression speed is typically very fast, so it is advised to have this
+            enabled for all use cases.
+        verify_integrity; Determines whether to verify the integrity of the compressed log entries against the
+            original data before removing the source files. This is only used if remove_sources is True.
+
+    Returns:
+        A tuple of two elements. The first element contains the archive file stem (file name without extension), and
+        the second element contains the path to the compressed log file.
+    """
+    # Computes the output path
+    output_path = output_directory.joinpath(f"{source_id}_log.npz")
+
+    # Compresses individual entries into a single .npz archive. Since version 3.1.0, the data can also be saved as
+    # uncompressed .npz archive to optimize processing speed.
+    if compress:
+        np.savez_compressed(output_path, **source_data)
+    else:
+        np.savez(output_path, **source_data)
+
+    # Returns the source id and the path to the compressed log file to update the progress bar
+    return source_id, output_path
+
+
+def _compare_arrays(source_id: int, stem: str, original_array: NDArray[Any], compressed_array: NDArray[Any]) -> None:
+    """Compares a pair of NumPy arrays for exact equality.
+
+    This is a service function used during log verification to compare source and compressed log entry data in-parallel.
+
+    Args:
+        source_id: The ID-code for the source, whose compressed data is verified by this function.
+        stem: The file name of the verified log entry.
+        original_array: The source data array from the .npy file.
+        compressed_array: The compressed array from the .npz archive.
+
+    Raises:
+        ValueError: If the arrays don't match.
+    """
+    if not np.array_equal(original_array, compressed_array):
+        error_message = f"Data integrity check failed for source {source_id}, entry {stem}."
+        raise ValueError(error_message)
+
+
+def compress_npy_logs(
+    log_directory: Path,
+    remove_sources: bool = False,
+    memory_mapping: bool = False,
+    verbose: bool = False,
+    compress: bool = True,
+    verify_integrity: bool = False,
+    max_workers: int | None = None,
+) -> None:
+    """Consolidates all .npy files in the target log directory into a compressed .npz archive for each source_id.
+
+    All entries within each source are grouped by their acquisition timestamp value before compression. The
+    compressed archive names include the ID code of the source that generated original log entries. This function can
+    compress any log directory generated by a DataLogger instance and can be used without an initialized DataLogger.
+
+    Notes:
+        To improve runtime efficiency, the function parallelizes all data processing steps. The exact number of parallel
+        threads used by the function depends on the number of available CPU cores. This number can be further adjusting
+        by modifying the max_workers argument.
+
+        This function requires all data from the same source to be loaded into RAM before it is added to the .npz
+        archive. While this should not be an issue for most runtimes and expected use patterns, this function can be
+        configured to use memory-mapping instead of directly loading data into RAM. This has a noticeable processing
+        speed reduction and is not recommended for most users.
+
+        Since this function is intended to optimize how logs are stored on disk, it is statically configured to remove
+        the source .npy files after generating compressed .npz entries. As an extra security measure, it is possible to
+        request the function to verify the integrity of the compressed data against the sources before removing source
+        files. It is heavily discouraged however, as this adds a noticeable performance (runtime speed) overhead and
+        data corruption is generally extremely uncommon and unlikely.
+
+        Additionally, it is possible to disable log compression and instead just aggregated the log entries into an
+        uncompressed .npz file. This is not recommended, since compression speed is very fast and does not majorly
+        affect the runtime speed, but may noticeably reduce disk usage. However, decompression takes a considerable
+        time, so some processing runtimes may benefit from not compressing the generated log runtimes if fast
+        decompression speed is a priority.
+
+    Args:
+        log_directory: The path to the directory used to store uncompressed log .npy files. Usually, this path is
+            obtained from the 'output_directory' property of the DataLogger class.
+        remove_sources: Determines whether to remove the individual .npy files after they have been consolidated
+            into .npz archives.
+        memory_mapping: Determines whether the function uses memory-mapping (disk) to stage the data before
+            compression or loads all data into RAM. Disabling this option makes the function considerably faster, but
+            may lead to out-of-memory errors in very rare use cases. Note, due to collisions with Windows not
+            releasing memory-mapped files, this argument does not do anything on Windows.
+        verbose: Determines whether to print compression progress to terminal.
+        compress: Determines whether to compress the output .npz archive file for each source. While the intention
+            behind this function is to compress archive data, it is possible to use the function to just aggregate the
+            data into .npz files without compression.
+        verify_integrity: Determines whether to verify the integrity of compressed data against the original log
+            entries before removing sources. Since it is highly unlikely that compression alters the data, it is
+            recommended to have this option disabled for most runtimes.
+        max_workers: Determines the number of threads used to carry out various processing phases in-parallel. Note,
+            some processing phases parallelize log source processing and other parallelize log entry processing.
+            Therefore, it is generally desirable to use as many threads as possible. If set to None, the function uses
+            the number of (logical) CPU cores - 2 threads.
+    """
+    # Resolves the number of threads and processes to use during runtime.
+    if max_workers is None:
+        max_workers = os.cpu_count() - 2  # type: ignore
+    elif not isinstance(max_workers, int) or max_workers <= 0:
+        max_workers = 1  # Minimum of 1 worker
+
+    # Collects all .npy files and groups them by source_id
+    source_files: dict[int, list[Path]] = defaultdict(list)
+    for file_path in log_directory.rglob("*.npy"):
+        source_id = int(file_path.stem.split("_")[0])
+        source_files[source_id].append(file_path)
+
+    # Sorts files within each source_id group by their integer-convertible timestamp
+    for source_id in source_files:
+        source_files[source_id].sort(key=lambda x: int(x.stem.split("_")[1]))
+
+    # Due to erratic interaction between memory mapping and Windows (as always), disables memory mapping on
+    # Windows. Use max_workers to avoid out-of-memory errors on Windows.
+    if memory_mapping and platform.system() == "Windows":
+        memory_mapping = False
+
+    # Initiates log processing. Since some steps of log processes are more efficiently executed via multithreading and
+    # others via multiprocessing, uses both process and thread pool executors to efficiently process the data.
+    with ProcessPoolExecutor(max_workers=max_workers) as p_executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as t_executor:
+            # PHASE 1: Loads source files. To do so, spreads loading the entire .npy dataset across all available cores
+            # and uses parallel processing.
+            load_futures = []
+            total_files = sum(len(files) for files in source_files.values())
+            loaded_data: dict[int, dict[str, NDArray[Any]]] = {source_id: {} for source_id in source_files}
+
+            # Groups files into batches across all sources and submits the tasks to the executor.
+            batch_size = int(np.ceil(total_files / max_workers))
+            for source_id, files in source_files.items():
+                for i in range(0, len(files), batch_size):
+                    file_batch = tuple(files[i : i + batch_size])
+                    future = p_executor.submit(_load_numpy_files, file_batch, memory_mapping)
+                    load_futures.append((source_id, file_batch, future))
+
+            # Waits for all log entries to be loaded
+            with tqdm(
+                total=total_files,
+                desc="Loading log source data into memory",
+                unit="files",
+                disable=not verbose,
+            ) as pbar:
+                for source_id, file_batch, future in load_futures:
+                    stems, arrays = future.result()
+                    for stem, array in zip(stems, arrays):
+                        loaded_data[source_id][stem] = array
+                        pbar.update(1)
+
+            # PHASE 2: Compresses sources. Here, each source is processed in-parallel, but within-source log
+            # compression has to be sequential
+            compression_futures = {}
+            compressed_files = {}
+
+            for source_id, files in source_files.items():
+                future = p_executor.submit(
+                    _compress_source,  # type: ignore
+                    log_directory,
+                    source_id,
+                    loaded_data[source_id],
+                    compress,
+                )
+                compression_futures[future] = source_id
+
+            # Collects compression results
+            with tqdm(
+                total=len(source_files),
+                desc="Generating compressed archives for sources",
+                unit="sources",
+                disable=not verbose,
+            ) as pbar:
+                for future in as_completed(compression_futures):
+                    compressed_id, compressed_path = future.result()
+                    compressed_files[compressed_id] = compressed_path
+                    pbar.update(1)
+
+            # PHASE 3: Verifies compressed data integrity against the original data, if this is requested. This is
+            # usually the most time-consuming phase due to serial decompression necessary to load the compressed
+            # archives into memory. Note, this phase uses both process and thread parallelism for maximum efficiency
+            if verify_integrity:
+                # Loads all compressed archives in parallel
+                compressed_data_futures = {}
+                for source_id, compressed_path in compressed_files.items():  # type: ignore
+                    future = p_executor.submit(_load_numpy_archive, compressed_path)  # type: ignore
+                    compressed_data_futures[source_id] = future
+
+                # Collects loaded compressed data
+                compressed_data = {}
+                with tqdm(
+                    total=len(compressed_files),
+                    desc="Loading compressed log archives into memory",
+                    unit="archives",
+                    disable=not verbose,
+                ) as pbar:
+                    for source_id, future in compressed_data_futures.items():
+                        compressed_data[source_id] = future.result()
+                        pbar.update(1)
+
+                # Compares original data to compressed data in parallel
+                verification_futures = []
+                total_comparisons = sum(len(source_data) for source_data in loaded_data.values())
+
+                for source_id, source_data in loaded_data.items():
+                    for stem, original_array in source_data.items():
+                        future = t_executor.submit(
+                            _compare_arrays,  # type: ignore
+                            source_id,
+                            stem,
+                            original_array,
+                            compressed_data[source_id][stem],  # type: ignore
+                        )
+                        verification_futures.append(future)
+
+                # Tracks comparison progress
+                with tqdm(
+                    total=total_comparisons,
+                    desc="Verifying compressed log entries data integrity",
+                    unit="entries",
+                    disable=not verbose,
+                ) as pbar:
+                    for future in as_completed(verification_futures):
+                        future.result()  # Will raise exception if comparison fails
+                        pbar.update(1)
+
+            # PHASE 4: Removes source files if requested.
+            if remove_sources:
+                removal_futures = []
+
+                # Submits removal tasks using thread executor.
+                for files in source_files.values():
+                    for file_path in files:
+                        future = t_executor.submit(file_path.unlink)  # type: ignore
+                        removal_futures.append(future)
+
+                # Tracks progress
+                with tqdm(
+                    total=total_files,
+                    desc="Removing processed source files",
+                    unit="files",
+                    disable=not verbose,
+                ) as pbar:
+                    for future in as_completed(removal_futures):
+                        future.result()
+                        pbar.update(1)
 
 
 @dataclass(frozen=True)
@@ -78,7 +396,7 @@ class LogPackage:
 
         # Zero-pads ID and timestamp. Uses the correct number of zeroes to represent the number of digits that fits into
         # each datatype (uint8 and uint64).
-        log_name = f"{self.source_id:03d}_{self.time_stamp:020d}"
+        log_name = f"{self.source_id:03d}_{self.time_stamp:020d}.npy"
 
         return log_name, data
 
@@ -299,7 +617,7 @@ class DataLogger:
                     error = True
                     process_number = num
 
-            # The error is raised outside teh checking context to allow gracefully shutting down all assets before
+            # The error is raised outside the checking context to allow gracefully shutting down all assets before
             # terminating runtime with an error message.
             if error:
                 message = (
@@ -398,214 +716,76 @@ class DataLogger:
         executor.shutdown(wait=True)
         terminator_array.disconnect()
 
-    @staticmethod
-    def _load_numpy_file(file_path: Path, mem_map: bool = False) -> tuple[str, NDArray[Any]]:
-        """Loads a single numpy file either into memory or as memory-mapped array.
-
-        Args:
-            file_path: Path to the .npy file to load.
-            mem_map: Determines whether to memory-map the file or load it into RAM.
-
-        Returns:
-            A tuple of two elements. The first element contains the file stem (file name without extension) and the
-            second stores the array with data.
-        """
-        if mem_map:
-            array_data = np.load(file_path, mmap_mode="r")
-        else:
-            array_data = np.load(file_path)
-        return file_path.stem, array_data
-
-    def _compress_source(
-        self,
-        source_id: int,
-        source_data: dict[str, NDArray[Any]],
-        files: tuple[Path, ...],
-        remove_sources: bool,
-        compress: bool,
-        verify_integrity: bool,
-    ) -> int:
-        """Compresses all log entries for a single source into a single .npz archive.
-
-        This helper function is used by the compress_log() method to compress all available sources in-parallel to
-        improve runtime efficiency.
-
-        Notes:
-            If this function is instructed to remove source files, deletes individual .npy files after compressing them
-            as .npz archive. When removing sources, it is advised to enable verify_integrity flag to ensure compressed
-            files match the original files, although it is highly unlikely to encounter data loss during this process.
-
-        Args:
-            source_id: The ID-code for the source, whose logs are compressed by this function.
-            source_data: A dictionary that uses log-entries as keys and stores the loaded or memory-mapped source data
-                as a numpy array value for each key.
-            files: The tuple of paths to the .npy log files of the processed source.
-            remove_sources: Determines whether to remove original .npy files after generating the compressed .npz
-                archive.
-            compress: Determines whether to compress the output archive. If this flag is false, the data is saved as
-                an uncompressed .npz archive, which can be considerably faster than compressing data for large log
-                files.
-            verify_integrity; Determines whether to verify the integrity of the compressed log entries against the
-                original data before removing the source files. This is only used if remove_sources is True.
-
-        Raises:
-            ValueError: If the function is instructed to delete source files and one of the compressed entries does not
-                match the original source entry. This indicates that compression altered the original data.
-        """
-        # Pre-computes the output path
-        output_path = self._output_directory.joinpath(f"{source_id}_log.npz")
-
-        # Compresses individual entries into a single .npz archive. Since version 3.1.2, the data can also be saved as
-        # uncompressed .npz archive to optimize processing speed.
-        if compress:
-            np.savez_compressed(output_path, **source_data)  # type: ignore
-        else:
-            np.savez(output_path, **source_data)  # type: ignore
-
-        # If requested, cleans up no longer necessary source files.
-        if remove_sources:
-            # If verification is requested, ensures compressed log entries match the original data entries.
-            if verify_integrity:
-                compressed_data: numpy.lib.npyio.NpzFile
-                with np.load(output_path) as compressed_data:
-                    for file_path in files:
-                        stem = file_path.stem
-                        original = source_data[stem]
-                        compressed = compressed_data[stem]
-
-                        if not np.array_equal(original, compressed):
-                            message = (
-                                f"Unable to compress the log entries for the source {source_id} logged by DataLogger "
-                                f"{self.name}. Data integrity check failed for entry {stem}. Compressed data does not "
-                                f"match original, so cannot remove the original file."
-                            )
-                            console.error(message=message, error=ValueError)
-
-            # If verification passed or wasn't requested, removes teh source files
-            for file in files:
-                file.unlink()
-
-        # Returns the source id to update the progress bar
-        return source_id
-
     def compress_logs(
         self,
         remove_sources: bool = False,
-        memory_mapping: bool = True,
+        memory_mapping: bool = False,
         verbose: bool = False,
         compress: bool = True,
-        verify_integrity: bool = True,
+        verify_integrity: bool = False,
         max_workers: int | None = None,
     ) -> None:
-        """Consolidates all .npy files in the log directory into a single compressed .npz archive for each source_id.
+        """Consolidates all .npy files in the target log directory into a compressed .npz archive for each source_id.
 
         All entries within each source are grouped by their acquisition timestamp value before compression. The
-        compressed archive names include the ID code of the source that generated original log entries
+        compressed archive names include the ID code of the source that generated original log entries. This function
+        can compress any log directory generated by a DataLogger instance and can be used without an initialized
+        DataLogger.
 
         Notes:
-            To improve runtime efficiency, the method processes all log sources in-parallel, using multithreading.
-            The exact number of parallel threads used by the method depends on the number of available CPU cores. This
-            number can be further adjusting by modifying the max_workers argument.
+            Primarily, this method functions as a wrapper around the instance-independent 'compress_npy_logs' methods
+            exposed by this library. It automatically resolves the path to the uncompressed log directory using instance
+            attributes.
 
-            This method requires all data from the same source to be loaded into RAM before it is added to the .npz
-            archive. While this should not be a problem for most use cases, it may lead to out-of-memory errors. To
-            avoid this, the method uses memory-mapping by default, to reduce the RAM requirements. If your machine
-            has sufficient RAM, disable this by setting the memory_mapping argument to False.
+            To improve runtime efficiency, the function parallelizes all data processing steps. The exact number of
+            parallel threads used by the function depends on the number of available CPU cores. This number can be
+            further adjusting by modifying the max_workers argument.
+
+            This function requires all data from the same source to be loaded into RAM before it is added to the .npz
+            archive. While this should not be an issue for most runtimes and expected use patterns, this function can be
+            configured to use memory-mapping instead of directly loading data into RAM. This has a noticeable processing
+            speed reduction and is not recommended for most users.
+
+            Since this function is intended to optimize how logs are stored on disk, it is statically configured to
+            remove the source .npy files after generating compressed .npz entries. As an extra security measure, it is
+            possible to request the function to verify the integrity of the compressed data against the sources before
+            removing source files. It is heavily discouraged however, as this adds a noticeable performance
+            (runtime speed) overhead and data corruption is generally extremely uncommon and unlikely.
+
+            Additionally, it is possible to disable log compression and instead just aggregated the log entries into an
+            uncompressed .npz file. This is not recommended, since compression speed is very fast and does not majorly
+            affect the runtime speed, but may noticeably reduce disk usage. However, decompression takes a considerable
+            time, so some processing runtimes may benefit from not compressing the generated log runtimes if fast
+            decompression speed is a priority.
 
         Args:
             remove_sources: Determines whether to remove the individual .npy files after they have been consolidated
-                into .npz archives. The method ensures that all compressed entries match the original entries before
-                deleting source files, so this option is safe for all use cases.
-            memory_mapping: Determines whether the method uses memory-mapping (disk) to stage the data before
-                compression or loads all data into RAM. Disabling this option makes the method considerably faster, but
-                may lead to out-of-memory errors in certain use cases. Note, due to collisions with Windows not
+                into .npz archives.
+            memory_mapping: Determines whether the function uses memory-mapping (disk) to stage the data before
+                compression or loads all data into RAM. Disabling this option makes the function considerably faster,
+                but may lead to out-of-memory errors in very rare use cases. Note, due to collisions with Windows not
                 releasing memory-mapped files, this argument does not do anything on Windows.
-            verbose: Determines whether to print compression progress to terminal. Due to a generally fast compression
-                time, this option is generally not needed for most runtimes.
+            verbose: Determines whether to print compression progress to terminal.
             compress: Determines whether to compress the output .npz archive file for each source. While the intention
-                behind this method is to compress archive data, it is possible to use the method to just aggregate the
-                data into .npz files without compression. This processing mode is usually desirable for runtimes that
-                need to minimize the time spent on processing the data.
+                behind this function is to compress archive data, it is possible to use the function to just aggregate
+                the data into .npz files without compression.
             verify_integrity: Determines whether to verify the integrity of compressed data against the original log
-                entries before removing sources. While it is highly unlikely that compression alters the data, it is
-                recommended to have this option enabled to ensure data integrity.
-            max_workers: Determines the number of threads use to process logs entries from different sources
-                in-parallel. If set to None, the method uses the number of CPU cores - 4 threads.
+                entries before removing sources. Since it is highly unlikely that compression alters the data, it is
+                recommended to have this option disabled for most runtimes.
+            max_workers: Determines the number of threads used to carry out various processing phases in-parallel. Note,
+                some processing phases parallelize log source processing and other parallelize log entry processing.
+                Therefore, it is generally desirable to use as many threads as possible. If set to None, the function
+                uses the number of (logical) CPU cores - 2 threads.
         """
-        # Resolves the number of threads to use
-        if max_workers is None:
-            max_workers = os.cpu_count() - 4  # type: ignore
-        elif not isinstance(max_workers, int) or max_workers <= 0:
-            max_workers = 1  # Minimum of 1 worker
-
-        # Collects all .npy files and groups them by source_id
-        source_files: dict[int, list[Path]] = defaultdict(list)
-        for file_path in self._output_directory.glob("*.npy"):
-            source_id = int(file_path.stem.split("_")[0])
-            source_files[source_id].append(file_path)
-
-        # Sorts files within each source_id group by their integer-convertible timestamp
-        for source_id in source_files:
-            source_files[source_id].sort(key=lambda x: int(x.stem.split("_")[1]))
-
-        # Due to erratic interaction between memory mapping and Windows (as always), disables memory mapping on
-        # Windows. Use max_workers to avoid out-of-memory errors on Windows.
-        if memory_mapping and platform.system() == "Windows":
-            memory_mapping = False
-
-        # Loads or memory-maps all source files. Since sources are individual files, we can access all of them
-        # in-parallel to optimize runtime speed.
-        loaded_data = {source_id: {} for source_id in source_files}  # type: ignore
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submits all loading tasks
-            futures = []
-            total_files = sum(len(files) for files in source_files.values())
-            for source_id, files in source_files.items():
-                for file_path in files:
-                    future = executor.submit(self._load_numpy_file, file_path, memory_mapping)
-                    futures.append((source_id, file_path, future))
-
-            # Collects results as they complete
-            with tqdm(
-                total=total_files,
-                desc="Loading source data for all sources",
-                unit="files",
-                disable=not verbose,
-            ) as pbar:
-                # Progress bar is updated with each processed file
-                for source_id, file_path, future in futures:
-                    stem, array = future.result()
-                    loaded_data[source_id][stem] = array
-                    pbar.update(1)
-
-        # Processes sources in parallel using threads. Since compression is primarily done by numpy and I/O processors,
-        # this is likely the most efficient way of processing multiple sources.
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit each source for compression in-parallel
-            future_to_source = {
-                executor.submit(
-                    self._compress_source,
-                    source_id,
-                    loaded_data[source_id],
-                    tuple(files),
-                    remove_sources,
-                    compress,
-                    verify_integrity,
-                ): source_id
-                for source_id, files in source_files.items()
-            }
-
-            # If the method is called in verbose mode, displays progress to user via the progress bar
-            with tqdm(
-                total=len(source_files),
-                desc="Generating compressed archives for sources",
-                unit="sources",
-                disable=not verbose,
-            ) as pbar:
-                # Progress bar is updated with each processed source
-                for future in as_completed(future_to_source):  # type: ignore
-                    future.result()
-                    pbar.update(1)
+        compress_npy_logs(
+            log_directory=self.output_directory,
+            remove_sources=remove_sources,
+            memory_mapping=memory_mapping,
+            verbose=verbose,
+            compress=compress,
+            verify_integrity=verify_integrity,
+            max_workers=max_workers,
+        )
 
     @property
     def input_queue(self) -> MPQueue:  # type: ignore

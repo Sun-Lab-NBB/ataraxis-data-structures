@@ -1,6 +1,5 @@
 from typing import Any, Literal
 
-from _typeshed import Incomplete
 from numpy.typing import NDArray
 
 class NestedDictionary:
@@ -46,10 +45,10 @@ class NestedDictionary:
         TypeError: If input arguments are not of the supported type.
     """
 
-    _valid_datatypes: Incomplete
-    _nested_dictionary: Incomplete
-    _path_delimiter: Incomplete
-    _key_datatypes: Incomplete
+    _valid_datatypes: tuple[str, str, str, str]
+    _nested_dictionary: dict[Any, Any]
+    _path_delimiter: str
+    _key_datatypes: set[str]
     def __init__(self, seed_dictionary: dict[Any, Any] | None = None, path_delimiter: str = ".") -> None: ...
     def __repr__(self) -> str:
         """Returns a string representation of the class instance."""
