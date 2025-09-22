@@ -104,6 +104,11 @@ lint.ignore = [
     "ISC001",  # Conflicts with the formatter
     "TID252",  # Conflicts with library import management strategy
     "ANN401",  # Interferes with intended library behavior
+    "C901",    # Sometimes complex functions are necessary
+    "PLR0913", # Sometimes complex functions are necessary
+    "PLR0912", # Sometimes complex functions are necessary
+    "PLR0915", # Sometimes complex type defenitions are necessary
+    "PLR0911", # Sometimes complex return graphs are necessary
     "COM812",  # Conflicts with the formatter
     "ISC001",  # Conflicts with the formatter
     "PT001",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
