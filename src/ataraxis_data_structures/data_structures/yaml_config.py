@@ -74,7 +74,7 @@ class YamlConfig:
 
         # Writes the data to a .yaml file using custom formatting defined at the top of this method.
         with open(file_path, "w") as yaml_file:
-            yaml.dump(data=asdict(self), stream=yaml_file, **yaml_formatting)  # type: ignore
+            yaml.dump(data=asdict(self), stream=yaml_file, **yaml_formatting)
 
     @classmethod
     def from_yaml(cls, file_path: Path) -> "YamlConfig":

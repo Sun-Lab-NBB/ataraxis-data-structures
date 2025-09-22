@@ -403,7 +403,7 @@ class SharedMemoryArray:
         # Depending on the value of the 'with_lock' argument, this either acquires a Lock or runs without a lock.
         with self._optional_lock(with_lock=with_lock):
             # noinspection PyTestUnpassedFixture
-            data = self._array[start:stop].copy()  # type: ignore
+            data = self._array[start:stop].copy()
 
         # Determines whether the data can be returned as a scalar or iterable and whether it needs to be converted to
         # Python datatype or returned as numpy datatype.
@@ -425,7 +425,6 @@ class SharedMemoryArray:
             | np.unsignedinteger[Any]
             | np.signedinteger[Any]
             | np.floating[Any]
-            | int
             | float
             | bool
             | str
@@ -496,7 +495,7 @@ class SharedMemoryArray:
 
             # Writes the data to the array, optionally using the lock.
             with self._optional_lock(with_lock=with_lock):
-                self._array[start:stop] = data  # type: ignore
+                self._array[start:stop] = data
         # Catches and redirects ValueErrors, which is used by numpy to indicate conversion errors.
         except ValueError as e:
             message = (

@@ -66,8 +66,8 @@ def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:
 
     This is a service function used during compressed log verification to load all entries from a compressed log archive
     into memory in-parallel. To achieve the best runtime performance, this function should be passed to a process
-    executor. Assuming archives are compressed with Deflate (default behavior of the log compression method), this is
-    usually the longest step of the log processing sequence.
+    executor. Assuming archives are compressed with Deflate (the default behavior of the log compression method), this
+    is usually the longest step of the log processing sequence.
 
     Args:
         file_path: the path to the .npz log archive to load.
@@ -115,7 +115,7 @@ def _compress_source(
     output_path = output_directory.joinpath(f"{source_id}_log.npz")
 
     # Compresses individual entries into a single .npz archive. Since version 3.1.0, the data can also be saved as
-    # uncompressed .npz archive to optimize processing speed.
+    # an uncompressed.npz archive to optimize processing speed.
     if compress:
         np.savez_compressed(output_path, **source_data)
     else:
@@ -204,7 +204,7 @@ def compress_npy_logs(
     """
     # Resolves the number of threads and processes to use during runtime.
     if max_workers is None:
-        max_workers = os.cpu_count() - 2  # type: ignore
+        max_workers = os.cpu_count() - 2
     elif not isinstance(max_workers, int) or max_workers <= 0:
         max_workers = 1  # Minimum of 1 worker
 
@@ -250,7 +250,7 @@ def compress_npy_logs(
             ) as pbar:
                 for source_id, file_batch, future in load_futures:
                     stems, arrays = future.result()
-                    for stem, array in zip(stems, arrays):
+                    for stem, array in zip(stems, arrays, strict=False):
                         loaded_data[source_id][stem] = array
                         pbar.update(1)
 
@@ -261,7 +261,7 @@ def compress_npy_logs(
 
             for source_id, files in source_files.items():
                 future = p_executor.submit(
-                    _compress_source,  # type: ignore
+                    _compress_source,
                     log_directory,
                     source_id,
                     loaded_data[source_id],
@@ -281,14 +281,14 @@ def compress_npy_logs(
                     compressed_files[compressed_id] = compressed_path
                     pbar.update(1)
 
-            # PHASE 3: Verifies compressed data integrity against the original data, if this is requested. This is
+            # PHASE 3: Verifies compressed data integrity against the original data if this is requested. This is
             # usually the most time-consuming phase due to serial decompression necessary to load the compressed
             # archives into memory. Note, this phase uses both process and thread parallelism for maximum efficiency
             if verify_integrity:
                 # Loads all compressed archives in parallel
                 compressed_data_futures = {}
-                for source_id, compressed_path in compressed_files.items():  # type: ignore
-                    future = p_executor.submit(_load_numpy_archive, compressed_path)  # type: ignore
+                for source_id, compressed_path in compressed_files.items():
+                    future = p_executor.submit(_load_numpy_archive, compressed_path)
                     compressed_data_futures[source_id] = future
 
                 # Collects loaded compressed data
@@ -310,11 +310,11 @@ def compress_npy_logs(
                 for source_id, source_data in loaded_data.items():
                     for stem, original_array in source_data.items():
                         future = t_executor.submit(
-                            _compare_arrays,  # type: ignore
+                            _compare_arrays,
                             source_id,
                             stem,
                             original_array,
-                            compressed_data[source_id][stem],  # type: ignore
+                            compressed_data[source_id][stem],
                         )
                         verification_futures.append(future)
 
@@ -326,7 +326,7 @@ def compress_npy_logs(
                     disable=not verbose,
                 ) as pbar:
                     for future in as_completed(verification_futures):
-                        future.result()  # Will raise exception if comparison fails
+                        future.result()  # Will raise an exception if comparison fails
                         pbar.update(1)
 
             # PHASE 4: Removes source files if requested.
@@ -336,7 +336,7 @@ def compress_npy_logs(
                 # Submits removal tasks using thread executor.
                 for files in source_files.values():
                     for file_path in files:
-                        future = t_executor.submit(file_path.unlink)  # type: ignore
+                        future = t_executor.submit(file_path.unlink)
                         removal_futures.append(future)
 
                 # Tracks progress
@@ -402,7 +402,7 @@ class LogPackage:
 
 
 class DataLogger:
-    """Saves input data as an uncompressed byte numpy array (.npy) files using the requested number of cores and
+    """Saves input data as uncompressed byte numpy array (.npy) files using the requested number of cores and
     threads.
 
     This class instantiates and manages the runtime of a logger distributed over the requested number of cores and
@@ -411,7 +411,7 @@ class DataLogger:
     LogPackage class instance also available from this library, before it is sent to the logger via the queue object.
 
     Notes:
-        Initializing the class does not start the logger processes! Call start() method to initialize the logger
+        Initializing the class does not start the logger processes! Call the start() method to initialize the logger
         processes.
 
         Once the logger process(es) have been started, the class also initializes and maintains a watchdog thread that
@@ -493,10 +493,10 @@ class DataLogger:
         # 'data_log', to which the data will be saved in an uncompressed format. The folder also includes the logger
         # instance name
         self._output_directory: Path = output_directory.joinpath(f"{self._name}_data_log")
-        ensure_directory_exists(self._output_directory)  # This also ensures input is a valid Path object
+        ensure_directory_exists(self._output_directory)  # This also ensures the input is a valid Path object
 
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
-        self._input_queue: MPQueue = self._mp_manager.Queue()  # type: ignore
+        self._input_queue: MPQueue = self._mp_manager.Queue()
 
         self._terminator_array: SharedMemoryArray | None = None
         self._logger_processes: tuple[Process, ...] = tuple()
@@ -600,9 +600,9 @@ class DataLogger:
         timer = PrecisionTimer(precision="ms")
 
         # The watchdog function will run until the global shutdown command is issued.
-        while not self._terminator_array.read_data(index=0):  # type: ignore
+        while not self._terminator_array.read_data(index=0):
             # Checks process state every 20 ms. Releases the GIL while waiting.
-            timer.delay_noblock(delay=20, allow_sleep=True)
+            timer.delay(delay=20, allow_sleep=True, block=False)
 
             if not self._started:
                 continue
@@ -626,11 +626,11 @@ class DataLogger:
                     f"terminated the process."
                 )
                 # Since the raised error terminates class runtime, cleans up all resources, just like how stop() does it
-                self._terminator_array.write_data(index=0, data=np.uint8(1))  # type: ignore
+                self._terminator_array.write_data(index=0, data=np.uint8(1))
                 for process in self._logger_processes:
                     process.join()
-                self._terminator_array.disconnect()  # type: ignore
-                self._terminator_array.destroy()  # type: ignore
+                self._terminator_array.disconnect()
+                self._terminator_array.destroy()
                 self._started = False  # Prevents stop() from running via __del__
                 console.error(message=message, error=RuntimeError)
 
@@ -639,8 +639,8 @@ class DataLogger:
         """Thread worker function that saves the data.
 
         Args:
-            filename: The name of the file to save the data to. Note, the name has to be suffix-less, as '.npy' suffix
-                will be appended automatically.
+            filename: The name of the file to save the data to. Note, the name has to be suffix-less, as the '.npy'
+                suffix will be appended automatically.
             data: The data to be saved, packaged into a one-dimensional bytes array.
 
         Since data saving is primarily IO-bound, using multiple threads per each Process is likely to achieve the best
@@ -650,7 +650,7 @@ class DataLogger:
 
     @staticmethod
     def _log_cycle(
-        input_queue: MPQueue,  # type: ignore
+        input_queue: MPQueue,
         terminator_array: SharedMemoryArray,
         output_directory: Path,
         thread_count: int,
@@ -672,7 +672,7 @@ class DataLogger:
         # Connects to the shared memory array
         terminator_array.connect()
 
-        # Creates thread pool for this process. It will manage the local saving threads
+        # Creates a thread pool for this process. It will manage the local saving threads
         executor = ThreadPoolExecutor(max_workers=thread_count)
 
         # Initializes the timer instance used to temporarily pause the execution when there is no data to process
@@ -681,7 +681,7 @@ class DataLogger:
         # Main process loop. This loop will run until BOTH the terminator flag is passed and the input queue is empty.
         while not terminator_array.read_data(index=0, convert_output=False) or not input_queue.empty():
             try:
-                # Gets data from input queue with timeout. The data is expected to be packaged into the LogPackage
+                # Gets data from the input queue with timeout. The data is expected to be packaged into the LogPackage
                 # class.
                 package: LogPackage = input_queue.get_nowait()
 
@@ -692,12 +692,12 @@ class DataLogger:
                 # path to the output directory
                 filename = output_directory.joinpath(file_name)
 
-                # Submits the task to thread pool to be executed
+                # Submits the task to the thread pool to be executed
                 executor.submit(DataLogger._save_data, filename, data)
 
             # If the queue is empty, invokes the sleep timer to reduce CPU load.
             except (Empty, KeyError):
-                sleep_timer.delay_noblock(delay=sleep_time, allow_sleep=True)
+                sleep_timer.delay(delay=sleep_time, allow_sleep=True, block=False)
 
             # If an unknown and unhandled exception occurs, prints and flushes the exception message to the terminal
             # before re-raising the exception to terminate the process.
@@ -788,7 +788,7 @@ class DataLogger:
         )
 
     @property
-    def input_queue(self) -> MPQueue:  # type: ignore
+    def input_queue(self) -> MPQueue:
         """Returns the multiprocessing Queue used to buffer and pipe the data to the logger processes.
 
         Share this queue with all source processes that need to log data. To ensure correct data packaging, package the

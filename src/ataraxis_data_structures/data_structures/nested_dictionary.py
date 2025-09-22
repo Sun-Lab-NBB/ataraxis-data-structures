@@ -276,8 +276,7 @@ class NestedDictionary:
             # This will raise a ValueError if the conversion fails
             # noinspection PyTypeChecker, LongLine
             keys: str | list[Any] | tuple[Any] | NDArray[Any] = [
-                self._convert_key_to_datatype(key=key, datatype=target_dtype)  # type: ignore
-                for key in string_keys
+                self._convert_key_to_datatype(key=key, datatype=target_dtype) for key in string_keys
             ]
 
         # For supported iterable path inputs, converts the iterable to a tuple. If individual keys are not valid, this
@@ -425,7 +424,7 @@ class NestedDictionary:
 
         # Generates a list of variable paths and converts it to tuple before returning it to the caller. Each path is
         # formatted according to the requested output type by the inner method.
-        return tuple(_inner_extract(input_dict=self._nested_dictionary, make_raw=return_raw))  # type: ignore
+        return tuple(_inner_extract(input_dict=self._nested_dictionary, make_raw=return_raw))
 
     def read_nested_value(self, variable_path: str | tuple[Any, ...] | list[Any] | NDArray[Any]) -> Any:
         """Reads the requested value from the nested dictionary using the provided variable_path.
@@ -760,7 +759,7 @@ class NestedDictionary:
             _inner_delete(
                 traversed_dict=traversed_dict[next_key],
                 remaining_keys=remaining_keys,
-                whole_path=variable_path,  # type: ignore
+                whole_path=variable_path,
                 missing_ok=allow_missing,
                 delete_empty_directories=delete_empty_directories,
             )
@@ -788,7 +787,7 @@ class NestedDictionary:
         _inner_delete(
             traversed_dict=processed_dict,
             remaining_keys=list(keys),  # Lists are actually more efficient here as they allow in-place modification.
-            whole_path=variable_path,  # type: ignore
+            whole_path=variable_path,
             delete_empty_directories=delete_empty_sections,
             missing_ok=allow_missing,
         )
@@ -808,7 +807,7 @@ class NestedDictionary:
 
     def find_nested_variable_path(
         self,
-        target_key: str | int | float | None,
+        target_key: str | float | None,
         search_mode: Literal["terminal_only", "intermediate_only", "all"] = "terminal_only",
         *,
         return_raw: bool = False,
@@ -875,7 +874,7 @@ class NestedDictionary:
             console.error(message=message, error=ValueError)
 
         # Extracts all parameter (terminal variables) paths from the dict as a raw tuple.
-        var_paths: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)  # type: ignore
+        var_paths: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)
 
         # Sets up a set and a list to store the data. The set is used for uniqueness checks, and the list is used to
         # preserve the order of discovered keys relative to the order of the class dictionary. This method is
@@ -980,7 +979,7 @@ class NestedDictionary:
             console.error(message=message, error=ValueError)
 
         # Retrieves all available dictionary paths as tuples of keys.
-        all_paths: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)  # type: ignore
+        all_paths: tuple[tuple[Any, ...], ...] = self.extract_nested_variable_paths(return_raw=True)
 
         # Converts all keys in all paths to the requested datatype.
         try:
