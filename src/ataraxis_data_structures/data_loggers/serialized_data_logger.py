@@ -276,25 +276,21 @@ class LogPackage:
     """Stores the data and ID information to be logged by the DataLogger class and exposes methods for packaging this
     data into the format expected by the logger.
 
-    This class collects, preprocesses, and stores the data to be logged by the DataLogger instance. To be logged,
-    entries have to be packed into this class instance and submitted (put) into the logger input queue exposed by the
-    DataLogger class.
-
     Notes:
-        This class is optimized for working with other Ataraxis libraries. It expects the time to come from
-        ataraxis-time (PrecisionTimer) and other data from Ataraxis libraries designed to interface with various
-        hardware.
+        During runtime, the DataLogger class expects all data sent for logging via the input Queue object to be
+        packaged into an instance of this class.
     """
 
     source_id: np.uint8
     """The ID code of the source that produced the data. Has to be unique across all systems that send data
-    to same DataLogger instance during runtime, as this information is used to identify sources inside log files!"""
+    to the same DataLogger instance during runtime."""
 
-    time_stamp: np.uint64
-    """The data acquisition time. Tracks when the data was originally acquired."""
+    acquisition_time: np.uint64
+    """Tracks when the data was acquired. This value typically communicates the number of microseconds elapsed since 
+    the onset of the data acquisition runtime."""
 
     serialized_data: NDArray[np.uint8]
-    """The data to be logged, stored as a one-dimensional bytes numpy array."""
+    """The serialized data to be logged, stored as a one-dimensional bytes' NumPy array."""
 
     def get_data(self) -> tuple[str, NDArray[np.uint8]]:  # pragma: no cover
         """Constructs and returns the filename and the serialized data package to be logged.
@@ -307,7 +303,7 @@ class LogPackage:
         """
         # Prepares the data by converting zero-dimensional numpy inputs to arrays and concatenating all data into one
         # array
-        serialized_time_stamp = np.frombuffer(buffer=self.time_stamp, dtype=np.uint8).copy()
+        serialized_time_stamp = np.frombuffer(buffer=self.acquisition_time, dtype=np.uint8).copy()
         serialized_source = np.frombuffer(buffer=self.source_id, dtype=np.uint8).copy()
 
         # Note, it is assumed that each source produces the data sequentially and that timestamps are acquired with
@@ -316,7 +312,7 @@ class LogPackage:
 
         # Zero-pads ID and timestamp. Uses the correct number of zeroes to represent the number of digits that fits into
         # each datatype (uint8 and uint64).
-        log_name = f"{self.source_id:03d}_{self.time_stamp:020d}.npy"
+        log_name = f"{self.source_id:03d}_{self.acquisition_time:020d}.npy"
 
         return log_name, data
 
