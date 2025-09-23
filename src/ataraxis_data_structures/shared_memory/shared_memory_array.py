@@ -27,7 +27,7 @@ class SharedMemoryArray:
         attempt to instantiate the class manually. All child processes working with this class should use the connect()
         method to connect to the shared array wrapped by the class before calling any other method.
 
-        Shared memory objects are garbage-collected differently depending on the host Operating System. On Windows,
+        Shared memory buffers are garbage-collected differently depending on the host Operating System. On Windows,
         garbage collection is handed off to the OS and cannot be enforced manually. On Unix (macOS and Linux), the
         buffer can be garbage-collected by calling the destroy() method.
 
@@ -35,8 +35,7 @@ class SharedMemoryArray:
         name: The unique name to use for the shared memory buffer.
         shape: The shape of the NumPy array used to access the data in the shared memory buffer.
         datatype: The datatype of the NumPy array used to access the data in the shared memory buffer.
-        buffer: The shared memory buffer that stores the data managed by the instance.
-        main_thread: Determines whether this instance runs in the main program thread. This is used to determine 
+        main_thread: Determines whether this instance runs in the main program thread. This is used to determine
             whether to destroy the shared memory buffer when the instance is garbage-collected (if True) or not 
             (if False).
 
@@ -44,11 +43,11 @@ class SharedMemoryArray:
         _name: Stores the name of the shared memory buffer.
         _shape: Stores the shape of the NumPy array used to access the buffered data.
         _datatype: Stores the datatype of the NumPy array used to access the buffered data.
-        _buffer: The Shared Memory buffer object used to store the shared array data.
-        _lock: A Lock object used to prevent multiple processes from working with the shared array data at the same
+        _buffer: Stores the Shared Memory buffer object.
+        _lock: Stores the Lock object used to prevent multiple processes from working with the shared data at the same
             time.
-        _array: Stores the connected shared numpy array.
-        _connected: Tracks whether the shared memory array wrapped by this class has been connected to.
+        _array: Stores the NumPy array used to interface with the data stored in the shared memory buffer.
+        _connected: Tracks whether the instance is connected to the shared memory buffer.
         _main_thread: Tracks whether the instance is running in the main program thread.
     """
 
@@ -57,7 +56,6 @@ class SharedMemoryArray:
         name: str,
         shape: tuple[int, ...],
         datatype: np.dtype[Any],
-        buffer: SharedMemory | None,
         *,
         main_thread: bool = False
     ) -> None:
@@ -66,11 +64,14 @@ class SharedMemoryArray:
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
-        self._buffer: SharedMemory | None = buffer
+        self._buffer: SharedMemory | None = None
         self._lock = Lock()
         self._array: NDArray[Any] = np.zeros(shape=shape, dtype=datatype)
         self._connected: bool = False
         self._main_thread: bool = main_thread
+
+        if self._main_thread:
+            self.connect()
 
     def __repr__(self) -> str:
         """Returns the string representation of the SharedMemoryArray instance."""
@@ -80,7 +81,7 @@ class SharedMemoryArray:
         )
 
     def __del__(self) -> None:
-        """Ensures proper resource release when the instance is garbage-collected."""
+        """Ensures that the shared memory buffer is released when the instance is garbage-collected."""
         # Disconnects from the shared memory buffer
         self.disconnect()
 
@@ -126,11 +127,15 @@ class SharedMemoryArray:
             FileExistsError: If a shared memory object with the same name as the input 'name' argument value already
                 exists.
         """
+        # An additional guard to prevent calling this method from child processes
+        if not __name__ == "__main__":
+            pass
+
         # Ensures prototype is a numpy ndarray
-        if not isinstance(prototype, np.ndarray):
+        if not isinstance(prototype, NDArray[Any]):
             message = (
                 f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object '{name}'. "
-                f"Expected a flat (one-dimensional) numpy ndarray but instead encountered {type(prototype).__name__}."
+                f"Expected a flat (one-dimensional) NumPy array but instead encountered {type(prototype).__name__}."
             )
             console.error(message=message, error=TypeError)
 
@@ -138,13 +143,13 @@ class SharedMemoryArray:
         if prototype.ndim != 1:
             message = (
                 f"Invalid 'prototype' array shape encountered when creating SharedMemoryArray object '{name}'. "
-                f"Expected a flat (one-dimensional) numpy ndarray but instead encountered prototype with shape "
-                f"{prototype.shape} and dimensions number {prototype.ndim}."
+                f"Expected a flat (one-dimensional) NumPy array but instead encountered prototype with "
+                f"{prototype.ndim} dimensions."
             )
             console.error(message=message, error=ValueError)
 
-        # Creates the shared memory object. This process will raise FileExistsError if an object with this name
-        # already exists. The shared memory object is used as a buffer to store the array data.
+        # Creates the shared memory buffer. This process raises FileExistsError if an object with this name
+        # already exists.
         try:
             buffer: SharedMemory = SharedMemory(name=name, create=True, size=prototype.nbytes)
         except FileExistsError:
@@ -159,10 +164,10 @@ class SharedMemoryArray:
             # Otherwise, raises an exception
             else:
                 message = (
-                    f"Unable to create SharedMemoryArray object using name '{name}', as object with this name already "
-                    f"exists. If this method is called from a child process, use connect() method to connect to the "
-                    f"SharedMemoryArray from a child process. To recreate the buffer left over from a previous "
-                    f"runtime, run this method with the 'exist_ok' flag set to True."
+                    f"Unable to create SharedMemoryArray object using the name '{name}', as the object with this name "
+                    f"already exists. If this method is called from a child process, use the connect() method instead "
+                    f"to connect to the existing buffer. To clean-up the buffer left over from a previous "
+                    f"runtime, run this method with the 'exists_ok' flag set to True."
                 )
                 console.error(message=message, error=FileExistsError)
 
@@ -177,11 +182,8 @@ class SharedMemoryArray:
             name=name,
             shape=shared_array.shape,
             datatype=shared_array.dtype,
-            buffer=buffer,
+            main_thread=True,
         )
-
-        # Connects the internal _array of the class object to the shared memory buffer.
-        shared_memory_array.connect()
 
         # Returns the instantiated and connected class object to caller.
         return shared_memory_array
