@@ -1,7 +1,5 @@
-"""This package provides the SharedMemoryArray class that exposes methods for transferring data between multiple Python
-processes via a shared numpy array.
-
-See shared_memory_array.py for more details on the class and its methods.
+"""This package provides assets for transferring data between multiple Python processes via a shared NumPy array memory
+buffer.
 """
 
 from .shared_memory_array import SharedMemoryArray

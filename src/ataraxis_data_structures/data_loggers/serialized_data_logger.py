@@ -402,7 +402,7 @@ class DataLogger:
 
         # Initializes the terminator array, used to control the logger process(es)
         self._terminator_array = SharedMemoryArray.create_array(
-            name=f"{self._name}_terminator", prototype=np.zeros(shape=1, dtype=np.uint8), exist_ok=True
+            name=f"{self._name}_terminator", prototype=np.zeros(shape=1, dtype=np.uint8), exists_ok=True
         )  # Instantiation automatically connects the main process to the array.
 
         # Creates and starts the logger process.
