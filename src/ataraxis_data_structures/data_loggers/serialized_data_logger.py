@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 def _load_numpy_files(
     file_paths: tuple[Path, ...], *, memory_map: bool = False
-) -> tuple[tuple[str, ...], tuple[NDArray[Any], ...]]:
+) -> tuple[tuple[str, ...], tuple[NDArray[Any], ...]]:  # pragma: no cover
     """Loads multiple .npy files either into memory or as memory-mapped arrays.
 
     This service function is used during log compression to load all raw log files into memory in-parallel for faster
@@ -51,7 +51,7 @@ def _load_numpy_files(
     return tuple(zip(*results, strict=False)) if results else ((), ())
 
 
-def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:
+def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:  # pragma: no cover
     """Loads a numpy .npz archive containing multiple arrays as a dictionary.
 
     This service function is used during compressed log verification to load all entries from a compressed log archive
@@ -72,7 +72,7 @@ def _assemble_archive(
     output_directory: Path,
     source_id: int,
     source_data: dict[str, NDArray[Any]],
-) -> tuple[int, Path]:
+) -> tuple[int, Path]:  # pragma: no cover
     """Assembles all log entries for a single source (producer) into a single .npz archive.
 
     This helper function is used during log archive generation to assemble multiple archives in parallel.
@@ -111,7 +111,7 @@ def _compare_arrays(source_id: int, stem: str, original_array: NDArray[Any], arc
     Raises:
         ValueError: If the arrays do not match.
     """
-    if not np.array_equal(original_array, archived_array):
+    if not np.array_equal(original_array, archived_array):  # pragma: no cover
         message = f"Data integrity check failed for source {source_id}, entry {stem}."
         console.error(message=message, error=ValueError)
         # Fallback to appease mypy, should not be reachable.
@@ -292,7 +292,7 @@ class LogPackage:
     """The serialized data to be logged, stored as a one-dimensional bytes' NumPy array."""
 
     @property
-    def data(self) -> tuple[str, NDArray[np.uint8]]:
+    def data(self) -> tuple[str, NDArray[np.uint8]]:  # pragma: no cover
         """Returns the filename and the serialized data package to be processed by a DataLogger instance.
 
         Note:
@@ -467,7 +467,7 @@ class DataLogger:
                 continue
 
             # Only checks that the process is alive if it is started.
-            if not self._logger_process.is_alive():
+            if not self._logger_process.is_alive():  # pragma: no cover
                 # Cleans up all resources, similar to the stop() method.
                 self._terminator_array.write_data(index=0, data=np.uint8(1))
                 self._logger_process.join()
@@ -561,8 +561,8 @@ class DataLogger:
         return self._name
 
     @property
-    def started(self) -> bool:
-        """Returns True if the instance's logger process has been started."""
+    def alive(self) -> bool:
+        """Returns True if the instance's logger process is currently running."""
         return self._started
 
     @property

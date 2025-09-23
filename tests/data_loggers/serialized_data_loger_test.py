@@ -32,6 +32,7 @@ def test_data_logger_initialization(tmp_path):
     assert logger._output_directory == tmp_path / "test_logger_data_log"
     assert logger._started is False
     assert logger._logger_process is None
+    assert logger.name == "test_logger"
 
     # Tests custom initialization
     logger = DataLogger(output_directory=tmp_path, instance_name="custom_logger", thread_count=10, poll_interval=1000)
@@ -60,11 +61,11 @@ def test_data_logger_start_stop(tmp_path):
         tmp_path: Pytest fixture providing a temporary directory path.
     """
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
-    assert not logger.started
+    assert not logger.alive
 
     # Tests start
     logger.start()
-    assert logger.started
+    assert logger.alive
     logger.start()  # Ensures that calling start() twice does nothing
     assert logger._started is True
     assert logger._logger_process.is_alive()
@@ -75,7 +76,7 @@ def test_data_logger_start_stop(tmp_path):
 
     # Tests stop
     logger.stop()
-    assert not logger.started
+    assert not logger.alive
     assert not logger._logger_process.is_alive()
     logger.stop()  # Verifies that calling stop twice does nothing
 
