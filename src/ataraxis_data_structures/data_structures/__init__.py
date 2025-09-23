@@ -13,6 +13,5 @@ See individual package modules for more details on each of the exposed classes.
 """
 
 from .yaml_config import YamlConfig
-from .nested_dictionary import NestedDictionary
 
-__all__ = ["NestedDictionary", "YamlConfig"]
+__all__ = ["YamlConfig"]

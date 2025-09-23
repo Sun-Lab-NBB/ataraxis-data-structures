@@ -8,6 +8,6 @@ Authors: Ivan Kondratyev (Inkaros) & Edwin Chen
 
 from .data_loggers import DataLogger, LogPackage, assemble_log_archives
 from .shared_memory import SharedMemoryArray
-from .data_structures import YamlConfig, NestedDictionary
+from .data_structures import YamlConfig
 
-__all__ = ["DataLogger", "LogPackage", "NestedDictionary", "SharedMemoryArray", "YamlConfig", "assemble_log_archives"]
+__all__ = ["DataLogger", "LogPackage", "SharedMemoryArray", "YamlConfig", "assemble_log_archives"]

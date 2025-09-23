@@ -46,7 +46,7 @@ if __name__ == "__main__":
     # called after the 'online' runtime is over to optimize the memory occupied by data. To achieve minimal disk space
     # usage, call the method wit the remove_sources argument. The method verifies compressed data against the original
     # entries before removing source files, so it is always safe to delete source files.
-    logger.compress_logs(remove_sources=True)
+    logger.assemble_log_archives(remove_sources=True)
 
     # The compression creates a single .npz file named after the source_id
     assert len(list(logger.output_directory.glob("**/*.npy"))) == 0
