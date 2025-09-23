@@ -5,7 +5,7 @@ Primarily, this class is designed to be used for storing configuration data used
 memory in a human-readable format. However, it can also be adapted for intermediate-term data storage, if needed.
 """
 
-from typing import Any
+from typing import Any, Self
 from pathlib import Path
 from dataclasses import asdict, dataclass
 
@@ -77,7 +77,7 @@ class YamlConfig:
             yaml.dump(data=asdict(self), stream=yaml_file, **yaml_formatting)
 
     @classmethod
-    def from_yaml(cls, file_path: Path) -> "YamlConfig":
+    def from_yaml(cls, file_path: Path) -> Self:
         """Instantiates the class using the data loaded from the provided .yaml (YAML) file.
 
         This method is designed to re-initialize dataclasses from the data stored in non-volatile memory as .yaml / .yml
