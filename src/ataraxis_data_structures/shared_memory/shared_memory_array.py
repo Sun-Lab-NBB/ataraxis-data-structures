@@ -15,8 +15,8 @@ from ataraxis_base_utilities import console
 
 
 class SharedMemoryArray:
-    """Wraps a one-dimensional NumPy array object and exposes methods for accessing the array's data from different
-    Python processes.
+    """Wraps a one-dimensional NumPy array object and exposes methods for accessing the array's data from multiple
+    different Python processes.
 
     During initialization, this class creates a persistent memory buffer to which it connects from different Python
     processes. The data inside the buffer is accessed via a one-dimensional NumPy array with optional locking to prevent
@@ -35,9 +35,7 @@ class SharedMemoryArray:
         name: The unique name to use for the shared memory buffer.
         shape: The shape of the NumPy array used to access the data in the shared memory buffer.
         datatype: The datatype of the NumPy array used to access the data in the shared memory buffer.
-        main_thread: Determines whether this instance runs in the main program thread. This is used to determine
-            whether to destroy the shared memory buffer when the instance is garbage-collected (if True) or not 
-            (if False).
+        buffer: The shared memory buffer that stores the data managed by the instance.
 
     Attributes:
         _name: Stores the name of the shared memory buffer.
@@ -48,7 +46,8 @@ class SharedMemoryArray:
             time.
         _array: Stores the NumPy array used to interface with the data stored in the shared memory buffer.
         _connected: Tracks whether the instance is connected to the shared memory buffer.
-        _main_thread: Tracks whether the instance is running in the main program thread.
+        _termination_guard: Tracks whether the shared memory buffer should be destroyed if this instance is
+            garbage-collected.
     """
 
     def __init__(
@@ -56,22 +55,18 @@ class SharedMemoryArray:
         name: str,
         shape: tuple[int, ...],
         datatype: np.dtype[Any],
-        *,
-        main_thread: bool = False
+        buffer: SharedMemory,
     ) -> None:
         # Initialization method only saves input data into attributes. The method that actually sets up the class is
         # the create_array() class method.
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
-        self._buffer: SharedMemory | None = None
+        self._buffer: SharedMemory = buffer
         self._lock = Lock()
         self._array: NDArray[Any] = np.zeros(shape=shape, dtype=datatype)
         self._connected: bool = False
-        self._main_thread: bool = main_thread
-
-        if self._main_thread:
-            self.connect()
+        self._termination_guard: bool = False
 
     def __repr__(self) -> str:
         """Returns the string representation of the SharedMemoryArray instance."""
@@ -82,12 +77,14 @@ class SharedMemoryArray:
 
     def __del__(self) -> None:
         """Ensures that the shared memory buffer is released when the instance is garbage-collected."""
-        # Disconnects from the shared memory buffer
-        self.disconnect()
 
-        # If this instance runs in the main thread, destroys the shared memory buffer
-        if self._main_thread:
+        # If the termination guard is set, attempts to disconnect AND destroy the shared memory buffer as part of the
+        # method's shutdown sequence.
+        if self._termination_guard:
             self.destroy()
+        else:
+            # Otherwise, only disconnects the shared memory buffer.
+            self.disconnect()
 
     @classmethod
     def create_array(
@@ -96,11 +93,11 @@ class SharedMemoryArray:
         prototype: NDArray[Any],
         exists_ok: bool = False,
     ) -> "SharedMemoryArray":
-        """Creates a SharedMemoryArray instance using the input prototype array.
+        """Creates a SharedMemoryArray instance using the input prototype NumPy array.
 
-        This method uses the input prototype to generate a new numpy array that uses a shared memory buffer to store
-        its data. It then extracts the information required to connect to the buffer and reinitialize the array in
-        a different Python process and saves it to class attributes.
+        This method uses the input prototype to generate the shared memory buffer to store the prototype's data and
+        fills the buffer with the data in the prototype array. All further interactions with the returned
+        SharedMemoryArray instance interface with this shared memory buffer.
 
         Notes:
             This method should only be called when the array is first created in the main process (scope). All
@@ -127,10 +124,6 @@ class SharedMemoryArray:
             FileExistsError: If a shared memory object with the same name as the input 'name' argument value already
                 exists.
         """
-        # An additional guard to prevent calling this method from child processes
-        if not __name__ == "__main__":
-            pass
-
         # Ensures prototype is a numpy ndarray
         if not isinstance(prototype, NDArray[Any]):
             message = (
@@ -171,7 +164,7 @@ class SharedMemoryArray:
                 )
                 console.error(message=message, error=FileExistsError)
 
-        # Instantiates a numpy ndarray using the shared memory buffer and copies prototype array data into the shared
+        # Instantiates a numpy array using the shared memory buffer and copies the prototype array data into the shared
         # array instance.
         # noinspection PyUnboundLocalVariable
         shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
@@ -182,52 +175,59 @@ class SharedMemoryArray:
             name=name,
             shape=shared_array.shape,
             datatype=shared_array.dtype,
-            main_thread=True,
+            buffer=buffer,
         )
+
+        # Connects the internal _array of the class object to the shared memory buffer.
+        shared_memory_array.connect()
 
         # Returns the instantiated and connected class object to caller.
         return shared_memory_array
 
     def connect(self) -> None:
-        """Connects to the shared memory buffer that stores the array data, allowing to access and manipulate the data
-        through this class.
+        """Connects to the shared memory buffer, allowing the instance to access and manipulate the shared data.
 
-        This method should be called once for each Python process that uses this class, before calling any other
-        methods. It is called automatically as part of the create_array() method runtime.
+        This method should be called once for each Python process that uses this instance, before calling any other
+        methods.
         """
-        self._buffer = SharedMemory(name=self._name, create=False)  # Connects to the buffer
-        # Re-initializes the internal _array with the data from the shared memory buffer.
-        self._array = np.ndarray(shape=self._shape, dtype=self._datatype, buffer=self._buffer.buf)
-        self._connected = True
+        if not self._connected:
+            # Connects to the shared memory buffer
+            self._buffer = SharedMemory(name=self._name, create=False)
+            # Re-initializes the internal _array with the data from the shared memory buffer.
+            self._array = np.ndarray(shape=self._shape, dtype=self._datatype, buffer=self._buffer.buf)
+            self._connected = True
 
     def disconnect(self) -> None:
-        """Disconnects the class from the shared memory buffer.
+        """Disconnects from the shared memory buffer, preventing the instance from accessing and manipulating the
+        shared data.
 
-        This method should be called whenever the process no longer requires shared buffer access.
+        This method should be called by each Python process that no longer requires shared buffer access or as part
+        of its shutdown sequence.
 
         Notes:
             This method does not destroy the shared memory buffer. It only releases the local reference to the shared
-            memory buffer, potentially enabling it to be garbage-collected.
+            memory buffer, potentially enabling it to be garbage-collected by the Operating System. Use the destroy()
+            method on Unix-based Operating Systems to destroy the buffer.
         """
-        if self._connected and self._buffer is not None:
+        if self._connected:
             self._buffer.close()
             self._connected = False
 
     def destroy(self) -> None:
-        """Requests the underlying shared memory buffer to be destroyed.
+        """Requests the instance's shared memory buffer to be destroyed.
 
-        This method should only be called once from the highest runtime scope. Typically, this is done as part of a
-        global runtime shutdown procedure to ensure all resources are released. Calling this method while having
-        SharedMemoryArray instances connected to the buffer will lead to undefined behavior.
-
-        This method will only work if the current instance is NOT connected to the buffer.
+        This method should only be called once from the highest runtime scope. Calling this method while having
+        SharedMemoryArray instances connected to the buffer leads to undefined behavior.
 
         Notes:
             This method does not do anything on Windows. Windows automatically garbage-collects the buffers as long as
             they are no longer connected to by any SharedMemoryArray instances.
         """
-        if not self._connected and self._buffer is not None:
-            self._buffer.unlink()
+        # If the instance is connected to the buffer, first disconnects it from the buffer
+        self.disconnect()
+
+        # Requests the shared memory buffer to be destroyed
+        self._buffer.unlink()
 
     def _convert_to_slice(self, index: tuple[int, ...]) -> tuple[int, int | None]:
         """Converts the input tuple into start and stop arguments compatible with numpy slice operation.
@@ -422,18 +422,7 @@ class SharedMemoryArray:
     def write_data(
         self,
         index: int | tuple[int, ...],
-        data: (
-            NDArray[Any]
-            | list[Any]
-            | tuple[Any]
-            | np.unsignedinteger[Any]
-            | np.signedinteger[Any]
-            | np.floating[Any]
-            | float
-            | bool
-            | str
-            | None
-        ),
+        data: Any,
         with_lock: bool = True,
     ) -> None:
         """Writes data to the shared memory array at the specified index or indices (via slice).

@@ -283,7 +283,7 @@ def test_create_array_error():
     # Tests with an invalid prototype type
     message = (
         f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object 'test_error'. "
-        f"Expected a flat (one-dimensional) numpy ndarray but instead encountered {type([1, 2, 3]).__name__}."
+        f"Expected a flat (one-dimensional) NumPy array but instead encountered {type([1, 2, 3]).__name__}."
     )
     with pytest.raises(TypeError, match=error_format(message)):
         # noinspection PyTypeChecker
@@ -293,8 +293,8 @@ def test_create_array_error():
     multi_dim_array = np.array([[1, 2], [3, 4]])
     message = (
         f"Invalid 'prototype' array shape encountered when creating SharedMemoryArray object 'test_error_2'. "
-        f"Expected a flat (one-dimensional) numpy ndarray but instead encountered prototype with shape "
-        f"{multi_dim_array.shape} and dimensions number {multi_dim_array.ndim}."
+        f"Expected a flat (one-dimensional) NumPy array but instead encountered prototype with "
+        f"{multi_dim_array.ndim} dimensions."
     )
     with pytest.raises(ValueError, match=error_format(message)):
         SharedMemoryArray.create_array(name="test_error_2", prototype=multi_dim_array)
@@ -304,10 +304,10 @@ def test_create_array_error():
     # cleans up unreferenced objects.
     _x = SharedMemoryArray.create_array(name="existing_array", prototype=np.array([1, 2, 3]))
     message = (
-        f"Unable to create SharedMemoryArray object using name 'existing_array', as object with this name already "
-        f"exists. If this method is called from a child process, use connect() method to connect to the "
-        f"SharedMemoryArray from a child process. To recreate the buffer left over from a previous "
-        f"runtime, run this method with the 'exist_ok' flag set to True."
+        f"Unable to create SharedMemoryArray object using name 'existing_array', as the object with this name "
+        f"already exists. If this method is called from a child process, use the connect() method instead "
+        f"to connect to the existing buffer. To clean-up the buffer left over from a previous "
+        f"runtime, run this method with the 'exists_ok' flag set to True."
     )
     with pytest.raises(FileExistsError, match=error_format(message)):
         SharedMemoryArray.create_array(name="existing_array", prototype=np.array([4, 5, 6]))
