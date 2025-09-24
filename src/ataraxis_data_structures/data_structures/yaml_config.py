@@ -56,7 +56,7 @@ class YamlConfig:
 
         # Writes the data to the .yaml file.
         with file_path.open("w") as yaml_file:
-            yaml.dump(data=asdict(self), stream=yaml_file, **yaml_formatting)
+            yaml.dump(data=asdict(self), stream=yaml_file, **yaml_formatting)  # type: ignore[call-overload]
 
     @classmethod
     def from_yaml(cls, file_path: Path) -> Self:

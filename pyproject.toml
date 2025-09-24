@@ -18,7 +18,7 @@ maintainers = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
 ]
 
-keywords = ['data structures', 'data manipulation', 'nested dictionary', 'shared memory', 'ataraxis']
+keywords = ['data structures', 'data manipulation', 'data logging', 'shared memory', 'ataraxis']
 
 classifiers = [
     # Development status

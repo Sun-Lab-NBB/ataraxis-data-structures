@@ -4,7 +4,7 @@ Processes to disk.
 
 import os
 from queue import Empty
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from pathlib import Path
 import platform
 from functools import partial
@@ -46,9 +46,9 @@ def _load_numpy_files(
         A tuple of two elements. The first element is a tuple of loaded file names (without extension). The second
         element is a tuple of loaded or memory-mapped data arrays.
     """
-    mmap_mode = "r" if memory_map else None
+    mmap_mode: Literal["r"] | None = "r" if memory_map else None
     results = [(fp.stem, np.load(fp, mmap_mode=mmap_mode)) for fp in file_paths]
-    return tuple(zip(*results, strict=False)) if results else ((), ())
+    return tuple(zip(*results, strict=False)) if results else ((), ())  # type: ignore[return-value]
 
 
 def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:  # pragma: no cover
@@ -91,7 +91,7 @@ def _assemble_archive(
     output_path = output_directory.joinpath(f"{source_id}_log.npz")
 
     # Assembles all source data into an uncompressed .npz archive.
-    np.savez(output_path, **source_data)
+    np.savez(output_path, allow_pickle=False, **source_data)
 
     # Returns the source id and the path to the compressed log file to caller.
     return source_id, output_path
@@ -148,7 +148,7 @@ def assemble_log_archives(
             entries before removing sources.
     """
     # Resolves the number of threads and processes to use during runtime.
-    max_workers = max(1, (os.cpu_count() - 2) if max_workers is None else max_workers)
+    max_workers = max(1, (os.cpu_count() - 2) if max_workers is None else max_workers)  # type: ignore[operator]
 
     # Due to erratic interaction between memory mapping and Windows (as always), disables memory mapping on
     # Windows. Use max_workers to avoid out-of-memory errors on Windows.
@@ -193,8 +193,8 @@ def assemble_log_archives(
             unit="entries",
             disable=not verbose,
         ) as pbar:
-            for source_id, future in load_futures:
-                stems, arrays = future.result()
+            for source_id, load_future in load_futures:
+                stems, arrays = load_future.result()
                 for stem, array in zip(stems, arrays, strict=False):
                     loaded_data[source_id][stem] = array
                     pbar.update(1)
@@ -215,8 +215,8 @@ def assemble_log_archives(
             unit="sources",
             disable=not verbose,
         ) as pbar:
-            for future in as_completed(archive_futures):
-                archive_id, archive_path = future.result()
+            for archive_future in as_completed(archive_futures):
+                archive_id, archive_path = archive_future.result()
                 archives[archive_id] = archive_path
                 pbar.update(1)
 
@@ -232,8 +232,8 @@ def assemble_log_archives(
             with tqdm(
                 total=len(archives), desc="Loading archive data into memory", unit="archives", disable=not verbose
             ) as pbar:
-                for source_id, future in archived_futures.items():
-                    archive_data[source_id] = future.result()
+                for source_id, integrity_future in archived_futures.items():
+                    archive_data[source_id] = integrity_future.result()
                     pbar.update(1)
 
             # Verifies the integrity of each archive data against the original data.
@@ -253,8 +253,8 @@ def assemble_log_archives(
                 unit="entries",
                 disable=not verbose,
             ) as pbar:
-                for future in as_completed(verification_futures):
-                    future.result()  # Propagates errors if comparison fails
+                for verify_future in as_completed(verification_futures):
+                    verify_future.result()  # Propagates errors if comparison fails
                     pbar.update(1)
 
         # PHASE 4: Removes source files if requested.
@@ -265,8 +265,8 @@ def assemble_log_archives(
             with tqdm(
                 total=len(all_files), desc="Removing processed source files", unit="files", disable=not verbose
             ) as pbar:
-                for future in as_completed(removal_futures):
-                    future.result()
+                for remove_future in as_completed(removal_futures):
+                    remove_future.result()
                     pbar.update(1)
 
 
@@ -375,7 +375,7 @@ class DataLogger:
         ensure_directory_exists(self._output_directory)
 
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
-        self._input_queue: MPQueue = self._mp_manager.Queue()
+        self._input_queue: MPQueue = self._mp_manager.Queue()  # type: ignore[type-arg, assignment]
 
         # Creates the infrastructure for running the logger.
         self._terminator_array: SharedMemoryArray | None = None
@@ -419,6 +419,10 @@ class DataLogger:
         )
         self._logger_process.start()
 
+        # Enables automatic destruction of the shared memory buffer when the instance is garbage collected. This ensures
+        # proper resource cleanup if the class unexpectedly terminates its runtime.
+        self._terminator_array.enable_buffer_destruction()
+
         # Creates and starts the watchdog thread.
         self._watchdog_thread = Thread(target=self._watchdog, daemon=True)
         self._watchdog_thread.start()
@@ -436,7 +440,7 @@ class DataLogger:
 
         # Issues the shutdown command to the remote process and the watchdog thread
         if self._terminator_array is not None:
-            self._terminator_array.write_data(index=0, data=np.uint8(1))
+            self._terminator_array[0] = 1
 
         # Waits for the process to shut down.
         if self._logger_process is not None:
@@ -459,7 +463,7 @@ class DataLogger:
         timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
 
         # The watchdog function runs until the global shutdown command is issued.
-        while not self._terminator_array.read_data(index=0):
+        while self._terminator_array is not None and not self._terminator_array[0]:
             # Repeats the check every 20 ms.
             timer.delay(delay=20, allow_sleep=True, block=False)
 
@@ -467,9 +471,9 @@ class DataLogger:
                 continue
 
             # Only checks that the process is alive if it is started.
-            if not self._logger_process.is_alive():  # pragma: no cover
+            if self._logger_process is not None and not self._logger_process.is_alive():  # pragma: no cover
                 # Cleans up all resources, similar to the stop() method.
-                self._terminator_array.write_data(index=0, data=np.uint8(1))
+                self._terminator_array[0] = 1
                 self._logger_process.join()
                 self._terminator_array.disconnect()
                 self._terminator_array.destroy()
@@ -496,7 +500,7 @@ class DataLogger:
 
     @staticmethod
     def _log_cycle(
-        input_queue: MPQueue,
+        input_queue: MPQueue,  # type: ignore[type-arg]
         terminator_array: SharedMemoryArray,
         output_directory: Path,
         thread_count: int,
@@ -526,7 +530,7 @@ class DataLogger:
 
         # Main process loop. This loop runs until BOTH the terminator flag is passed and the input queue is empty.
         try:
-            while not terminator_array.read_data(index=0, convert_output=False) or not input_queue.empty():
+            while not terminator_array[0] or not input_queue.empty():
                 try:
                     # Gets the data from the input queue with timeout. The data is expected to be packaged into the
                     # LogPackage instance.
@@ -551,7 +555,7 @@ class DataLogger:
             terminator_array.disconnect()
 
     @property
-    def input_queue(self) -> MPQueue:
+    def input_queue(self) -> MPQueue:  # type: ignore[type-arg]
         """Returns the multiprocessing Queue used to buffer and pipe the data to the logger process."""
         return self._input_queue
 
