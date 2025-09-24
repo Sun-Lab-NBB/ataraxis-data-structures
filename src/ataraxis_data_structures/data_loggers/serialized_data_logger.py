@@ -35,8 +35,8 @@ def _load_numpy_files(
 ) -> tuple[tuple[str, ...], tuple[NDArray[Any], ...]]:  # pragma: no cover
     """Loads multiple .npy files either into memory or as memory-mapped arrays.
 
-    This service function is used during log compression to load all raw log files into memory in-parallel for faster
-    processing.
+    This service function is used during log archive assembly to load all raw log files into memory in parallel for
+    faster processing.
 
     Args:
         file_paths: The paths to the .npy files to load.
@@ -55,7 +55,7 @@ def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:  # pragma: 
     """Loads a numpy .npz archive containing multiple arrays as a dictionary.
 
     This service function is used during compressed log verification to load all entries from a compressed log archive
-    into memory in-parallel.
+    into memory in parallel.
 
     Args:
         file_path: The path to the .npz log archive to load.
@@ -100,7 +100,7 @@ def _assemble_archive(
 def _compare_arrays(source_id: int, stem: str, original_array: NDArray[Any], archived_array: NDArray[Any]) -> None:
     """Compares a pair of NumPy arrays for exact equality.
 
-    This service function is used during log verification to compare source and archived log entry data in-parallel.
+    This service function is used during log verification to compare source and archived log entry data in parallel.
 
     Args:
         source_id: The ID-code of the source whose data is verified by this function.
@@ -140,7 +140,7 @@ def assemble_log_archives(
         max_workers: Determines the number of threads used to process the data in parallel. If set to None, the
             function uses the number of CPU cores - 2 threads.
         remove_sources: Determines whether to remove the .npy files after consolidating their data into .npz archives.
-        memory_mapping: Determines whether to memory-map or loads the processed data into RAM during processing. Due to
+        memory_mapping: Determines whether to memory-map or load the processed data into RAM during processing. Due to
             Windows not releasing memory-mapped file handles, this function always loads the data into RAM when running
             on Windows.
         verbose: Determines whether to communicate the log assembly progress via the terminal.
@@ -199,7 +199,7 @@ def assemble_log_archives(
                     loaded_data[source_id][stem] = array
                     pbar.update(1)
 
-        # PHASE 2: Assembles archives. Here, each archive is processed in-parallel, but all archive log entries for
+        # PHASE 2: Assembles archives. Here, each archive is processed in parallel, but all archive log entries for
         # each archive are processed sequentially.
         assemble = partial(_assemble_archive, log_directory)
         # noinspection PyTypeChecker
@@ -419,8 +419,9 @@ class DataLogger:
         )
         self._logger_process.start()
 
-        # Enables automatic destruction of the shared memory buffer when the instance is garbage collected. This ensures
-        # proper resource cleanup if the class unexpectedly terminates its runtime.
+        # Finishes setting up the terminator array in the main runtime thread. Specifically, connects to the shared
+        # memory buffer and enables destroying the buffer when the instance is garbage-collected.
+        self._terminator_array.connect()
         self._terminator_array.enable_buffer_destruction()
 
         # Creates and starts the watchdog thread.

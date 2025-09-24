@@ -13,8 +13,7 @@ from ataraxis_base_utilities import console, ensure_directory_exists
 
 @dataclass
 class YamlConfig:
-    """An extension of the standard Python dataclass that gives it the ability to save and load its data from a
-    .yaml (YAML) file.
+    """An extension of the standard Python dataclass that allows it to save and load its data from a .yaml (YAML) file.
 
     Notes:
         This class is designed to be subclassed by custom dataclasses so that they inherit the YAML saving and loading
@@ -70,7 +69,7 @@ class YamlConfig:
             file_path: The path to the .yaml file that stores the instance's data.
 
         Returns:
-            A new class instance created using the data read from the .yaml file.
+            A new class instance that stores the data read from the .yaml file.
 
         Raises:
             ValueError: If the provided file path does not point to a .yaml or .yml file.
@@ -85,8 +84,8 @@ class YamlConfig:
             console.error(message=message, error=ValueError)
 
         # Disables built-in dacite type-checking. Primarily, this feature is used to support saving and loading the data
-        # as built-in Python types (e.g. str) while the destination dataclass expects it to be one of the non-standard
-        # types (e.g. Path).
+        # as built-in Python types (e.g., str), while the destination dataclass expects it to be one of the non-standard
+        # types (e.g., Path).
         class_config = Config(check_types=False)
 
         # Loads the data from the .yaml file.

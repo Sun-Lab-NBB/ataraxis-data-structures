@@ -1,5 +1,5 @@
 """This module provides the SharedMemoryArray class that allows moving data between multiple Python processes through
-a shared one-dimensional NumPy array memory buffer.
+a shared n-dimensional NumPy array memory buffer.
 """
 
 from typing import Any
@@ -34,6 +34,7 @@ class SharedMemoryArray:
         name: The unique name to use for the shared memory buffer.
         shape: The shape of the NumPy array used to access the data in the shared memory buffer.
         datatype: The datatype of the NumPy array used to access the data in the shared memory buffer.
+        buffer: The SharedMemory buffer that stores the shared data.
 
     Attributes:
         _name: Stores the name of the shared memory buffer.
@@ -48,18 +49,13 @@ class SharedMemoryArray:
             garbage-collected.
     """
 
-    def __init__(
-        self,
-        name: str,
-        shape: tuple[int, ...],
-        datatype: np.dtype[Any]
-    ) -> None:
+    def __init__(self, name: str, shape: tuple[int, ...], datatype: np.dtype[Any], buffer: SharedMemory) -> None:
         # Initialization method only saves input data into attributes. The method that actually sets up the class is
         # the create_array() class method.
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
-        self._buffer: SharedMemory | None = None
+        self._buffer: SharedMemory | None = buffer
         self._lock = Lock()
         self._array: NDArray[Any] = np.zeros(shape=shape, dtype=datatype)
         self._connected: bool = False
@@ -85,11 +81,11 @@ class SharedMemoryArray:
     def __getitem__(self, index: int | slice) -> Any:
         """Gets value(s) at the specified array index or slice with automatic locking.
 
-        This method allows retrieving the data from the SharedMemoryArray instance, without manually accessing the
+        This method allows retrieving the data from the SharedMemoryArray instance without manually accessing the
         underlying array object. It is designed for simple access operations, such as reading a boolean flag value.
 
         Notes:
-            This method always acquires the lock for thread-safe access. Use the array() method with appropriate
+            This method always acquires the lock for thread-safe access. Use the array() method with the appropriate
             locking configuration to read or write the data without locking.
 
         Args:
@@ -125,7 +121,7 @@ class SharedMemoryArray:
     def __setitem__(self, index: int | slice, value: Any) -> None:
         """Sets value(s) at the specified array index or slice with automatic locking.
 
-        This method allows modifying the data of the SharedMemoryArray instance, without manually accessing the
+        This method allows modifying the data of the SharedMemoryArray instance without manually accessing the
         underlying array object. It is designed for simple modification operations, such as writing a boolean flag
         value.
 
@@ -133,7 +129,7 @@ class SharedMemoryArray:
             The input values are saved in the underlying NumPy n-dimensional array. If the values are not
             compatible with the array's datatype, they are converted to the array's datatype before being written.
 
-            This method always acquires the lock for thread-safe access. Use the array() method with appropriate
+            This method always acquires the lock for thread-safe access. Use the array() method with the appropriate
             locking configuration to read or write the data without locking.
 
         Args:
@@ -167,7 +163,7 @@ class SharedMemoryArray:
         when the program runtime ends.
 
         Notes:
-            This method should only be called in the main runtime thread, after setting up all child processes. Calling
+            This method should only be called in the main runtime thread after setting up all child processes. Calling
             this method before starting the child processes may result in unexpected behavior due to child processes
             destroying the buffer as part of their shutdown sequence.
         """
@@ -191,9 +187,9 @@ class SharedMemoryArray:
             This method should only be called when the array is first created in the main runtime thread (scope). All
             child processes should use the connect() method to connect to the existing array.
 
-            After passing the returned instance to all child processes, call the instance's
-            enable_buffer_destruction() method to ensure that the shared memory buffer is properly cleaned up when the
-            program runtime ends.
+            After passing the returned instance to all child processes, call the instance's connect() and
+            enable_buffer_destruction() methods. Calling these methods before sharing the instance with the child
+            processes is likely to result in undefined behavior.
 
         Args:
             name: The unique name to use for the shared memory buffer.
@@ -249,26 +245,25 @@ class SharedMemoryArray:
         shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
         shared_array[:] = prototype[:]
 
-        # Packages the data necessary to connect to the shared array into the class instance.
-        shared_memory_array = cls(
+        # Packages the data necessary to connect to the shared array into the class instance and rturns it to caller.
+        return cls(
             name=name,
             shape=shared_array.shape,
             datatype=shared_array.dtype,
+            buffer=buffer,
         )
-
-        # Connects the created instance to the shared memory buffer.
-        shared_memory_array.connect()
-
-        # Returns the instantiated and connected class object to caller.
-        return shared_memory_array
 
     def connect(self) -> None:
         """Connects to the shared memory buffer, allowing the instance to access and manipulate the shared data.
 
-        This method should be called once for each Python process that uses this instance, before calling any other
+        This method should be called once for each Python process that uses this instance before calling any other
         methods.
+
+        Notes:
+            Do not call this method from the main runtime thread before starting all child processes that use this
+            instance. Otherwise, the child processes may not be able to connect to the shared memory buffer.
         """
-        if not self._connected and self._buffer is None:
+        if not self._connected:
             # Connects to the shared memory buffer
             self._buffer = SharedMemory(name=self._name, create=False)
             # Re-initializes the internal _array with the data from the shared memory buffer.
@@ -349,7 +344,7 @@ class SharedMemoryArray:
             # This line shouldn't be reached due to console.error, but included for type checking
             raise ConnectionError(message)  # pragma: no cover
 
-        # Conditionally acquire lock based on with_lock parameter
+        # Conditionally acquire lock based on the 'with_lock' parameter
         if with_lock:
             with self._lock:
                 yield self._array
