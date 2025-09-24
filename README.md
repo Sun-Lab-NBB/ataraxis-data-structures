@@ -11,6 +11,7 @@ processes.
 ![PyPI - License](https://img.shields.io/pypi/l/ataraxis-data-structures)
 ![PyPI - Status](https://img.shields.io/pypi/status/ataraxis-data-structures)
 ![PyPI - Wheel](https://img.shields.io/pypi/wheel/ataraxis-data-structures)
+
 ___
 
 ## Detailed Description
@@ -19,6 +20,7 @@ This library aggregates the classes and methods that broadly help working with d
 classes to manipulate the data, share (move) the data between different Python processes and save and load the 
 data from storage. Generally, these classes either implement novel functionality not available through other popular 
 libraries or extend existing functionality to match specific needs of other project Ataraxis libraries.
+
 ___
 
 ## Features
@@ -45,6 +47,7 @@ ___
 - [Authors](#authors)
 - [License](#license)
 - [Acknowledgements](#Acknowledgments)
+
 ___
 
 ## Dependencies
@@ -54,6 +57,7 @@ For users, all library dependencies are installed automatically for all supporte
 
 For developers, see the [Developers](#developers) section for information on installing additional development 
 dependencies.
+
 ___
 
 ## Installation
@@ -72,6 +76,7 @@ below assume you are ***not*** a developer.
 
 ### pip
 Use the following command to install the library using pip: ```pip install ataraxis-data-structures```.
+
 ___
 
 ## Usage
@@ -79,132 +84,6 @@ ___
 This section is broken into subsections for each exposed utility class or module. For each, it only provides the 
 minimalistic (quickstart) functionality overview, which does not reflect the nuances of using each method. To learn 
 about the nuances, consult the [API documentation](#api-documentation).
-
-### NestedDictionary
-The NestedDictionary class wraps and manages a Python dictionary object. It exposes methods for evaluating the layout 
-of the wrapped dictionary and manipulating values and sub-dictionaries in the hierarchy using a path-like API.
-
-#### Reading, Writing and Removing values
-The class provides an easy-to-use API for managing deeply nested values inside the wrapped dictionary. It consists of
-three principal methods __write_nested_value()__, __read_nested_value()__ and __delete_nested_value()__
-```
-from ataraxis_data_structures import NestedDictionary
-
-# By default, the class initializes as an empty dictionary object
-nested_dictionary = NestedDictionary()
-
-# The class is designed to work with nested dictonary paths, which are one-dimensional iterables of keys. Note! Key
-# datatypes are important, the class respects input key datatype where possible.
-path = ['level1', 'sublevel2', 'value1']  # This is the same as dict['level1']['sublevel2']['value1']
-
-# To write into the dictionary, you can use a path-like API:
-nested_dictionary.write_nested_value(variable_path=path, value=111)
-
-# To read from the nested dictionary, you can use the same path-like API:
-assert nested_dictionary.read_nested_value(variable_path=path) == 111
-
-# Both methods can be used to read and write individual values and whole dictionary sections:
-path = ['level2']
-nested_dictionary.write_nested_value(variable_path=path, value={'sublevel2': {'subsublevel1': {'value': 3}}})
-assert nested_dictionary.read_nested_value(variable_path=path) == {'sublevel2': {'subsublevel1': {'value': 3}}}
-
-# Finally, delete_nested_value() can be used to remove values from the dictionary. Attempting to read a non-existent
-# value raises keyError, just like in a regular dictionary:
-nested_dictionary.delete_nested_value(variable_path=path)
-try:
-    nested_dictionary.read_nested_value(variable_path=path)
-except KeyError:
-    print('Deleted')
-```
-
-#### Path API
-The class supports two formats when specifying paths to desired values and sub-dictionaries: an iterable of
-keys and a delimited string.
-```
-from ataraxis_data_structures import NestedDictionary
-
-# Python dictionaries are very flexible with the datatypes that can be used for dictionary keys.
-seed_dict = {11: {'11': {True: False}}}
-nested_dictionary = NestedDictionary(seed_dict)
-
-# When working with dictionaries that mix multiple different types for keys, you have to use the 'iterable' path format.
-# This is the only format that reliably preserves and accounts for key datatypes:
-assert nested_dictionary.read_nested_value([11, '11', True]) is False
-
-# However, when all dictionary keys are of the same datatype, you can use the second format of delimiter-delimited
-# strings. This format does not preserve key datatype information, but it is more human-friendly and mimics the
-# path API commonly used in file systems:
-seed_dict = {'11': {'11': {'True': False}}}
-nested_dictionary = NestedDictionary(seed_dict, path_delimiter='/')
-
-assert nested_dictionary.read_nested_value('11/11/True') is False
-
-# You can always modify the 'delimiter' character via set_path_delimiter() method:
-nested_dictionary.set_path_delimiter('.')
-assert nested_dictionary.read_nested_value('11.11.True') is False
-```
-
-#### Key datatype methods
-The class comes with a set of methods that can be used to discover and potentially modify dictionary key datatypes.
-Primarily, these methods are designed to convert the dictionary to use the same datatype for all keys, where possible, 
-to enable using the 'delimited string' path API.
-```
-from ataraxis_data_structures import NestedDictionary
-
-# Instantiates a dictionary with mixed datatypes.
-seed_dict = {11: {'11': {True: False}}}
-nested_dictionary = NestedDictionary(seed_dict)
-
-# The 'key_datatypes' property returns the datatypes used by the dictionary as keys as a sorted list of strings.
-# This property will NOT reflect any manual changes to the wrapped dictionary after NestedDictionary instantiation, but
-# will be updated when the dictionary is modified via the NestedDictionary API.
-assert nested_dictionary.key_datatypes == ('bool', 'int', 'str')
-
-# Use the convert_all_keys_to_datatype method to convert all keys to the desired type.
-nested_dictionary.convert_all_keys_to_datatype(datatype='int')
-assert nested_dictionary.key_datatypes == ('int',)  # All keys have been converted to integers
-```
-
-#### Extracting variable paths
-The class is equipped with methods for mapping dictionaries with unknown topologies. Specifically, the class
-can find the paths to all terminal values or to specific terminal (value), intermediate (sub-dictionary) or both 
-(all) dictionary elements:
-```
-from ataraxis_data_structures import NestedDictionary
-
-# Instantiates a dictionary with mixed datatypes complex nesting
-seed_dict = {"11": {"11": {"11": False}}, "key2": {"key2": 123}}
-nested_dictionary = NestedDictionary(seed_dict)
-
-# Extracts the paths to all values stored in the dictionary and returns them using iterable path API format (internally,
-# it is referred to as 'raw').
-value_paths = nested_dictionary.extract_nested_variable_paths(return_raw=True)
-
-# The method has extracted the path to the two terminal values in the dictionary
-assert len(value_paths) == 2
-assert value_paths[0] == ("11", "11", "11")
-assert value_paths[1] == ("key2", "key2")
-
-# If you need to find the path to a specific variable or section, you can use the find_nested_variable_path() to search
-# for the desired path:
-
-# The search can be customized to only evaluate dictionary section keys (intermediate_only), which allows searching for
-# specific sections:
-intermediate_paths = nested_dictionary.find_nested_variable_path(
-    target_key="key2", search_mode="intermediate_only", return_raw=True
-)
-
-# There is only one 'section' key2 in the dictionary, and this key is found inside the highest scope of the dictionary:
-assert intermediate_paths == ('key2',)
-
-# Alternatively, you can search for terminal keys (value keys) only:
-terminal_paths = nested_dictionary.find_nested_variable_path(
-    target_key="11", search_mode="terminal_only", return_raw=True
-)
-
-# There is exactly one path that satisfies those search requirements
-assert terminal_paths == ("11", "11", "11")
-```
 
 ### YamlConfig
 The YamlConfig class extends the functionality of standard Python dataclasses by bundling them with methods to save and
@@ -458,6 +337,7 @@ uncompressed log entries, which is a required argument for the instance-independ
 
 Alternatively, you can also use the `compress_logs` method exposed by the DataLogger instance to compress the logs 
 immediately after runtime. Overall, it is highly encouraged to compress the logs as soon as possible.
+
 ___
 
 ## API Documentation
@@ -545,6 +425,7 @@ ___
 ## License
 
 This project is licensed under the GPL3 License: see the [LICENSE](LICENSE) file for details.
+
 ___
 
 ## Acknowledgments
