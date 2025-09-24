@@ -245,7 +245,7 @@ class SharedMemoryArray:
         shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
         shared_array[:] = prototype[:]
 
-        # Packages the data necessary to connect to the shared array into the class instance and rturns it to caller.
+        # Packages the data necessary to connect to the shared array into the class instance and returns it to caller.
         return cls(
             name=name,
             shape=shared_array.shape,

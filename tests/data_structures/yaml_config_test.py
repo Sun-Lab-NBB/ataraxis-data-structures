@@ -35,7 +35,7 @@ def test_yaml_config_to_yaml(tmp_path, config_path, expected_content):
         nested: dict = field(default_factory=dict)
         list: list = field(default_factory=list)
 
-    # Generates and dumps teh config as a .yaml
+    # Generates and dumps the config as a .yaml
     config = TestConfig(**expected_content)
     full_path = tmp_path.joinpath(config_path)
     config.to_yaml(full_path)

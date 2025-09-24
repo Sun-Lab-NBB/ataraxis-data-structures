@@ -411,7 +411,7 @@ def test_array_context_manager_errors(int_array):
         f"connected to the shared memory buffer. Call the connect() method prior to calling the array() method."
     )
     with pytest.raises(ConnectionError, match=error_format(message)):
-        with sma.array() as arr:
+        with sma.array() as _arr:
             pass
 
 
