@@ -1,4 +1,3 @@
-import time as tm
 from pathlib import Path
 import tempfile
 import numpy as np
