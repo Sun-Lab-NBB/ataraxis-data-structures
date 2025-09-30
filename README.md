@@ -90,7 +90,7 @@ instances with methods to save and load their data to / from .yaml files. Primar
 to support storing runtime configuration data in non-volatile and human-readable (and editable!) format.
 
 Any dataclass that subclasses the base 'YamlConfig' class exposed by this library inherits two methods: **to_yaml()** 
-and **from_yaml**.
+and **from_yaml** that jointly enable caching dataclass instance data to .yaml files.
 ```
 from ataraxis_data_structures import YamlConfig
 from dataclasses import dataclass
@@ -98,48 +98,42 @@ from pathlib import Path
 import tempfile
 
 
-# First, the class needs to be subclassed as a custom dataclass
+# All YamlConfig functionality is accessed via subclassing.
 @dataclass
 class MyConfig(YamlConfig):
-    # Note the 'base' class initialization values. This ensures that if the class data is not loaded from manual
-    # storage, the example below will not work.
     integer: int = 0
     string: str = 'random'
 
 
-# Instantiates the class using custom values
+# Instantiates the test class using custom values that do not match the default initialization values.
 config = MyConfig(integer=123, string='hello')
 
-# Uses temporary directory to generate the path that will be used to store the file
-temp_dir = tempfile.mkdtemp()
-out_path = Path(temp_dir).joinpath("my_config.yaml")
-
-# Saves the class as a .yaml file. If you want to see / edit the file manually, replace the example 'temporary'
-# directory with a custom directory
+# Saves the instance data to a YAML file in a temporary directory. The saved data can be modified by directly editing
+# the saved .yaml file.
+tempdir = tempfile.TemporaryDirectory()  # Creates a temporary directory for illustration purposes.
+out_path = Path(tempdir.name).joinpath("my_config.yaml")  # Resolves the path to the output file.
 config.to_yaml(file_path=out_path)
 
-# Ensures the file has been written
+# Ensures that the cache file has been created.
 assert out_path.exists()
 
-# Loads and re-instantiates the config as a dataclass using the data inside the .yaml file
+# Creates a new MyConfig instance using the data inside the .yaml file.
 loaded_config = MyConfig.from_yaml(file_path=out_path)
 
-# Ensures that the loaded config data matches the original config
+# Ensures that the loaded data matches the original MyConfig instance data.
 assert loaded_config.integer == config.integer
 assert loaded_config.string == config.string
 ```
 
 ### SharedMemoryArray
 The SharedMemoryArray class allows sharing data between multiple Python processes in a thread- and process-safe way.
-It is designed to compliment other common data-sharing methods, such as multiprocessing and multithreading Queue 
-classes. The class implements a shared one-dimensional numpy array, allowing different processes to dynamically write 
-and read any elements of the array independent of order and without mandatory 'consumption' of manipulated elements.
+To do so, it implements a shared memory buffer accessed via an n-dimensional NumPy array instance, allowing different 
+processes to read and write any element(s) of the array.
 
 #### Array creation
-The SharedMemoryArray only needs to be initialized __once__ by the highest scope process. That is, only the parent 
-process should create the SharedMemoryArray instance and provide it as an argument to all children processes during
-their instantiation. The initialization process uses the input prototype numpy array and unique buffer name to generate 
-a shared memory buffer and fill it with input array data. 
+The SharedMemoryArray only needs to be instantiated __once__ by the main runtime process (thread) and provided to all 
+children processes as an input. The initialization process uses the specified prototype NumPy array and unique buffer 
+name to generate a new . 
 
 *__Note!__* The array dimensions and datatype cannot be changed after initialization, the resultant SharedMemoryArray
 will always use the same shape and datatype.
