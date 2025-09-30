@@ -4,7 +4,7 @@ import numpy as np
 from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
 from ataraxis_time import get_timestamp, TimestampFormats
 
-# Due to the internal use of Process classes, the logger has to be protected by the __main__ guard.
+# Due to the internal use of the 'Process' class, the logger has to be protected by the __main__ guard.
 if __name__ == "__main__":
     # As a minimum, each DataLogger has to be given the output folder and a unique name to distinguish the instance from
     # any other concurrently active DataLogger instance.
