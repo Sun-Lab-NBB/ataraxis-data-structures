@@ -1,31 +1,36 @@
-from ataraxis_data_structures import YamlConfig
-from dataclasses import dataclass
-from pathlib import Path
-import tempfile
+import numpy as np
+from ataraxis_data_structures import SharedMemoryArray
 
+# Initializes a SharedMemoryArray
+prototype = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
+buffer_name = "unique_buffer"
+sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
+sma.connect()
 
-# All YamlConfig functionality is accessed via subclassing.
-@dataclass
-class MyConfig(YamlConfig):
-    integer: int = 0
-    string: str = 'random'
+# The SharedMemoryArray data can be accessed directly using indexing or slicing, just like any regular NumPy array or
+# Python iterable:
 
+# Index
+assert sma[2] == np.uint64(3)
+assert isinstance(sma[2], np.uint64)
+sma[2] = 123  # Written data must be convertible to the datatype of the underlying NumPy array
+assert sma[2] == np.uint64(123)
 
-# Instantiates the test class using custom values that do not match the default initialization values.
-config = MyConfig(integer=123, string='hello')
+# Slice
+assert np.array_equal(sma[:4], np.array([1, 2, 123, 4], dtype=np.uint64))
+assert isinstance(sma[:4], np.ndarray)
 
-# Saves the instance data to a YAML file in a temporary directory. The saved data can be modified by directly editing
-# the saved .yaml file.
-tempdir = tempfile.TemporaryDirectory()  # Creates a temporary directory for illustration purposes.
-out_path = Path(tempdir.name).joinpath("my_config.yaml")  # Resolves the path to the output file.
-config.to_yaml(file_path=out_path)
+# It is also possible to directly access the underlying NumPy array, which allows using the full range of NumPy
+# operations. The accessor method can be used from within a context manager to enforce exclusive access to the array's
+# data via an internal multiprocessing lock mechanism:
+with sma.array(with_lock=True) as array:
+    print(f"Before clipping: {array}")
 
-# Ensures that the cache file has been created.
-assert out_path.exists()
+    # Clipping replaces the out-of-bounds value '123' with '10'.
+    array = np.clip(array, 0, 10)
 
-# Creates a new MyConfig instance using the data inside the .yaml file.
-loaded_config = MyConfig.from_yaml(file_path=out_path)
+    print(f"After clipping: {array}")
 
-# Ensures that the loaded data matches the original MyConfig instance data.
-assert loaded_config.integer == config.integer
-assert loaded_config.string == config.string
+# Cleans up the array buffer
+sma.disconnect()
+sma.destroy()

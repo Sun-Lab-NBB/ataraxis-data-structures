@@ -89,8 +89,8 @@ The YamlConfig class extends the functionality of the standard Python dataclass 
 instances with methods to save and load their data to / from .yaml files. Primarily, this functionality is implemented 
 to support storing runtime configuration data in non-volatile and human-readable (and editable!) format.
 
-Any dataclass that subclasses the base 'YamlConfig' class exposed by this library inherits two methods: **to_yaml()** 
-and **from_yaml** that jointly enable caching dataclass instance data to .yaml files.
+The YamlConfig class is designed to be **subclassed** by custom dataclass instances to gain the .yaml saving and 
+loading functionality realized through the inherited **to_yaml()** and **from_yaml()** methods:
 ```
 from ataraxis_data_structures import YamlConfig
 from dataclasses import dataclass
@@ -126,49 +126,47 @@ assert loaded_config.string == config.string
 ```
 
 ### SharedMemoryArray
-The SharedMemoryArray class allows sharing data between multiple Python processes in a thread- and process-safe way.
+The SharedMemoryArray class supports sharing data between multiple Python processes in a thread- and process-safe way.
 To do so, it implements a shared memory buffer accessed via an n-dimensional NumPy array instance, allowing different 
 processes to read and write any element(s) of the array.
 
-#### Array creation
+#### Array Creation
 The SharedMemoryArray only needs to be instantiated __once__ by the main runtime process (thread) and provided to all 
 children processes as an input. The initialization process uses the specified prototype NumPy array and unique buffer 
-name to generate a new . 
-
-*__Note!__* The array dimensions and datatype cannot be changed after initialization, the resultant SharedMemoryArray
-will always use the same shape and datatype.
+name to generate a (new) NumPy array whose data is stored in a shared memory buffer accessible from any thread or 
+process. *__Note!__* The array dimensions and datatype cannot be changed after initialization.
 ```
 from ataraxis_data_structures import SharedMemoryArray
 import numpy as np
 
 # The prototype array and buffer name determine the layout of the SharedMemoryArray for its entire lifetime:
-prototype = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
-buffer_name = 'unique_buffer'
+prototype = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float64)
+buffer_name = 'unique_buffer_name'  # Has to be unique for all concurrently used SharedMemoryArray instances.
 
-# To initialize the array, use create_array() method. DO NOT use class initialization method directly! This example
-# is configured to recreate the buffer, it already exists.
-sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype, exist_ok=True)
+# To initialize the array, use the create_array() method. Do not call the class initialization method directly!
+sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
 
-# The instantiated SharedMemoryArray object wraps an array with the same dimensions and data type as the prototype
-# and uses the unique buffer name to identify the shared memory buffer to connect from different processes.
+# Ensures that the shared memory buffer is destroyed when the instance is garbage-collected.
+sma.enable_buffer_destruction()
+
+# The instantiated SharedMemoryArray object wraps an n-dimensional NumPy array with the same dimensions and data type
+# as the prototype and uses the unique shared memory buffer name to identify the shared memory buffer to connect to from
+# different processes.
 assert sma.name == buffer_name
 assert sma.shape == prototype.shape
 assert sma.datatype == prototype.dtype
 
-# Remember to clean up at the end. If this si not done, the shared memory buffer may be left hogging computer resources
-# after the runtime is over (Only on Unix platforms).
-sma.disconnect()
-sma.destroy()
+# Demonstrates the current values for the critical SharedMemoryArray parameters evaluated above:
+print(sma)
 ```
 
-#### Array connection, disconnection and destruction
-Each __child__ process has to use the __connect()__ method to connect to the array before reading or writing data. 
-The parent process that has created the array connects to the array automatically during creation and does not need to 
-be reconnected. At the end of each connected process runtime, you need to call the __disconnect()__ method to remove 
-the reference to the shared buffer:
+#### Array Connection, Disconnection, and Destruction
+Each process using the SharedMemoryArray instance, __including__ the process that created it, must use the 
+__connect()__ method to connect to the array before reading or writing data. At the end of it’s runtime, each connected
+process must call the __disconnect()__ method to release the local reference to the shared buffer. The **main** process 
+also needs to call the __destroy()__ method to destroy the shared memory buffer.
 ```
 import numpy as np
-
 from ataraxis_data_structures import SharedMemoryArray
 
 # Initializes a SharedMemoryArray
@@ -176,53 +174,29 @@ prototype = np.zeros(shape=6, dtype=np.uint64)
 buffer_name = "unique_buffer"
 sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
 
-# This method has to be called before any child process that received the array can manipulate its data. While the
-# process that creates the array is connected automatically, calling the connect() method again does not have negative
-# consequences.
+# This method has to be called before attempting to manipulate the data inside the array.
 sma.connect()
 
-# You can verify the connection status of the array by using is_connected property:
+# The connection status of the array can be verified at any time by using is_connected property:
 assert sma.is_connected
 
-# This disconnects the array from shared buffer. On Windows platforms, when all instances are disconnected from the
-# buffer, the buffer is automatically garbage-collected. Therefore, it is important to make sure the array has at least
-# one connected instance at all times, unless you no longer intend to use the class. On Unix platforms, the buffer may
-# persist even after being disconnected by all instances.
-sma.disconnect()  # For each connect(), there has to be a matching disconnect() statement
+# Each process that connected to the shared memory buffer must disconnect from it at the end of its runtime. On Windows
+# platforms, when all processes are disconnected from the buffer, the buffer is automatically garbage-collected.
+sma.disconnect()  # For each connect() call, there has to be a matching disconnect() call
 
 assert not sma.is_connected
+
+# On Unix platforms, the buffer persists even after being disconnected by all instances, unless it is explicitly
+# destroyed.
+sma.destroy()  # For each create_array() call, there has to be a matching destroy() call
 ```
 
-#### Reading array data
-To read from the array wrapped by the class, you can use the __read_data()__ method. The method allows reading
-individual values and array slices and return data as NumPy or Python values:
-```
-import numpy as np
-from ataraxis_data_structures import SharedMemoryArray
-
-# Initializes a SharedMemoryArray
-prototype = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
-buffer_name = "unique_buffer"
-sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
-sma.connect()
-
-# The method can be used to read individual elements from the array. By default, the data is read as the numpy datatype
-# used by the array.
-output = sma.read_data(index=2)
-assert output == np.uint64(3)
-assert isinstance(output, np.uint64)
-
-# To read a slice of the array, provide a tuple of two indices (for closed range) or a tuple of one index (for open
-# range).
-output = sma.read_data(index=(1, 4), convert_output=False, with_lock=False)
-assert np.array_equal(output, np.array([2, 3, 4], dtype=np.uint64))
-assert isinstance(output, np.ndarray)
-
-```
-
-#### Writing array data
-To write data to the array wrapped by the class, use the __write_data()__ method. Its API is deliberately kept very 
-similar to the read method:
+#### Reading and Writing Array Data
+For routine data writing or reading operations, the SharedMemoryArray supports accessing its data via __indexing__ or 
+__slicing__, just like a regular NumPy array. Critically, accessing the data in this way is process-safe, as the 
+instance first acquires an exclusive multiprocessing Lock before interfacing with the data. For more complex access 
+scenarios, it is possible to use the __array()__ method to directly access and manipulate the underlying NumPy array 
+object used by the instance.
 ```
 import numpy as np
 from ataraxis_data_structures import SharedMemoryArray
@@ -233,20 +207,39 @@ buffer_name = "unique_buffer"
 sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
 sma.connect()
 
-# Data writing method has a similar API to data reading method. It can write scalars and slices to the shared memory
-# array. It tries to automatically convert the input into the type used by the array as needed:
-sma.write_data(index=1, data=7, with_lock=True)
-assert sma.read_data(index=1, convert_output=True) == 7
+# The SharedMemoryArray data can be accessed directly using indexing or slicing, just like any regular NumPy array or
+# Python iterable:
 
-# Writing by slice is also supported
-sma.write_data(index=(1, 3), data=[10, 11], with_lock=False)
-assert sma.read_data(index=(0,), convert_output=True) == [1, 10, 11, 4, 5, 6]
+# Index
+assert sma[2] == np.uint64(3)
+assert isinstance(sma[2], np.uint64)
+sma[2] = 123  # Written data must be convertible to the datatype of the underlying NumPy array
+assert sma[2] == np.uint64(123)
+
+# Slice
+assert np.array_equal(sma[:4], np.array([1, 2, 123, 4], dtype=np.uint64))
+assert isinstance(sma[:4], np.ndarray)
+
+# It is also possible to directly access the underlying NumPy array, which allows using the full range of NumPy
+# operations. The accessor method can be used from within a context manager to enforce exclusive access to the array's
+# data via an internal multiprocessing lock mechanism:
+with sma.array(with_lock=True) as array:
+    print(f"Before clipping: {array}")
+
+    # Clipping replaces the out-of-bounds value '123' with '10'.
+    array = np.clip(array, 0, 10)
+
+    print(f"After clipping: {array}")
+
+# Cleans up the array buffer
+sma.disconnect()
+sma.destroy()
 ```
 
-#### Using the array from multiple processes
-While all methods showcased above run from the same process, the main advantage of the class is that they work
-just as well when used from different Python processes. See the [example](examples/shared_memory_array.py) script for 
-more details.
+#### Using the Array from Multiple Processes
+While all methods showcased above run from the same process, the main advantage of the SharedMemoryArray class is that 
+it behaves the same way when used from different Python processes. See the [example](examples/shared_memory_array.py) 
+script for more details.
 
 ### DataLogger
 The DataLogger class sets up data logger instances running on isolated cores (Processes) and exposes a shared Queue 
