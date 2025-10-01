@@ -87,7 +87,7 @@ about the nuances, consult the [API documentation](#api-documentation) or see th
 ### YamlConfig
 The YamlConfig class extends the functionality of the standard Python dataclass module by bundling the dataclass 
 instances with methods to save and load their data to / from .yaml files. Primarily, this functionality is implemented 
-to support storing runtime configuration data in non-volatile and human-readable (and editable!) format.
+to support storing runtime configuration data in a non-volatile, human-readable, and editable format.
 
 The YamlConfig class is designed to be **subclassed** by custom dataclass instances to gain the .yaml saving and 
 loading functionality realized through the inherited **to_yaml()** and **from_yaml()** methods:
@@ -130,7 +130,7 @@ The SharedMemoryArray class supports sharing data between multiple Python proces
 To do so, it implements a shared memory buffer accessed via an n-dimensional NumPy array instance, allowing different 
 processes to read and write any element(s) of the array.
 
-#### Array Creation
+#### SharedMemoryArray Creation
 The SharedMemoryArray only needs to be instantiated __once__ by the main runtime process (thread) and provided to all 
 children processes as an input. The initialization process uses the specified prototype NumPy array and unique buffer 
 name to generate a (new) NumPy array whose data is stored in a shared memory buffer accessible from any thread or 
@@ -160,9 +160,9 @@ assert sma.datatype == prototype.dtype
 print(sma)
 ```
 
-#### Array Connection, Disconnection, and Destruction
+#### SharedMemoryArray Connection, Disconnection, and Destruction
 Each process using the SharedMemoryArray instance, __including__ the process that created it, must use the 
-__connect()__ method to connect to the array before reading or writing data. At the end of it’s runtime, each connected
+__connect()__ method to connect to the array before reading or writing data. At the end of its runtime, each connected
 process must call the __disconnect()__ method to release the local reference to the shared buffer. The **main** process 
 also needs to call the __destroy()__ method to destroy the shared memory buffer.
 ```
@@ -191,7 +191,7 @@ assert not sma.is_connected
 sma.destroy()  # For each create_array() call, there has to be a matching destroy() call
 ```
 
-#### Reading and Writing Array Data
+#### Reading and Writing SharedMemoryArray Data
 For routine data writing or reading operations, the SharedMemoryArray supports accessing its data via __indexing__ or 
 __slicing__, just like a regular NumPy array. Critically, accessing the data in this way is process-safe, as the 
 instance first acquires an exclusive multiprocessing Lock before interfacing with the data. For more complex access 
@@ -236,89 +236,132 @@ sma.disconnect()
 sma.destroy()
 ```
 
-#### Using the Array from Multiple Processes
-While all methods showcased above run from the same process, the main advantage of the SharedMemoryArray class is that 
+#### Using SharedMemoryArray from Multiple Processes
+While all methods showcased above run in the same process, the main advantage of the SharedMemoryArray class is that 
 it behaves the same way when used from different Python processes. See the [example](examples/shared_memory_array.py) 
 script for more details.
 
 ### DataLogger
-The DataLogger class sets up data logger instances running on isolated cores (Processes) and exposes a shared Queue 
-object for buffering and piping data from any other Process to the logger cores. Currently, the logger is only intended 
-for saving serialized byte arrays used by other Ataraxis libraries (notably: ataraxis-video-system and 
-ataraxis-transport-layer).
+The DataLogger class initializes and manages the runtime of a logger process running in an independent Process and 
+exposes a shared Queue object for buffering and piping data from any other Process to the logger. Currently, the 
+class is specifically designed for saving serialized byte arrays used by other Ataraxis libraries, most notably the
+__ataraxis-video-system__ and the __ataraxis-transport-layer__.
 
-#### Logger creation and use
-DataLogger is intended to only be initialized once and used by many input processes, which should be enough for most 
-use cases. However, it is possible to initialize multiple DataLogger instances by overriding the default 'instance_name'
-argument value. The example showcased below is also available as a [script](examples/data_logger.py):
+The sections below break down various aspects of working with the DataLogger instance. The individual sections can also
+be seen as a combined [example](examples/data_logger.py) script.
+
+#### Creating and Starting the DataLogger
+DataLogger is intended to only be initialized ***once*** in the main runtime thread (Process) and provided to all 
+children Processes as an input. ***Note!*** While a single DataLogger instance is typically enough for most use cases, 
+it is possible to use more than a single DataLogger instance at the same time.
 ```
-import time as tm
 from pathlib import Path
 import tempfile
+from ataraxis_data_structures import DataLogger
 
-import numpy as np
-
-from ataraxis_data_structures import DataLogger, LogPackage
-
-# Due to the internal use of Process classes, the logger has to be protected by the __main__ guard.
+# Due to the internal use of the 'Process' class, each DataLogger call has to be protected by the __main__ guard at
+# the highest level of the call hierarchy.
 if __name__ == "__main__":
-    # As a minimum, each DataLogger has to be given the output folder and the name to use for the shared buffer. The
-    # name has to be unique across all DataLogger instances used at the same time.
-    tempdir = tempfile.TemporaryDirectory()  # A temporary directory for illustration purposes
+
+    # As a minimum, each DataLogger has to be given the path to the output directory and a unique name to distinguish
+    # the instance from any other concurrently active DataLogger instance.
+    tempdir = tempfile.TemporaryDirectory()  # Creates a temporary directory for illustration purposes
     logger = DataLogger(output_directory=Path(tempdir.name), instance_name="my_name")
 
-    # The DataLogger will create a new folder: 'tempdir/my_name_data_log' to store logged entries.
+    # The DataLogger initialized above creates a new directory: 'tempdir/my_name_data_log' to store logged entries.
 
-    # Before the DataLogger starts saving data, its saver processes need to be initialized.
+    # Before the DataLogger starts saving data, its saver process needs to be initialized via the start() method.
+    # Until the saver is initialized, the instance buffers all incoming data in RAM (via the internal Queue object),
+    # which may eventually exhaust the available memory.
     logger.start()
 
-    # The data can be submitted to the DataLogger via its input_queue. This property returns a multiprocessing Queue
-    # object.
+    # Each call to the start() method must be matched with a corresponding call to the stop() method. This method shuts
+    # down the logger process and releases any resources held by the instance.
+    logger.stop()
+```
+
+#### Data Logging
+The DataLogger is explicitly designed to log serialized data of arbitrary size. To enforce the correct data formatting, 
+all data submitted to the logger ***must*** be packaged into a __LogPackage__ class instance before it is put into the
+DataLoger’s input queue.
+```
+from pathlib import Path
+import tempfile
+import numpy as np
+from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+from ataraxis_time import get_timestamp, TimestampFormats
+
+if __name__ == "__main__":
+    # Initializes and starts the DataLogger.
+    tempdir = tempfile.TemporaryDirectory()
+    logger = DataLogger(output_directory=Path(tempdir.name), instance_name="my_name")
+    logger.start()
+
+    # The DataLogger uses a multiprocessing Queue to buffer and pipe the incoming data to the saver process. The queue
+    # is accessible via the 'input_queue' property of each logger instance.
     logger_queue = logger.input_queue
 
-    # The data to be logged has to be packaged into a LogPackage dataclass before being submitted to the Queue.
-    source_id = np.uint8(1)  # Has to be an unit8
-    timestamp = np.uint64(tm.perf_counter_ns())  # Has to be an uint64
-    data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)  # Has to be an uint8 numpy array
+    # The DataLogger is explicitly designed to log serialized data. All data submitted to the logger must be packaged
+    # into a LogPackage instance to ensure that it adheres to the proper format expected by the logger instance.
+    source_id = np.uint8(1)  # Has to be an unit8 type
+    timestamp = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))  # Has to be an uint64 type
+    data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)  # Has to be an uint8 NumPy array
     logger_queue.put(LogPackage(source_id, timestamp, data))
 
-    # The timer used to timestamp the log entries has to be precise enough to resolve two consecutive datapoints
-    # (timestamps have to differ for the two consecutive datapoints, so nanosecond or microsecond timers are best).
-    timestamp = np.uint64(tm.perf_counter_ns())
+    # The timer used to timestamp the log entries has to be precise enough to resolve two consecutive data entries.
+    # Due to these constraints, it is recommended to use a nanosecond or microsecond timer, such as the one offered
+    # by the ataraxis-time library.
+    timestamp = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))
     data = np.array([6, 7, 8, 9, 10], dtype=np.uint8)
-    logger_queue.put(LogPackage(source_id, timestamp, data))  # Same source id
+    logger_queue.put(LogPackage(source_id, timestamp, data))  # Same source id as the package above
 
-    # Shutdown ensures all buffered data is saved before the logger is terminated. This prevents all further data
-    # logging until the instance is started again.
+    # Stops the data logger.
     logger.stop()
 
-    # Verifies two .npy files were created, one for each submitted LogPackage. Note, DataLogger exposes the path to the
-    # log folder via its output_directory property.
+    # The DataLogger saves the input LogPackage instances as serialized NumPy byte array .npy files. The output 
+    # directory for the saved files can be queried from the DataLogger instance's 'output_directory' property.
     assert len(list(logger.output_directory.glob("**/*.npy"))) == 2
+```
 
-    # The logger also provides a method for compressing all .npy files into .npz archives. This method is intended to be
-    # called after the 'online' runtime is over to optimize the memory occupied by data. To achieve minimal disk space
-    # usage, call the method with the remove_sources argument.
-    logger.compress_logs(remove_sources=True)
+#### Log Archive Assembly
+To optimize the log writing speed and minimize the time the data sits in the volatile memory, all log entries are saved 
+to disk as separate NumPy array .npy files. While this format is efficient for time-critical runtimes, it is not 
+optimal for long-term storage and data transfer. To help with optimizing the post-runtime data storage, the library 
+offers the __assemble_log_archives()__ function which aggregates .npy files from the same data source into an
+(uncompressed) .npz archive.
 
-    # The compression creates a single .npz file named after the source_id
+```
+from pathlib import Path
+import tempfile
+import numpy as np
+from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+
+if __name__ == "__main__":
+
+    # Creates and starts the DataLogger instance.
+    tempdir = tempfile.TemporaryDirectory()
+    logger = DataLogger(output_directory=Path(tempdir.name), instance_name="my_name")
+    logger.start()
+    logger_queue = logger.input_queue
+
+    # Generates and logs 255 data messages. This generates 255 unique .npy files under the logger's output directory.
+    for i in range(255):
+        logger_queue.put(LogPackage(np.uint8(1), np.uint64(i), np.array([i, i, i], dtype=np.uint8)))
+
+    # Stops the data logger.
+    logger.stop()
+
+    # Depending on the runtime context, a DataLogger instance can generate a large number of individual .npy files as
+    # part of its runtime. While having advantages for real-time data logging, this format of storing the data is not
+    # ideal for later data transfer and manipulation. Therefore, it is recommended to always use the
+    # assemble_log_archives() function to aggregate the individual .npy files into one or more .npz archives.
+    assemble_log_archives(log_directory=logger.output_directory, remove_sources=True, memory_mapping=True, verbose=True)
+
+    # The archive assembly creates a single .npz file named after the source_id (1_log.npz), using all available .npy
+    # files. Generally, each unique data source is assembled into a separate .npz archive.
     assert len(list(logger.output_directory.glob("**/*.npy"))) == 0
     assert len(list(logger.output_directory.glob("**/*.npz"))) == 1
 ```
-
-#### Log compression
-To optimize runtime performance (log writing speed), all log entries are saved to disk as serialized NumPy arrays, each
-stored in a separate .npy file. While this format is adequate during time-critical runtimes, it is not optimal for 
-long-term storage and data transfer.
-
-To facilitate long-term log storage, the library exposes a global, multiprocessing-safe, and instance-independent 
-function `compress_npy_logs()`. This function behaves exactly like the instance-bound log compression method does, but 
-can be used to compress log entries without the need to have an initialized DataLogger instance. You can
-use the `output_directory` property of an initialized DataLogger instance to get the path to the directory that stores 
-uncompressed log entries, which is a required argument for the instance-independent log compression function.
-
-Alternatively, you can also use the `compress_logs` method exposed by the DataLogger instance to compress the logs 
-immediately after runtime. Overall, it is highly encouraged to compress the logs as soon as possible.
 
 ___
 
