@@ -1,53 +1,56 @@
-import time as tm
 from pathlib import Path
 import tempfile
-
 import numpy as np
+from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+from ataraxis_time import get_timestamp, TimestampFormats
 
-from ataraxis_data_structures import DataLogger, LogPackage
-
-# Due to the internal use of Process classes, the logger has to be protected by the __main__ guard.
+# Due to the internal use of the 'Process' class, each DataLogger call has to be protected by the __main__ guard at
+# the highest level of the call hierarchy.
 if __name__ == "__main__":
-    # As a minimum, each DataLogger has to be given the output folder and the name to use for the shared buffer. The
-    # name has to be unique across all DataLogger instances used at the same time.
-    tempdir = tempfile.TemporaryDirectory()  # A temporary directory for illustration purposes
+    # As a minimum, each DataLogger has to be given the path to the output directory and a unique name to distinguish
+    # the instance from any other concurrently active DataLogger instance.
+    tempdir = tempfile.TemporaryDirectory()  # Creates a temporary directory for illustration purposes
     logger = DataLogger(output_directory=Path(tempdir.name), instance_name="my_name")
 
-    # The DataLogger will create a new folder: 'tempdir/my_name_data_log' to store logged entries.
+    # The DataLogger initialized above creates a new directory: 'tempdir/my_name_data_log' to store logged entries.
 
-    # Before the DataLogger starts saving data, its saver processes need to be initialized.
+    # Before the DataLogger starts saving data, its saver process needs to be initialized via the start() method.
+    # Until the saver is initialized, the instance buffers all incoming data in RAM (via the internal Queue object),
+    # which may eventually exhaust the available memory.
     logger.start()
 
-    # The data can be submitted to the DataLogger via its input_queue. This property returns a multiprocessing Queue
-    # object.
+    # The DataLogger uses a multiprocessing Queue to buffer and pipe the incoming data to the saver process. The queue
+    # is accessible via the 'input_queue' property of each logger instance.
     logger_queue = logger.input_queue
 
-    # The data to be logged has to be packaged into a LogPackage dataclass before being submitted to the Queue.
-    source_id = np.uint8(1)  # Has to be an unit8
-    timestamp = np.uint64(tm.perf_counter_ns())  # Has to be an uint64
-    data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)  # Has to be an uint8 numpy array
+    # The DataLogger is explicitly designed to log serialized data. All data submitted to the logger must be packaged
+    # into a LogPackage instance to ensure that it adheres to the proper format expected by the logger instance.
+    source_id = np.uint8(1)  # Has to be an unit8 type
+    timestamp = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))  # Has to be an uint64 type
+    data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)  # Has to be an uint8 NumPy array
     logger_queue.put(LogPackage(source_id, timestamp, data))
 
-    # The timer used to timestamp the log entries has to be precise enough to resolve two consecutive datapoints
-    # (timestamps have to differ for the two consecutive datapoints, so nanosecond or microsecond timers are best).
-    timestamp = np.uint64(tm.perf_counter_ns())
+    # The timer used to timestamp the log entries has to be precise enough to resolve two consecutive data entries.
+    # Due to these constraints, it is recommended to use a nanosecond or microsecond timer, such as the one offered
+    # by the ataraxis-time library.
+    timestamp = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))
     data = np.array([6, 7, 8, 9, 10], dtype=np.uint8)
-    logger_queue.put(LogPackage(source_id, timestamp, data))  # Same source id
+    logger_queue.put(LogPackage(source_id, timestamp, data))  # Same source id as the package above
 
-    # Shutdown ensures all buffered data is saved before the logger is terminated. This prevents all further data
-    # logging until the instance is started again.
+    # Stops the data logger.
     logger.stop()
 
-    # Verifies two .npy files were created, one for each submitted LogPackage. Note, DataLogger exposes the path to the
-    # log folder via its output_directory property.
+    # The DataLogger saves the input LogPackage instances as serialized NumPy byte array .npy files. The output
+    # directory for the saved files can be queried from the DataLogger instance's 'output_directory' property.
     assert len(list(logger.output_directory.glob("**/*.npy"))) == 2
 
-    # The logger also provides a method for compressing all .npy files into .npz archives. This method is intended to be
-    # called after the 'online' runtime is over to optimize the memory occupied by data. To achieve minimal disk space
-    # usage, call the method wit the remove_sources argument. The method verifies compressed data against the original
-    # entries before removing source files, so it is always safe to delete source files.
-    logger.compress_logs(remove_sources=True)
+    # Depending on the runtime context, a DataLogger instance can generate a large number of individual .npy files as
+    # part of its runtime. While having advantages for real-time data logging, this format of storing the data is not
+    # ideal for later data transfer and manipulation. Therefore, it is recommended to always use the
+    # assemble_log_archives() function to aggregate the individual .npy files into one or more .npz archives.
+    assemble_log_archives(log_directory=logger.output_directory, remove_sources=True, memory_mapping=True, verbose=True)
 
-    # The compression creates a single .npz file named after the source_id
+    # The archive assembly creates a single .npz file named after the source_id (1_log.npz), using all available .npy
+    # files. Generally, each unique data source is assembled into a separate .npz archive.
     assert len(list(logger.output_directory.glob("**/*.npy"))) == 0
     assert len(list(logger.output_directory.glob("**/*.npz"))) == 1

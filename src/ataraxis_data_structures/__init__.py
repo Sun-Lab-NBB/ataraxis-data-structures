@@ -1,13 +1,13 @@
-"""A Python library that provides classes and structures for storing, manipulating and sharing data between Python
+"""A Python library that provides classes and structures for storing, manipulating, and sharing data between Python
 processes.
 
 See https://github.com/Sun-Lab-NBB/ataraxis-data-structures for more details.
 API documentation: https://ataraxis-data-structures-api-docs.netlify.app/
-Authors: Ivan Kondratyev (Inkaros) & Edwin Chen
+Author: Ivan Kondratyev (Inkaros)
 """
 
-from .data_loggers import DataLogger, LogPackage, compress_npy_logs
+from .data_loggers import DataLogger, LogPackage, assemble_log_archives
 from .shared_memory import SharedMemoryArray
-from .data_structures import YamlConfig, NestedDictionary
+from .data_structures import YamlConfig
 
-__all__ = ["SharedMemoryArray", "NestedDictionary", "YamlConfig", "DataLogger", "LogPackage", "compress_npy_logs"]
+__all__ = ["DataLogger", "LogPackage", "SharedMemoryArray", "YamlConfig", "assemble_log_archives"]

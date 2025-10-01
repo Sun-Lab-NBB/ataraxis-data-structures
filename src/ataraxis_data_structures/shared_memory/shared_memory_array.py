@@ -1,15 +1,10 @@
-"""This module contains the SharedMemoryArray class that allows moving data between multiple Python processes through
-a shared one-dimensional numpy array.
-
-SharedMemoryArray works by creating multiple numpy array instances, one per each process, that share the same data
-buffer. It is equipped with the necessary mechanisms to ensure thread- and process-safe data manipulation and functions
-as an alternative to Queue objects.
+"""This module provides the SharedMemoryArray class that allows moving data between multiple Python processes through
+a shared n-dimensional NumPy array memory buffer.
 """
 
-from copy import copy
 from typing import Any
 from contextlib import contextmanager
-from collections.abc import Iterable, Generator
+from collections.abc import Generator
 from multiprocessing import Lock
 from multiprocessing.shared_memory import SharedMemory
 
@@ -19,53 +14,42 @@ from ataraxis_base_utilities import console
 
 
 class SharedMemoryArray:
-    """Wraps a one-dimensional numpy array object and exposes methods for accessing the array data from multiple Python
-    processes.
+    """Wraps a NumPy n-dimensional array object and exposes methods for accessing the array's data from multiple
+    different Python processes.
 
-    This class enables sharing data between multiple Python processes in a way that compliments the functionality of
-    the multiprocessing Queue class. Like Queue, this class provides the means for sharing data between multiple
-    processes by implementing a shared memory buffer. Unlike Queue, which behaves like a buffered stream, the
-    SharedMemoryArray class behaves like a numpy array. Unlike with Queue, the size and datatype of the array are fixed
-    after initialization and cannot be changed. However, the elements of the array can be randomly accessed and
-    modified, unlike the elements of the Queue, that can only be processed serially.
-
-    This class should only be instantiated inside the main process via its create_array() method. Do not attempt to
-    instantiate the class manually. All child processes working with this class should use the connect() method to
-    connect to the shared array wrapped by the class before calling any other method.
+    During initialization, this class creates a persistent memory buffer to which it connects from different Python
+    processes. The data inside the buffer is accessed via an n-dimensional NumPy array with optional locking to prevent
+    race conditions.
 
     Notes:
-        Shared memory objects are garbage-collected differently depending on the host OS. On Windows, garbage collection
-        is handed off to the OS and cannot be enforced manually. On Unix (OSx and Linux), the buffer can be
-        garbage-collected via appropriate commands. Make sure you call the destroy() method as part of your cleanup
-        routine for each process that creates the SharedMemoryArray instance on Unix platforms, or your system will be
-        hogged by leftover Sharedmemory buffers.
+        This class should only be instantiated inside the main runtime thread via the create_array() method. Do not
+        attempt to instantiate the class manually. All child processes working with this class should use the connect()
+        method to connect to the shared array wrapped by the class before calling any other method.
+
+        Shared memory buffers are garbage-collected differently depending on the host Operating System. On Windows,
+        garbage collection is handed off to the OS and cannot be enforced manually. On Unix (macOS and Linux), the
+        buffer can be garbage-collected by calling the destroy() method.
 
     Args:
-        name: The descriptive name to use for the shared memory array. The OS uses names to identify shared
-            memory objects and have to be unique.
-        shape: The shape of the shared numpy array.
-        datatype: The datatype of the shared numpy array.
-        buffer: The shared memory buffer that stores the data of the array and enables accessing the same data from
-            different Python processes.
+        name: The unique name to use for the shared memory buffer.
+        shape: The shape of the NumPy array used to access the data in the shared memory buffer.
+        datatype: The datatype of the NumPy array used to access the data in the shared memory buffer.
+        buffer: The SharedMemory buffer that stores the shared data.
 
     Attributes:
-        _name: Stores the name of the shared memory object.
-        _shape: Stores the shape of the numpy array used to represent the buffered data.
-        _datatype: Stores the datatype of the numpy array used to represent the buffered data.
-        _buffer: The Shared Memory buffer object used to store the shared array data.
-        _lock: A Lock object used to prevent multiple processes from working with the shared array data at the same
+        _name: Stores the name of the shared memory buffer.
+        _shape: Stores the shape of the NumPy array used to access the buffered data.
+        _datatype: Stores the datatype of the NumPy array used to access the buffered data.
+        _buffer: Stores the Shared Memory buffer object.
+        _lock: Stores the Lock object used to prevent multiple processes from working with the shared data at the same
             time.
-        _array: Stores the connected shared numpy array.
-        _is_connected: Tracks whether the shared memory array wrapped by this class has been connected to.
+        _array: Stores the NumPy array used to interface with the data stored in the shared memory buffer.
+        _connected: Tracks whether the instance is connected to the shared memory buffer.
+        _destroy_buffer: Tracks whether the shared memory buffer should be destroyed if this instance is
+            garbage-collected.
     """
 
-    def __init__(
-        self,
-        name: str,
-        shape: tuple[int, ...],
-        datatype: np.dtype[Any],
-        buffer: SharedMemory | None,
-    ):
+    def __init__(self, name: str, shape: tuple[int, ...], datatype: np.dtype[Any], buffer: SharedMemory) -> None:
         # Initialization method only saves input data into attributes. The method that actually sets up the class is
         # the create_array() class method.
         self._name: str = name
@@ -73,82 +57,170 @@ class SharedMemoryArray:
         self._datatype: np.dtype[Any] = datatype
         self._buffer: SharedMemory | None = buffer
         self._lock = Lock()
-        self._array: NDArray[Any] | None = None
-        self._is_connected: bool = False
+        self._array: NDArray[Any] = np.zeros(shape=shape, dtype=datatype)
+        self._connected: bool = False
+        self._destroy_buffer: bool = False
 
     def __repr__(self) -> str:
-        """Generates and returns a class representation string."""
+        """Returns the string representation of the SharedMemoryArray instance."""
         return (
             f"SharedMemoryArray(name='{self._name}', shape={self._shape}, datatype={self._datatype}, "
             f"connected={self.is_connected})"
         )
 
     def __del__(self) -> None:
-        """Ensures the class is disconnected from the shared memory buffer when it is garbage-collected."""
-        self.disconnect()
+        """Ensures that the shared memory buffer is released when the instance is garbage-collected."""
+        # If the termination guard is set, attempts to disconnect AND destroy the shared memory buffer as part of the
+        # method's shutdown sequence.
+        if self._destroy_buffer:
+            self.destroy()
+        else:
+            # Otherwise, only disconnects the shared memory buffer.
+            self.disconnect()
+
+    def __getitem__(self, index: int | slice) -> Any:
+        """Gets value(s) at the specified array index or slice with automatic locking.
+
+        This method allows retrieving the data from the SharedMemoryArray instance without manually accessing the
+        underlying array object. It is designed for simple access operations, such as reading a boolean flag value.
+
+        Notes:
+            This method always acquires the lock for thread-safe access. Use the array() method with the appropriate
+            locking configuration to read or write the data without locking.
+
+        Args:
+            index: The array index or slice to access.
+
+        Returns:
+            The value or array slice at the specified index. The returned data always uses an appropriate NumPy
+            array or scalar datatype.
+
+        Raises:
+            ConnectionError: If the instance is not connected to the shared memory buffer.
+            IndexError: If the requested index is out of bounds.
+        """
+        if not self._connected or self._array is None:
+            message = (
+                f"Unable to access the data stored in the {self.name} SharedMemoryArray instance, as the instance is "
+                f"not connected to the shared memory buffer. Call the connect() method prior to accessing the array's "
+                f"data."
+            )
+            console.error(message=message, error=ConnectionError)
+
+            # Fallback to appease mypy, should not be reachable.
+            raise ConnectionError(message)  # pragma: no cover
+
+        with self.array(with_lock=True) as arr:
+            # Returns a copy to prevent external modifications to the returned data from affecting the shared array
+            # without going through __setitem__
+            result = arr[index]
+            if isinstance(result, np.ndarray):
+                return result.copy()
+            return result
+
+    def __setitem__(self, index: int | slice, value: Any) -> None:
+        """Sets value(s) at the specified array index or slice with automatic locking.
+
+        This method allows modifying the data of the SharedMemoryArray instance without manually accessing the
+        underlying array object. It is designed for simple modification operations, such as writing a boolean flag
+        value.
+
+        Notes:
+            The input values are saved in the underlying NumPy n-dimensional array. If the values are not
+            compatible with the array's datatype, they are converted to the array's datatype before being written.
+
+            This method always acquires the lock for thread-safe access. Use the array() method with the appropriate
+            locking configuration to read or write the data without locking.
+
+        Args:
+            index: The array index or slice to set.
+            value: The value(s) to set at the specified index or slice.
+
+        Raises:
+            ConnectionError: If the instance is not connected to the shared memory buffer.
+            IndexError: If the requested index is out of bounds.
+            ValueError: If value's shape does not match the slice shape.
+        """
+        if not self._connected or self._array is None:
+            message = (
+                f"Unable to modify the data stored in the {self.name} SharedMemoryArray instance, as the instance is "
+                f"not connected to the shared memory buffer. Call the connect() method prior to modifying the array's "
+                f"data."
+            )
+            console.error(message=message, error=ConnectionError)
+
+            # Fallback to appease mypy, should not be reachable.
+            raise ConnectionError(message)  # pragma: no cover
+
+        # Writes the input values at the specified index
+        with self.array(with_lock=True) as arr:
+            arr[index] = value
+
+    def enable_buffer_destruction(self) -> None:
+        """Configures the instance to destroy the shared memory buffer when it is garbage-collected.
+
+        Enabling this option ensures that all shared memory buffer objects are properly cleaned up on Unix systems
+        when the program runtime ends.
+
+        Notes:
+            This method should only be called in the main runtime thread after setting up all child processes. Calling
+            this method before starting the child processes may result in unexpected behavior due to child processes
+            destroying the buffer as part of their shutdown sequence.
+        """
+        self._destroy_buffer = True
 
     @classmethod
     def create_array(
         cls,
         name: str,
         prototype: NDArray[Any],
-        exist_ok: bool = False,
+        *,
+        exists_ok: bool = False,
     ) -> "SharedMemoryArray":
-        """Creates a SharedMemoryArray class instance using the input one-dimensional prototype array.
+        """Creates a SharedMemoryArray instance using the input prototype NumPy array.
 
-        This method uses the input prototype to generate a new numpy array that uses a shared memory buffer to store
-        its data. It then extracts the information required to connect to the buffer and reinitialize the array in
-        a different Python process and saves it to class attributes.
+        This method uses the input prototype to generate the shared memory buffer to store the prototype's data and
+        fills the buffer with the data from the prototype array. All further interactions with the returned
+        SharedMemoryArray instance manipulate the data stored in the shared memory buffer.
 
         Notes:
-            This method should only be called when the array is first created in the main process (scope). All
+            This method should only be called when the array is first created in the main runtime thread (scope). All
             child processes should use the connect() method to connect to the existing array.
 
+            After passing the returned instance to all child processes, call the instance's connect() and
+            enable_buffer_destruction() methods. Calling these methods before sharing the instance with the child
+            processes is likely to result in undefined behavior.
+
         Args:
-            name: The name to give to the created SharedMemory object. Note, this name has to be unique across all
-                processes using the array.
-            prototype: The numpy ndarray instance to serve as the prototype for the created SharedMemoryArray.
-                Currently, this class only works with flat (one-dimensional) numpy arrays. If you want to use it for
-                multidimensional arrays, consider using np.ravel() or np.ndarray.flatten() methods to flatten your
-                array.
-            exist_ok: Determines how the method handles the case where the Sharedmemory buffer with the same name
-                already exists. If the flag is False, the class will raise an exception and abort SharedMemoryArray
-                creation. If the flag is True, the class will destroy the old buffer and recreate the new buffer using
-                the vacated name.
+            name: The unique name to use for the shared memory buffer.
+            prototype: The prototype NumPy array instance for the created SharedMemoryArray.
+            exists_ok: Determines how the method handles the case where the shared memory buffer with the same name
+                already exists. If False, the method raises an exception. If True, the method destroys the existing
+                buffer and creates a new buffer using the input name and prototype data.
 
         Returns:
-            The configured SharedMemoryArray class instance. This instance should be passed to each of the processes
-            that needs to access the wrapped array data.
+            The created SharedMemoryArray instance.
 
         Raises:
-            TypeError: If the input prototype is not a numpy ndarray.
+            TypeError: If the input prototype is not a NumPy array.
             FileExistsError: If a shared memory object with the same name as the input 'name' argument value already
-                exists.
+                exists and the 'exists_ok' flag is False.
         """
         # Ensures prototype is a numpy ndarray
         if not isinstance(prototype, np.ndarray):
             message = (
                 f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object '{name}'. "
-                f"Expected a flat (one-dimensional) numpy ndarray but instead encountered {type(prototype).__name__}."
+                f"Expected a flat (one-dimensional) NumPy array but instead encountered {type(prototype).__name__}."
             )
             console.error(message=message, error=TypeError)
 
-        # Also ensures that the prototype is flat
-        if prototype.ndim != 1:
-            message = (
-                f"Invalid 'prototype' array shape encountered when creating SharedMemoryArray object '{name}'. "
-                f"Expected a flat (one-dimensional) numpy ndarray but instead encountered prototype with shape "
-                f"{prototype.shape} and dimensions number {prototype.ndim}."
-            )
-            console.error(message=message, error=ValueError)
-
-        # Creates the shared memory object. This process will raise FileExistsError if an object with this name
-        # already exists. The shared memory object is used as a buffer to store the array data.
+        # Creates the shared memory buffer. This process raises FileExistsError if an object with this name
+        # already exists.
         try:
             buffer: SharedMemory = SharedMemory(name=name, create=True, size=prototype.nbytes)
         except FileExistsError:
             # If the buffer already exists, but the method is configured to recreate the buffer, destroys the old buffer
-            if exist_ok:
+            if exists_ok:
                 # Destroys the existing shared memory buffer
                 SharedMemory(name=name, create=False).unlink()
 
@@ -158,353 +230,126 @@ class SharedMemoryArray:
             # Otherwise, raises an exception
             else:
                 message = (
-                    f"Unable to create SharedMemoryArray object using name '{name}', as object with this name already "
-                    f"exists. If this method is called from a child process, use connect() method to connect to the "
-                    f"SharedMemoryArray from a child process. To recreate the buffer left over from a previous "
-                    f"runtime, run this method with the 'exist_ok' flag set to True."
+                    f"Unable to create the '{name}' SharedMemoryArray object, as an object with this name already "
+                    f"exists. If this method is called from a child process, use the connect() method instead "
+                    f"to connect to the existing buffer. To clean-up the buffer left over from a previous "
+                    f"runtime, run this method with the 'exists_ok' flag set to True."
                 )
                 console.error(message=message, error=FileExistsError)
 
-        # Instantiates a numpy ndarray using the shared memory buffer and copies prototype array data into the shared
+                # Fallback to appease mypy, should not be reachable.
+                raise FileExistsError(message) from None  # pragma: no cover
+
+        # Instantiates a numpy array using the shared memory buffer and copies the prototype array data into the shared
         # array instance.
-        # noinspection PyUnboundLocalVariable
         shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
         shared_array[:] = prototype[:]
 
-        # Packages the data necessary to connect to the shared array into the class object.
-        shared_memory_array = cls(
+        # Packages the data necessary to connect to the shared array into the class instance and returns it to caller.
+        return cls(
             name=name,
             shape=shared_array.shape,
             datatype=shared_array.dtype,
             buffer=buffer,
         )
 
-        # Connects the internal _array of the class object to the shared memory buffer.
-        shared_memory_array.connect()
-
-        # Returns the instantiated and connected class object to caller.
-        return shared_memory_array
-
     def connect(self) -> None:
-        """Connects to the shared memory buffer that stores the array data, allowing to access and manipulate the data
-        through this class.
+        """Connects to the shared memory buffer, allowing the instance to access and manipulate the shared data.
 
-        This method should be called once for each Python process that uses this class, before calling any other
-        methods. It is called automatically as part of the create_array() method runtime.
+        This method should be called once for each Python process that uses this instance before calling any other
+        methods.
+
+        Notes:
+            Do not call this method from the main runtime thread before starting all child processes that use this
+            instance. Otherwise, the child processes may not be able to connect to the shared memory buffer.
         """
-        self._buffer = SharedMemory(name=self._name, create=False)  # Connects to the buffer
-        # Re-initializes the internal _array with the data from the shared memory buffer.
-        self._array = np.ndarray(shape=self._shape, dtype=self._datatype, buffer=self._buffer.buf)
-        self._is_connected = True
+        if not self._connected:
+            # Connects to the shared memory buffer
+            self._buffer = SharedMemory(name=self._name, create=False)
+            # Re-initializes the internal _array with the data from the shared memory buffer.
+            self._array = np.ndarray(shape=self._shape, dtype=self._datatype, buffer=self._buffer.buf)
+            self._connected = True
 
     def disconnect(self) -> None:
-        """Disconnects the class from the shared memory buffer.
+        """Disconnects from the shared memory buffer, preventing the instance from accessing and manipulating the
+        shared data.
 
-        This method should be called whenever the process no longer requires shared buffer access.
+        This method should be called by each Python process that no longer requires shared buffer access or as part
+        of its shutdown sequence.
 
         Notes:
             This method does not destroy the shared memory buffer. It only releases the local reference to the shared
-            memory buffer, potentially enabling it to be garbage-collected.
+            memory buffer, potentially enabling it to be garbage-collected by the Operating System. Use the destroy()
+            method on Unix-based Operating Systems to destroy the buffer.
         """
-        if self._is_connected and self._buffer is not None:
+        if self._connected and self._buffer is not None:
             self._buffer.close()
-            self._is_connected = False
+            self._connected = False
 
     def destroy(self) -> None:
-        """Requests the underlying shared memory buffer to be destroyed.
+        """Requests the instance's shared memory buffer to be destroyed.
 
-        This method should only be called once from the highest runtime scope. Typically, this is done as part of a
-        global runtime shutdown procedure to ensure all resources are released. Calling this method while having
-        SharedMemoryArray instances connected to the buffer will lead to undefined behavior.
-
-        This method will only work if the current instance is NOT connected to the buffer.
+        This method should only be called once from the highest runtime scope. Calling this method while having
+        SharedMemoryArray instances connected to the buffer leads to undefined behavior.
 
         Notes:
             This method does not do anything on Windows. Windows automatically garbage-collects the buffers as long as
             they are no longer connected to by any SharedMemoryArray instances.
         """
-        if not self._is_connected and self._buffer is not None:
+        if self._buffer is not None:
+            # If the instance is connected to the buffer, first disconnects it from the buffer
+            self.disconnect()
+
+            # Requests the shared memory buffer to be destroyed
             self._buffer.unlink()
 
-    def _convert_to_slice(self, index: tuple[int, ...]) -> tuple[int, int | None]:
-        """Converts the input tuple into start and stop arguments compatible with numpy slice operation.
-
-        Args:
-            index: The tuple of integers to parse as slice arguments. Has to contain a minimum of 1 element (start) and
-                a maximum of 2 elements (start and stop).
-
-        Returns:
-            A 2-element tuple. The first element is start, and it is expected to always be an integer. The second
-            element is stop, and it can be an integer or None.
-
-        Raises:
-            ValueError: If the input tuple contains an invalid number of elements.
-        """
-        # Parses the index tuple into slicing arguments (start and stop)
-        start: int
-        stop: int | None
-        if isinstance(index, tuple):
-            # Start only
-            if len(index) == 1:
-                start = int(index[0])
-                return start, None
-            # Start and stop
-            if len(index) == 2:
-                start = int(index[0])
-                stop = int(index[1])
-                return start, stop
-            # Invalid input
-            message: str = (
-                f"Unable to convert the index tuple into slice arguments for {self.name} SharedMemoryArray "
-                f"instance. Expected a tuple with 1 or 2 elements (start and stop), but instead encountered "
-                f"a tuple with {len(index)} elements."
-            )
-            console.error(message=message, error=ValueError)
-            # Fallback to appease mypy, should not be reachable
-            raise ValueError(message)  # pragma: no cover
+            # Releases the reference to the shared memory buffer
+            self._buffer = None
 
     @contextmanager
-    def _optional_lock(self, with_lock: bool) -> Generator[Any, Any, None]:
-        """Conditionally acquires the lock if the caller instructs the manager to do so.
+    def array(self, *, with_lock: bool = True) -> Generator[NDArray[Any], None, None]:
+        """Returns a context manager for accessing the managed shared memory array with optional locking.
 
-        This is used to make locking optional for all data manipulation methods, improving class flexibility.
+        This method provides direct access to the underlying NumPy array through a context manager, with optional
+        multiprocessing lock acquisition. It is recommended to call this method from a 'with' statement to ensure
+        the proper lock acquisition and release.
 
         Args:
-            with_lock: Determine if the context should be run with or without the multiprocessing lock object.
+            with_lock: Determines whether to acquire the multiprocessing Lock before accessing the array. Acquiring
+                the lock prevents collisions with other Python processes trying to simultaneously access the array's
+                data.
 
-        Returns:
-              The context that has acquired the lock or an empty context if lock is not required.
+        Notes:
+            When with_lock=True (default), the lock is held for the entire duration of the context. Keep operations
+            concise to avoid blocking other processes. When with_lock=False, ensure no other processes are writing to
+            avoid race conditions and data corruption.
 
+            The returned array is the actual shared array, not a copy. All modifications to the array are immediately
+            visible to other processes.
+
+        Yields:
+            The shared NumPy array that can be directly manipulated using any NumPy operations. Changes made to this
+            array directly affect the data stores in the shared memory buffer.
+
+        Raises:
+            ConnectionError: If the class instance is not connected to the shared memory buffer.
         """
+        # Ensures the class is connected to the shared memory buffer
+        if not self._connected or self._array is None:
+            message = (
+                f"Unable to access the data stored in the {self.name} SharedMemoryArray instance, as the it is not "
+                f"connected to the shared memory buffer. Call the connect() method prior to calling the array() method."
+            )
+            console.error(message=message, error=ConnectionError)
+            # This line shouldn't be reached due to console.error, but included for type checking
+            raise ConnectionError(message)  # pragma: no cover
+
+        # Conditionally acquire lock based on the 'with_lock' parameter
         if with_lock:
             with self._lock:
-                yield
+                yield self._array
         else:
-            yield
-
-    def _verify_indices(self, start: int, stop: int | None) -> tuple[int, int | None]:
-        """Converts start and stop indices used to slice the shared numpy array to positive values (if needed) and
-        verifies them against array boundaries.
-
-        This function handles both positive and negative indices, as well as None values.
-
-        Args:
-            start: The starting index of the slice. Can be positive or negative.
-            stop: The ending index of the slice. Can be positive, negative, or None.
-
-        Returns:
-            A tuple of (start, stop) indices, where start is always an int and stop can be int or None.
-
-        Raises:
-            ValueError: If start index is larger than the stop index after both are converted to positive numbers
-            IndexError: If either of the two indices is outside the array boundaries.
-        """
-        array_length = self.shape[0]
-
-        # Saves initial start and stop index values to be used in error messages
-        initial_start = copy(start)
-        initial_stop = copy(stop)
-
-        # Converts negative start index to positive
-        if start < 0:
-            start += array_length
-
-        # Converts negative stop index to positive if it's not None. Uses < 1 here because stop normally cannot be 0
-        # when it is valid. When stop is 0, this likely means it was produced from a single -1 (-1 + 1 = 0).
-        if stop is not None and stop < 1:
-            stop += array_length
-
-        # Checks if start is within bounds
-        if start < 0 or start >= array_length:
-            message = (
-                f"Unable to retrieve the data from {self.name} SharedMemoryArray class instance using start index "
-                f"{initial_start}. The index is outside the valid start index range ({0}:{array_length - 1})."
-            )
-            console.error(message=message, error=IndexError)
-
-        # Checks if stop is within bounds if it's not None
-        if stop is not None and (stop < 1 or stop > array_length):
-            message = (
-                f"Unable to retrieve the data from {self.name} SharedMemoryArray class instance using stop index "
-                f"{initial_stop}. The index is outside the valid stop index range ({1}:{array_length})."
-            )
-            console.error(message=message, error=IndexError)
-
-        # Ensures start is not greater than stop (if stop is not None)
-        if stop is not None and start > stop:
-            message = (
-                f"Invalid pair of slice indices encountered when manipulating data of the {self.name} "
-                f"SharedMemoryArray class instance. The start index ({initial_start}) is greater than the end index "
-                f"({initial_stop}), which is not allowed."
-            )
-            console.error(message=message, error=ValueError)
-
-        return start, stop
-
-    def read_data(self, index: int | tuple[int, ...], *, convert_output: bool = False, with_lock: bool = True) -> Any:
-        """Reads data from the shared memory array at the specified slice or index.
-
-        This method allows flexibly extracting slices and single values from the shared memory array wrapped by the
-        class. The extracted data can be returned using numpy datatype or converted to Python datatype, if requested.
-        Reading from the array will behave exactly like reading from a regular numpy array.
-
-        Args:
-            index: An integer index to read, when reading scalar data points. A tuple of up to 2 integers in the
-                format (start, stop), when reading slices. A minimum of one integer (start) in the tuple is
-                required. Stop index is excluded from the returned data slice (last returned index is stop-1).
-            convert_output: Determines whether to convert the retrieved data into the closest Python datatype or to
-                return it as the numpy datatype.
-            with_lock: Determines whether to acquire the multiprocessing Lock before reading the data. Acquiring the
-                lock prevents collisions with other python processes, but this may not be necessary for some use cases.
-
-        Returns:
-            The data at the specified index or slice. When a single data-value is extracted, it is returned as a
-            scalar. When multiple data-values are extracted, they are returned as iterable (list, tuple, or numpy
-            array).
-
-        Raises:
-            RuntimeError: If the class instance is not connected to a shared memory buffer.
-            ValueError: If the input index tuple contains an invalid number of elements to parse it as slice start and
-                stop values. If using slice indices and start index is greater than stop index after indices are
-                converted to positive numbers (this is done internally, input indices can be negative).
-            IndexError: If the input index or slice is outside the array boundaries.
-        """
-        # Ensures the class is connected to the shared memory buffer
-        if not self._is_connected or self._array is None:
-            message: str = (
-                f"Unable to access the data stored in the {self.name} SharedMemoryArray instance, as the class is not "
-                f"connected to the shared memory buffer. Use connect() method prior to calling other class methods."
-            )
-            console.error(message=message, error=RuntimeError)
-
-        # If index is a tuple, decomposes it into slice operands to use on the array
-        start: int = 0
-        stop: int | None = None
-        if isinstance(index, tuple):
-            # noinspection PyTypeChecker
-            start, stop = self._convert_to_slice(index=index)
-        # To optimize variable use, also converts single indices to start / stop notation
-        elif isinstance(index, int):
-            start = index
-            stop = index + 1
-        else:
-            message = (
-                f"Unable to read data from {self.name} SharedMemoryArray class instance. Expected an integer index or "
-                f"a tuple of two integers, but encountered '{index}' of type {type(index).__name__} instead."
-            )
-            console.error(message=message, error=ValueError)
-
-        # Converts both indices to be positive and verifies that they are within the array boundaries and not malformed
-        start, stop = self._verify_indices(start, stop)
-
-        # Extracts the requested data. The data is copied locally to prevent any modifications to the underlying
-        # array object.
-        data: NDArray[Any]
-        # Depending on the value of the 'with_lock' argument, this either acquires a Lock or runs without a lock.
-        with self._optional_lock(with_lock=with_lock):
-            # noinspection PyTestUnpassedFixture
-            data = self._array[start:stop].copy()  # type: ignore
-
-        # Determines whether the data can be returned as a scalar or iterable and whether it needs to be converted to
-        # Python datatype or returned as numpy datatype.
-        if convert_output:
-            if data.size != 1:
-                return data.tolist()
-            return data.item()
-        if data.size != 1:
-            return data
-        return data[0]
-
-    def write_data(
-        self,
-        index: int | tuple[int, ...],
-        data: (
-            NDArray[Any]
-            | list[Any]
-            | tuple[Any]
-            | np.unsignedinteger[Any]
-            | np.signedinteger[Any]
-            | np.floating[Any]
-            | int
-            | float
-            | bool
-            | str
-            | None
-        ),
-        with_lock: bool = True,
-    ) -> None:
-        """Writes data to the shared memory array at the specified index or indices (via slice).
-
-        This method allows flexibly writing data to the shared memory array wrapped by the class. Before it is written,
-        the input data is converted to the datatype of the array. Writing to the array will behave exactly like writing
-        to a regular numpy array.
-
-        Args:
-             index: An integer index to write to, when writing scalar data points. A tuple of up to 2 integers in the
-                format (start, stop), when writing slices. A minimum of one integer (start) in the tuple is required.
-                Stop index is excluded from the modified array slice (last modified (overwritten) index is stop-1).
-            data: The data to write to the shared numpy array. It in the format that is compatible with (convertible
-                to) the size (shape) and the datatype of the array wrapped by the class.
-            with_lock: Determines whether to acquire the multiprocessing Lock before writing the data. Acquiring the
-                lock prevents collisions with other python processes, but this may not be necessary for some use cases.
-
-        Raises:
-            RuntimeError: If the class instance is not connected to a shared memory buffer.
-            ValueError: If the input index tuple contains an invalid number of elements to parse it as slice start and
-                stop values. If the method is unable to convert the input data into the array format, or if writing data
-                to the array fails. If using slice indices and start index is greater than stop index after indices are
-                converted to positive numbers (this is done internally, input indices can be negative).
-            IndexError: If the input index or slice is outside the array boundaries.
-        """
-        # Ensures the class is connected to the shared memory buffer
-        if not self._is_connected or self._array is None:
-            message: str = (
-                f"Unable to access the data stored in the {self.name} SharedMemoryArray instance, as the class is not "
-                f"connected to the shared memory buffer. Use connect() method prior to calling other class methods."
-            )
-            console.error(message=message, error=RuntimeError)
-
-        # If index is a tuple, decomposes it into slice operands to use on the array
-        start: int = 0
-        stop: int | None = None
-        if isinstance(index, tuple):
-            # noinspection PyTypeChecker
-            start, stop = self._convert_to_slice(index=index)
-        # To optimize variable use, also converts single indices to start / stop notation
-        elif isinstance(index, int):
-            start = index
-            stop = index + 1
-        else:
-            message = (
-                f"Unable to write data to {self.name} SharedMemoryArray class instance. Expected an integer index or "
-                f"a tuple of two integers, but encountered '{index}' of type {type(index).__name__} instead."
-            )
-            console.error(message=message, error=ValueError)
-
-        # Converts both indices to be positive and verifies that they are within the array boundaries and not malformed
-        start, stop = self._verify_indices(start, stop)
-
-        # If the input data is not a numpy array, converts it to the numpy array using the same datatype as the one
-        # used by the shared memory array
-        try:
-            if not isinstance(data, np.ndarray):
-                # The only difference between iterable and scalar is that scalars are first cast as a list
-                if isinstance(data, Iterable):
-                    data = np.array(object=data, dtype=self.datatype)
-                else:
-                    data = np.array(object=[data], dtype=self.datatype)
-
-            # Writes the data to the array, optionally using the lock.
-            with self._optional_lock(with_lock=with_lock):
-                self._array[start:stop] = data  # type: ignore
-        # Catches and redirects ValueErrors, which is used by numpy to indicate conversion errors.
-        except ValueError as e:
-            message = (
-                f"Unable write data to {self.name} SharedMemoryArray class instance with index {index}. Encountered "
-                f"the following error when converting the data to the array datatype ({self.datatype}) and writing it "
-                f"to the array: {e}."
-            )
-            console.error(message=message, error=ValueError)
+            yield self._array
 
     @property
     def datatype(
@@ -525,8 +370,5 @@ class SharedMemoryArray:
 
     @property
     def is_connected(self) -> bool:
-        """Returns True if the class is connected to the shared memory buffer that stores the shared array data.
-
-        Connection to the shared memory buffer is required for most class methods to work.
-        """
-        return self._is_connected
+        """Returns True if the instance is connected to the shared memory buffer that stores the array data."""
+        return self._connected

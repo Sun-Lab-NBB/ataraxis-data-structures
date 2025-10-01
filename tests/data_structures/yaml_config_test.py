@@ -35,7 +35,7 @@ def test_yaml_config_to_yaml(tmp_path, config_path, expected_content):
         nested: dict = field(default_factory=dict)
         list: list = field(default_factory=list)
 
-    # Generates and dumps teh config as a .yaml
+    # Generates and dumps the config as a .yaml
     config = TestConfig(**expected_content)
     full_path = tmp_path.joinpath(config_path)
     config.to_yaml(full_path)
@@ -60,10 +60,10 @@ def test_yaml_config_to_yaml_errors(tmp_path):
     config = TestConfig()
     invalid_path = tmp_path / "invalid.txt"
 
-    error_msg = (
-        f"Invalid file path provided when attempting to write the YamlConfig class instance to a yaml file. "
-        f"Expected a path ending in the '.yaml' or '.yml' extension, but encountered {invalid_path}. Provide a "
-        f"path that uses the correct extension."
+    error_msg: str = (
+        f"Invalid file path provided when attempting to write the dataclass instance to a .yaml file. "
+        f"Expected a path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but encountered "
+        f"{invalid_path}."
     )
 
     with pytest.raises(ValueError, match=error_format(error_msg)):
@@ -112,9 +112,9 @@ def test_yaml_config_from_yaml_errors(tmp_path):
     invalid_path = tmp_path / "invalid.txt"
 
     error_msg = (
-        f"Invalid file path provided when attempting to create the YamlConfig class instance from a yaml file. "
-        f"Expected a path ending in the '.yaml' or '.yml' extension, but encountered {invalid_path}. Provide a "
-        f"path that uses the correct extension."
+        f"Invalid file path provided when attempting to create the dataclass instance using the data from a "
+        f".yaml file. Expected the path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but "
+        f"encountered {invalid_path}."
     )
 
     with pytest.raises(ValueError, match=error_format(error_msg)):
@@ -149,6 +149,6 @@ def test_yaml_config_subclassing():
     assert config.extra_param == "extra"
     assert config.another_param == {"key": "value"}
 
-    # Test that the subclass still has the to_yaml and from_yaml methods
+    # Tests that the subclass still has the 'to_yaml' and 'from_yaml' methods
     assert hasattr(config, "to_yaml")
     assert hasattr(ExtendedConfig, "from_yaml")
