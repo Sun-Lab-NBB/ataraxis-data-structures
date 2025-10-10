@@ -6,11 +6,11 @@ build-backend = "hatchling.build"
 # Project metdata section. Provides the general ID information about the project.
 [project]
 name = "ataraxis-data-structures"
-version = "4.0.0"
+version = "5.0.0"
 description = "Provides classes and structures for storing, manipulating, and sharing data between Python processes."
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.12,<3.15"
 authors = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
 ]
@@ -29,9 +29,9 @@ classifiers = [
     # License
     "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     # Supported Python Versions
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     # Supported OS systems
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
@@ -43,7 +43,7 @@ classifiers = [
 # Runtime project dependencies.
 dependencies = [
     "numpy>=2,<3",
-    "ataraxis-base-utilities>=4,<5",
+    "ataraxis-base-utilities>=5,<6",
     "ataraxis-time>=4,<5",
     "dacite>=1,<2",
     "pyyaml>=6,<7",
@@ -65,7 +65,7 @@ dev = [
     "tox-uv>=1,<2",
 
     # Development Automation
-    "ataraxis-automation>=6,<7",
+    "ataraxis-automation>=7,<8",
 
     # Types
     "types-pyyaml>=6,<7",
@@ -88,7 +88,7 @@ packages = ["src/ataraxis_data_structures", "examples"]
 [tool.ruff]
 line-length = 120         # The maximum column length is set to 120 for this project
 indent-width = 4          # Same as black, indents are 4 spaces
-target-version = "py311"  # Targets the lowest supported version of python
+target-version = "py312"  # Targets the lowest supported version of python
 src = ["src"]             # The name of the source directory
 
 # Excludes 'service' .py files, such as the sphinx configuration file from linting.
