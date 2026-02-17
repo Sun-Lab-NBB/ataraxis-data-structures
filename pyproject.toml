@@ -13,7 +13,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.15"
 authors = [
-    { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
+    { name = "Ivan Kondratyev" },
 ]
 maintainers = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
@@ -49,7 +49,6 @@ dependencies = [
     "dacite>=1,<2",
     "numpy>=2,<3",
     "pyyaml>=6,<7",
-    "tqdm>=4,<5",
 ]
 
 [project.urls]
@@ -72,7 +71,6 @@ dev = [
 
     # Types
     "types-pyyaml>=6,<7",
-    "types-tqdm>=4,<5",
 ]
 
 # Specifies files that should not be included in the source-code distribution.
@@ -135,6 +133,16 @@ convention = "google"
 "**/__init__.py" = [
     "F401", # Imported but unused
     "F403", # Wildcard imports
+]
+"**/tests/**/*.py" = [
+    "ANN",    # Type annotations not required in tests
+    "D",      # Docstring enforcement relaxed in tests
+    "INP001", # Tests use implicit namespace packages
+    "PLR2004",# Magic values are common in test assertions
+    "PT006",  # Parametrize argument name style is a project choice
+    "S101",   # Assert statements are standard in tests
+    "SLF001", # Private member access needed for testing internals
+    "T201",   # Print statements allowed in tests
 ]
 
 [tool.ruff.lint.isort]

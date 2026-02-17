@@ -1,3 +1,5 @@
+"""Contains tests for classes and methods provided by the yaml_config.py module."""
+
 from typing import Optional
 from pathlib import Path
 from dataclasses import field, dataclass
@@ -28,25 +30,25 @@ def test_yaml_config_to_yaml(tmp_path, config_path, expected_content):
 
     @dataclass
     class TestConfig(YamlConfig):
-        """Note, the test dataclass and each of the tested configs should have the same fields (in the same order)."""
+        """Defines the test dataclass. Each tested config should have the same fields (in the same order)."""
 
         key1: str = ""
         key2: int = 0
         nested: dict = field(default_factory=dict)
         list: list = field(default_factory=list)
 
-    # Generates and dumps the config as a .yaml
+    # Generates and dumps the config as a .yaml file.
     config = TestConfig(**expected_content)
     full_path = tmp_path.joinpath(config_path)
     config.to_yaml(full_path)
 
-    # Verifies that the file was created and contains data
+    # Verifies that the file was created and contains data.
     assert full_path.exists()
     assert full_path.stat().st_size > 0, f"File {full_path} is empty"
 
-    # Manually reads and verifies the config data
-    with open(full_path, "r") as file_data:
-        loaded_content = yaml.safe_load(file_data)
+    # Manually reads and verifies the config data.
+    with full_path.open("r") as yaml_file:
+        loaded_content = yaml.safe_load(yaml_file)
         assert loaded_content == expected_content, f"Expected {expected_content}, but got {loaded_content}"
 
 
@@ -89,12 +91,12 @@ def test_yaml_config_from_yaml(tmp_path, config_path, content):
     class TestConfig(YamlConfig):
         key1: str = ""
         key2: int = 0
-        nested: Optional[dict] = None
-        list: Optional[list] = None
+        nested: Optional[dict] = None  # noqa: UP045 - field name shadows builtin, X | None fails
+        list: Optional[list] = None  # noqa: UP045 - field name shadows builtin, X | None fails
 
     full_path = tmp_path / config_path
-    with open(full_path, "w") as f:
-        yaml.dump(content, f)
+    with full_path.open("w") as yaml_file:
+        yaml.dump(content, yaml_file)
 
     config = TestConfig.from_yaml(full_path)
 
@@ -149,6 +151,6 @@ def test_yaml_config_subclassing():
     assert config.extra_param == "extra"
     assert config.another_param == {"key": "value"}
 
-    # Tests that the subclass still has the 'to_yaml' and 'from_yaml' methods
+    # Tests that the subclass still has the 'to_yaml' and 'from_yaml' methods.
     assert hasattr(config, "to_yaml")
     assert hasattr(ExtendedConfig, "from_yaml")
