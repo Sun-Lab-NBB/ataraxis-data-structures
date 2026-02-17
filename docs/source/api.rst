@@ -21,3 +21,10 @@ Data Loggers
    :members:
    :undoc-members:
    :show-inheritance:
+
+Processing
+==========
+.. automodule:: ataraxis_data_structures.processing
+   :members:
+   :undoc-members:
+   :show-inheritance:

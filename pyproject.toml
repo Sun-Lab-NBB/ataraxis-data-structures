@@ -19,7 +19,10 @@ maintainers = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
 ]
 
-keywords = ["data structures", "data manipulation", "data logging", "shared memory", "ataraxis"]
+keywords = [
+    "data structures", "data manipulation", "data logging", "shared memory", "ataraxis",
+    "processing", "checksum", "data transfer", "interpolation",
+]
 
 classifiers = [
     # Development status
@@ -49,6 +52,10 @@ dependencies = [
     "dacite>=1,<2",
     "numpy>=2,<3",
     "pyyaml>=6,<7",
+
+    # File Processing
+    "filelock>=3,<4",
+    "xxhash>=3,<4",
 ]
 
 [project.urls]
