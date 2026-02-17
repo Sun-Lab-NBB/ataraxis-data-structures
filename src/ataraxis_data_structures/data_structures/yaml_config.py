@@ -1,5 +1,5 @@
-"""This module provides the YamlConfig class, which extends the standard Python 'dataclass' class with methods to cache
-and retrieve its data from a .yml (YAML) file.
+"""Provides the YamlConfig class, which extends the standard Python 'dataclass' class with methods to cache and retrieve
+its data from a .yml (YAML) file.
 """
 
 from typing import Any, Self
@@ -13,7 +13,7 @@ from ataraxis_base_utilities import console, ensure_directory_exists
 
 @dataclass
 class YamlConfig:
-    """An extension of the standard Python dataclass that allows it to save and load its data from a .yaml (YAML) file.
+    """Extends the standard Python dataclass with methods to save and load its data from a .yaml (YAML) file.
 
     Notes:
         This class is designed to be subclassed by custom dataclasses so that they inherit the YAML saving and loading
@@ -41,7 +41,7 @@ class YamlConfig:
             "sort_keys": False,  # Preserves the order of the keys as written by creators
         }
 
-        # Ensures that the output file path points to a .yaml (or .yml) file
+        # Ensures that the output file path points to a .yaml (or .yml) file.
         if file_path.suffix not in {".yaml", ".yml"}:
             message: str = (
                 f"Invalid file path provided when attempting to write the dataclass instance to a .yaml file. "
@@ -50,7 +50,7 @@ class YamlConfig:
             )
             console.error(message=message, error=ValueError)
 
-        # If necessary, creates the missing directory components of the file_path
+        # If necessary, creates the missing directory components of the file_path.
         ensure_directory_exists(file_path)
 
         # Writes the data to the .yaml file.
@@ -92,7 +92,7 @@ class YamlConfig:
         with file_path.open() as yml_file:
             data = yaml.safe_load(yml_file)
 
-        # Converts the imported data to a python dictionary.
+        # Converts the imported data to a Python dictionary.
         data_dictionary: dict[Any, Any] = dict(data)
 
         # Uses dacite to instantiate the class using the imported dictionary.

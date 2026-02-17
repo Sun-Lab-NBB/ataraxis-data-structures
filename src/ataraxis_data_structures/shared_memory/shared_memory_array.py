@@ -1,5 +1,5 @@
-"""This module provides the SharedMemoryArray class that allows moving data between multiple Python processes through
-a shared n-dimensional NumPy array memory buffer.
+"""Provides the SharedMemoryArray class that allows moving data between multiple Python processes through a shared
+n-dimensional NumPy array memory buffer.
 """
 
 from typing import Any
@@ -50,8 +50,8 @@ class SharedMemoryArray:
     """
 
     def __init__(self, name: str, shape: tuple[int, ...], datatype: np.dtype[Any], buffer: SharedMemory) -> None:
-        # Initialization method only saves input data into attributes. The method that actually sets up the class is
-        # the create_array() class method.
+        # Saves input data into attributes. The method that actually sets up the class is the create_array() class
+        # method.
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
@@ -107,12 +107,9 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-            # Fallback to appease mypy, should not be reachable.
-            raise ConnectionError(message)  # pragma: no cover
-
         with self.array(with_lock=True) as arr:
             # Returns a copy to prevent external modifications to the returned data from affecting the shared array
-            # without going through __setitem__
+            # without going through __setitem__.
             result = arr[index]
             if isinstance(result, np.ndarray):
                 return result.copy()
@@ -149,10 +146,7 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-            # Fallback to appease mypy, should not be reachable.
-            raise ConnectionError(message)  # pragma: no cover
-
-        # Writes the input values at the specified index
+        # Writes the input values at the specified index.
         with self.array(with_lock=True) as arr:
             arr[index] = value
 
@@ -206,7 +200,7 @@ class SharedMemoryArray:
             FileExistsError: If a shared memory object with the same name as the input 'name' argument value already
                 exists and the 'exists_ok' flag is False.
         """
-        # Ensures prototype is a numpy ndarray
+        # Ensures prototype is a NumPy ndarray.
         if not isinstance(prototype, np.ndarray):
             message = (
                 f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object '{name}'. "
@@ -214,20 +208,19 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=TypeError)
 
-        # Creates the shared memory buffer. This process raises FileExistsError if an object with this name
-        # already exists.
+        # Creates the shared memory buffer. Raises FileExistsError if an object with this name already exists.
         try:
             buffer: SharedMemory = SharedMemory(name=name, create=True, size=prototype.nbytes)
         except FileExistsError:
-            # If the buffer already exists, but the method is configured to recreate the buffer, destroys the old buffer
+            # If the buffer already exists but the method is configured to recreate it, destroys the old buffer.
             if exists_ok:
-                # Destroys the existing shared memory buffer
+                # Destroys the existing shared memory buffer.
                 SharedMemory(name=name, create=False).unlink()
 
-                # Recreates the shared memory buffer using the freed buffer name
+                # Recreates the shared memory buffer using the freed buffer name.
                 buffer = SharedMemory(name=name, create=True, size=prototype.nbytes)
 
-            # Otherwise, raises an exception
+            # Otherwise, raises an exception.
             else:
                 message = (
                     f"Unable to create the '{name}' SharedMemoryArray object, as an object with this name already "
@@ -237,10 +230,7 @@ class SharedMemoryArray:
                 )
                 console.error(message=message, error=FileExistsError)
 
-                # Fallback to appease mypy, should not be reachable.
-                raise FileExistsError(message) from None  # pragma: no cover
-
-        # Instantiates a numpy array using the shared memory buffer and copies the prototype array data into the shared
+        # Instantiates a NumPy array using the shared memory buffer and copies the prototype array data into the shared
         # array instance.
         shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
         shared_array[:] = prototype[:]
@@ -264,7 +254,7 @@ class SharedMemoryArray:
             instance. Otherwise, the child processes may not be able to connect to the shared memory buffer.
         """
         if not self._connected:
-            # Connects to the shared memory buffer
+            # Connects to the shared memory buffer.
             self._buffer = SharedMemory(name=self._name, create=False)
             # Re-initializes the internal _array with the data from the shared memory buffer.
             self._array = np.ndarray(shape=self._shape, dtype=self._datatype, buffer=self._buffer.buf)
@@ -297,13 +287,13 @@ class SharedMemoryArray:
             they are no longer connected to by any SharedMemoryArray instances.
         """
         if self._buffer is not None:
-            # If the instance is connected to the buffer, first disconnects it from the buffer
+            # If the instance is connected to the buffer, first disconnects it from the buffer.
             self.disconnect()
 
-            # Requests the shared memory buffer to be destroyed
+            # Requests the shared memory buffer to be destroyed.
             self._buffer.unlink()
 
-            # Releases the reference to the shared memory buffer
+            # Releases the reference to the shared memory buffer.
             self._buffer = None
 
     @contextmanager
@@ -314,11 +304,6 @@ class SharedMemoryArray:
         multiprocessing lock acquisition. It is recommended to call this method from a 'with' statement to ensure
         the proper lock acquisition and release.
 
-        Args:
-            with_lock: Determines whether to acquire the multiprocessing Lock before accessing the array. Acquiring
-                the lock prevents collisions with other Python processes trying to simultaneously access the array's
-                data.
-
         Notes:
             When with_lock=True (default), the lock is held for the entire duration of the context. Keep operations
             concise to avoid blocking other processes. When with_lock=False, ensure no other processes are writing to
@@ -327,24 +312,27 @@ class SharedMemoryArray:
             The returned array is the actual shared array, not a copy. All modifications to the array are immediately
             visible to other processes.
 
+        Args:
+            with_lock: Determines whether to acquire the multiprocessing Lock before accessing the array. Acquiring
+                the lock prevents collisions with other Python processes trying to simultaneously access the array's
+                data.
+
         Yields:
             The shared NumPy array that can be directly manipulated using any NumPy operations. Changes made to this
-            array directly affect the data stores in the shared memory buffer.
+            array directly affect the data stored in the shared memory buffer.
 
         Raises:
             ConnectionError: If the class instance is not connected to the shared memory buffer.
         """
-        # Ensures the class is connected to the shared memory buffer
+        # Ensures the class is connected to the shared memory buffer.
         if not self._connected or self._array is None:
             message = (
-                f"Unable to access the data stored in the {self.name} SharedMemoryArray instance, as the it is not "
+                f"Unable to access the data stored in the {self.name} SharedMemoryArray instance, as it is not "
                 f"connected to the shared memory buffer. Call the connect() method prior to calling the array() method."
             )
             console.error(message=message, error=ConnectionError)
-            # This line shouldn't be reached due to console.error, but included for type checking
-            raise ConnectionError(message)  # pragma: no cover
 
-        # Conditionally acquire lock based on the 'with_lock' parameter
+        # Conditionally acquires the lock based on the 'with_lock' parameter.
         if with_lock:
             with self._lock:
                 yield self._array
@@ -352,9 +340,7 @@ class SharedMemoryArray:
             yield self._array
 
     @property
-    def datatype(
-        self,
-    ) -> np.dtype[Any]:
+    def datatype(self) -> np.dtype[Any]:
         """Returns the datatype used by the shared memory array."""
         return self._datatype
 
