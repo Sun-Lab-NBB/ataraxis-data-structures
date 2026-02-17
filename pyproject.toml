@@ -43,8 +43,8 @@ classifiers = [
 # Runtime project dependencies.
 dependencies = [
     "numpy>=2,<3",
-    "ataraxis-base-utilities>=5,<6",
-    "ataraxis-time>=5,<6",
+    "ataraxis-base-utilities>=6,<7",
+    "ataraxis-time>=6,<7",
     "dacite>=1,<2",
     "pyyaml>=6,<7",
     "tqdm>=4,<5",
@@ -65,7 +65,7 @@ dev = [
     "tox-uv>=1,<2",
 
     # Development Automation
-    "ataraxis-automation>=7,<8",
+    "ataraxis-automation>=8,<9",
 
     # Types
     "types-pyyaml>=6,<7",
