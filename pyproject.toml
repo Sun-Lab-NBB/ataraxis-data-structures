@@ -1,15 +1,16 @@
 # Defines the build system used for the project.
 [build-system]
-requires = ["hatchling==1.27.0"]
+requires = ["hatchling>=1,<2"]
 build-backend = "hatchling.build"
 
-# Project metdata section. Provides the general ID information about the project.
+# Project metadata section. Provides the general ID information about the project.
 [project]
 name = "ataraxis-data-structures"
-version = "5.0.0"
+version = "6.0.0"
 description = "Provides classes and structures for storing, manipulating, and sharing data between Python processes."
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12,<3.15"
 authors = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
@@ -18,7 +19,7 @@ maintainers = [
     { name = "Ivan Kondratyev", email = "ik278@cornell.edu" },
 ]
 
-keywords = ['data structures', 'data manipulation', 'data logging', 'shared memory', 'ataraxis']
+keywords = ["data structures", "data manipulation", "data logging", "shared memory", "ataraxis"]
 
 classifiers = [
     # Development status
@@ -26,13 +27,11 @@ classifiers = [
     # Intended audience and project topic
     "Intended Audience :: Developers",
     "Topic :: Software Development",
-    # License
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
     # Supported Python Versions
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    # Supported OS systems
+    # Supported Operating Systems
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
@@ -42,10 +41,13 @@ classifiers = [
 
 # Runtime project dependencies.
 dependencies = [
-    "numpy>=2,<3",
-    "ataraxis-base-utilities>=5,<6",
-    "ataraxis-time>=5,<6",
+    # Ataraxis
+    "ataraxis-base-utilities>=6,<7",
+    "ataraxis-time>=6,<7",
+
+    # Data Processing
     "dacite>=1,<2",
+    "numpy>=2,<3",
     "pyyaml>=6,<7",
     "tqdm>=4,<5",
 ]
@@ -54,10 +56,11 @@ dependencies = [
 Homepage = "https://github.com/Sun-Lab-NBB/ataraxis-data-structures"
 Documentation = "https://ataraxis-data-structures-api-docs.netlify.app/"
 
-# Specifies additional dependencies that can be installed alongside the main library.
-[project.optional-dependencies]
+# In the future, callable scripts can be added here
+[project.scripts]
 
-# Dependencies that support developing this project.
+# Development dependencies (PEP 735). Not published to PyPI.
+[dependency-groups]
 dev = [
     # Tox
     "tox>=4,<5",
@@ -65,18 +68,14 @@ dev = [
     "tox-uv>=1,<2",
 
     # Development Automation
-    "ataraxis-automation>=7,<8",
+    "ataraxis-automation>=8,<9",
 
     # Types
     "types-pyyaml>=6,<7",
     "types-tqdm>=4,<5",
-
 ]
 
-# In the future, callable scripts can be added here
-[project.scripts]
-
-# Specifies files that should not be included in the source-code distribution, but are also not part of gitignore.
+# Specifies files that should not be included in the source-code distribution.
 [tool.hatch.build.targets.sdist]
 exclude = [".github", "recipe"]
 
@@ -86,12 +85,12 @@ packages = ["src/ataraxis_data_structures", "examples"]
 
 # Ruff Configuration.
 [tool.ruff]
-line-length = 120         # The maximum column length is set to 120 for this project
+line-length = 120         # Deviates from the commonly used '80' standard.
 indent-width = 4          # Same as black, indents are 4 spaces
 target-version = "py312"  # Targets the lowest supported version of python
-src = ["src"]             # The name of the source directory
+src = ["src"]             # The name of the root source code directory
 
-# Excludes 'service' .py files, such as the sphinx configuration file from linting.
+# Excludes 'service' .py files, such as the sphinx configuration file, from linting.
 extend-exclude = ["conf.py"]
 
 # Checks for all potential violations and uses the exclusions below to target-disable specific ones.
@@ -100,22 +99,20 @@ lint.select = ["ALL"]
 # General ignore directives
 lint.ignore = [
     "W291",    # Conflicts with docstring formatting
-    "COM812",  # Conflicts with the formatter
-    "ISC001",  # Conflicts with the formatter
-    "TID252",  # Conflicts with library import management strategy
-    "ANN401",  # Interferes with intended library behavior
     "C901",    # Sometimes complex functions are necessary
     "PLR0913", # Sometimes complex functions are necessary
     "PLR0912", # Sometimes complex functions are necessary
-    "PLR0915", # Sometimes complex type defenitions are necessary
+    "PLR0915", # Sometimes complex type definitions are necessary
     "PLR0911", # Sometimes complex return graphs are necessary
     "COM812",  # Conflicts with the formatter
     "ISC001",  # Conflicts with the formatter
-    "PT001",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
+    "PT001",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-182590771
     "PT023",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
     "D107",    # Project-specific, __init__ is documented inside the main class docstring where applicable
     "D205",    # Bugs out for file descriptions
-    "PLW0603", # While global statement usage is not ideal, it greatly streamlines certain development patterns
+    "PLW0603", # While global statement usage is not ideal, it streamlines certain development patterns
+    "TID252",  # Conflicts with library import management strategy
+    "ANN401",  # Interferes with intended library behavior
 ]
 
 # Additional formatting configurations
@@ -143,7 +140,7 @@ convention = "google"
 [tool.ruff.lint.isort]
 case-sensitive = true              # Takes case into account when sorting imports
 combine-as-imports = true          # Combines multiple "as" imports for the same package
-force-wrap-aliases = true          # Wraps "as" imports so that each uses a separate line (after combining for package)
+force-wrap-aliases = true          # Wraps "as" imports so that each uses a separate line
 force-sort-within-sections = true  # Forces "as" and "from" imports for the same package to be close
 length-sort = true                 # Places shorter imports first
 
