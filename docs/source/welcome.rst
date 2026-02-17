@@ -1,8 +1,7 @@
 Welcome to ataraxis-data-structures API documentation page
 ==========================================================
 
-ataraxis-data-structures is a Python library that provides classes and structures for storing, manipulating, and
-sharing data between Python processes.
+Provides classes and structures for storing, manipulating, and sharing data between Python processes.
 
 This library is part of the broader 'Ataraxis' science-automation project, developed in the
 `Sun (NeuroAI) lab <https://neuroai.github.io/sunlab/>`_ at Cornell University.

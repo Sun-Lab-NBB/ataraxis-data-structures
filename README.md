@@ -1,7 +1,6 @@
 # ataraxis-data-structures
 
-A Python library that provides classes and structures for storing, manipulating, and sharing data between Python 
-processes.
+Provides classes and structures for storing, manipulating, and sharing data between Python processes.
 
 ![PyPI - Version](https://img.shields.io/pypi/v/ataraxis-data-structures)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/ataraxis-data-structures)
@@ -31,7 +30,7 @@ ___
 - Extends the standard Python dataclass to support saving and loading its data to / from YAML files.
 - Provides a fast and scalable data logger optimized for saving serialized data from multiple parallel processes in 
   non-volatile memory.
-- GPL 3 License.
+- Apache 2.0 License.
 
 ___
 
@@ -433,7 +432,7 @@ ___
 
 ## License
 
-This project is licensed under the GPL3 License: see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache 2.0 License: see the [LICENSE](LICENSE) file for details.
 
 ___
 
