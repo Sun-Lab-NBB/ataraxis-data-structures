@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from multiprocessing.managers import SyncManager
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LogPackage:
     """Stores the data and ID information to be logged by the DataLogger class and exposes methods for packaging this
     data into the format expected by the logger.

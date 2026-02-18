@@ -129,13 +129,13 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
             if isinstance(type_hint, UnionType) or get_origin(type_hint) is Union:
                 enum_targets: list[type] = []
                 for argument in type_arguments:
-                    if not isinstance(argument, type):
-                        continue
+                    if not isinstance(argument, type):  # pragma: no cover
+                        continue  # pragma: no cover
                     try:
                         if issubclass(argument, Enum) and argument is not Enum:
                             enum_targets.append(argument)
-                    except TypeError:
-                        pass
+                    except TypeError:  # pragma: no cover
+                        pass  # pragma: no cover
                 if enum_targets:
                     hooks[type_hint] = _make_union_enum_hook(enum_types=enum_targets)
 
@@ -157,16 +157,16 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
             if issubclass(type_hint, Path):
                 hooks[type_hint] = type_hint
                 return
-        except TypeError:
-            return
+        except TypeError:  # pragma: no cover
+            return  # pragma: no cover
 
         # Registers Enum subclasses (but not the abstract Enum base itself).
         try:
             if issubclass(type_hint, Enum) and type_hint is not Enum:
                 hooks[type_hint] = type_hint
                 return
-        except TypeError:
-            return
+        except TypeError:  # pragma: no cover
+            return  # pragma: no cover
 
         # Recurses into nested dataclass annotations to discover their Path/Enum fields.
         if is_dataclass(type_hint):
@@ -180,8 +180,8 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
         """
         try:
             hints = get_type_hints(dataclass_type)
-        except (TypeError, NameError, AttributeError):
-            return
+        except (TypeError, NameError, AttributeError):  # pragma: no cover
+            return  # pragma: no cover
 
         for hint_type in hints.values():
             _walk_type(type_hint=hint_type)

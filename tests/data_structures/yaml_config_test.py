@@ -132,7 +132,7 @@ def test_yaml_config_initialization():
     class TestConfig(YamlConfig):
         param1: str
         param2: int
-        param3: list = None
+        param3: list | None = None
 
     config = TestConfig(param1="test", param2=42, param3=[1, 2, 3])
     assert config.param1 == "test"
