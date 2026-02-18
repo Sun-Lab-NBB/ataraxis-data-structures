@@ -216,8 +216,8 @@ class ProcessingTracker(YamlConfig):
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.RUNNING
             job_info.executor_id = executor_id
-            job_info.started_at = get_timestamp(
-                output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND
+            job_info.started_at = int(
+                get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
             )
 
             self._save_state()
@@ -249,8 +249,8 @@ class ProcessingTracker(YamlConfig):
             # Updates the job's status and sets the completion timestamp
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.SUCCEEDED
-            job_info.completed_at = get_timestamp(
-                output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND
+            job_info.completed_at = int(
+                get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
             )
 
             self._save_state()
@@ -284,8 +284,8 @@ class ProcessingTracker(YamlConfig):
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.FAILED
             job_info.error_message = error_message
-            job_info.completed_at = get_timestamp(
-                output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND
+            job_info.completed_at = int(
+                get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
             )
 
             self._save_state()
@@ -370,7 +370,8 @@ class ProcessingTracker(YamlConfig):
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
             self._load_state()
-            return [job_id for job_id, job_state in self.jobs.items() if job_state.status == ProcessingStatus(status)]
+            target_status = ProcessingStatus[status] if isinstance(status, str) else status
+            return [job_id for job_id, job_state in self.jobs.items() if job_state.status == target_status]
 
     def get_summary(self) -> dict[ProcessingStatus, int]:
         """Returns a summary of job counts by status.

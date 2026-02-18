@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from ataraxis_time import PrecisionTimer
+from ataraxis_time import PrecisionTimer, TimerPrecisions
 from ataraxis_base_utilities import console, ensure_directory_exists
 
 from .checksum_tools import calculate_directory_checksum
@@ -36,7 +36,7 @@ def delete_directory(directory_path: Path) -> None:
     # Removes the now-empty root directory. Since Windows is sometimes slow to release file handles, adds
     # an optional delay step to give Windows time to release file handles.
     max_attempts = 5
-    delay_timer = PrecisionTimer("ms")
+    delay_timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
     for _ in range(max_attempts):
         # noinspection PyBroadException
         try:

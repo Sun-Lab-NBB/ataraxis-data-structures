@@ -1,12 +1,11 @@
 """Provides assets for computing data integrity checksums."""
 
-import os
 from pathlib import Path
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import xxhash
-from ataraxis_base_utilities import console
+from ataraxis_base_utilities import console, resolve_worker_count
 
 
 def _calculate_file_checksum(base_directory: Path, file_path: Path) -> tuple[str, bytes]:  # pragma: no cover
@@ -77,7 +76,7 @@ def calculate_directory_checksum(
 
     # Determines the number of parallel processes to use.
     if num_processes is None:
-        num_processes = max(1, os.cpu_count())  # type: ignore[type-var]
+        num_processes = resolve_worker_count()
 
     # Determines the path to each file inside the input directory structure and sorts them for consistency
     files = sorted(
