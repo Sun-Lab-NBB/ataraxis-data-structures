@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest tests/ -v --tb=long)",
+      "Bash(conda env:*)",
+      "Bash(conda run:*)"
+    ]
+  }
+}

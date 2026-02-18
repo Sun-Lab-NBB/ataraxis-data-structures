@@ -33,7 +33,7 @@ def _serialize_value(value: Any) -> Any:
     # Checks Path before str, since PurePosixPath / PureWindowsPath are not str subclasses, but PosixPath and
     # WindowsPath inherit from os.PathLike, not str.
     if isinstance(value, Path):
-        return str(value)
+        return value.as_posix()
 
     # Checks Enum before str/int, since StrEnum and IntEnum subclass str and int respectively.
     if isinstance(value, Enum):
