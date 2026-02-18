@@ -139,7 +139,7 @@ def transfer_directory(
     if num_threads > 1:
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = {executor.submit(_transfer_file, file, source, destination): file for file in file_list}
-            if progress:
+            if progress:  # pragma: no cover
                 with console.progress(
                     total=len(file_list),
                     description=f"Transferring files to {destination.name}",

@@ -564,3 +564,44 @@ def test_processing_tracker_retry_failed_jobs(tmp_path):
     # Succeeded job should not be affected
     job_info = tracker.get_job_info(job_ids[2])
     assert job_info.status == ProcessingStatus.SUCCEEDED
+
+
+def test_processing_tracker_complete_job_invalid_id(tmp_path):
+    """Verifies that complete_job raises ValueError for invalid job ID."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    tracker.initialize_jobs(jobs=[("job1", "")])
+
+    with pytest.raises(ValueError, match="not configured to track"):
+        tracker.complete_job("invalid_job_id")
+
+
+def test_processing_tracker_fail_job_invalid_id(tmp_path):
+    """Verifies that fail_job raises ValueError for invalid job ID."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    tracker.initialize_jobs(jobs=[("job1", "")])
+
+    with pytest.raises(ValueError, match="not configured to track"):
+        tracker.fail_job("invalid_job_id")
+
+
+def test_processing_tracker_get_job_status_invalid_id(tmp_path):
+    """Verifies that get_job_status raises ValueError for invalid job ID."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    tracker.initialize_jobs(jobs=[("job1", "")])
+
+    with pytest.raises(ValueError, match="not configured to track"):
+        tracker.get_job_status("invalid_job_id")
+
+
+def test_processing_tracker_complete_property_empty_jobs(tmp_path):
+    """Verifies that complete property returns False for empty tracker."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    # Saves empty state.
+    tracker._save_state()
+
+    assert not tracker.complete

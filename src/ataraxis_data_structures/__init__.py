@@ -7,13 +7,15 @@ Authors: Ivan Kondratyev (Inkaros)
 """
 
 from .processing import delete_directory, interpolate_data, transfer_directory, calculate_directory_checksum
-from .data_loggers import DataLogger, LogPackage, assemble_log_archives
+from .data_loggers import DataLogger, LogMessage, LogPackage, LogArchiveReader, assemble_log_archives
 from .shared_memory import SharedMemoryArray
 from .data_structures import JobState, YamlConfig, ProcessingStatus, ProcessingTracker
 
 __all__ = [
     "DataLogger",
     "JobState",
+    "LogArchiveReader",
+    "LogMessage",
     "LogPackage",
     "ProcessingStatus",
     "ProcessingTracker",

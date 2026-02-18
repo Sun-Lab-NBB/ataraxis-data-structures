@@ -6,8 +6,8 @@ from dataclasses import field, dataclass
 
 import xxhash
 from filelock import FileLock
-from ataraxis_time import get_timestamp, TimestampFormats, TimestampPrecisions
-from ataraxis_base_utilities import console, LogLevel
+from ataraxis_time import TimestampFormats, TimestampPrecisions, get_timestamp
+from ataraxis_base_utilities import LogLevel, console
 
 from .yaml_config import YamlConfig
 
@@ -27,7 +27,7 @@ class ProcessingStatus(IntEnum):
     """Indicates the job encountered a runtime error and was not completed."""
 
 
-@dataclass
+@dataclass(slots=True)
 class JobState:
     """Stores the metadata and the current runtime status of a single job in the processing pipeline."""
 
@@ -152,9 +152,7 @@ class ProcessingTracker(YamlConfig):
             self._save_state()
             return job_ids
 
-    def find_jobs(
-        self, job_name: str | None = None, specifier: str | None = None
-    ) -> dict[str, tuple[str, str]]:
+    def find_jobs(self, job_name: str | None = None, specifier: str | None = None) -> dict[str, tuple[str, str]]:
         """Searches for jobs matching the given name and/or specifier patterns.
 
         Supports partial matching (substring search) on job names and specifiers. If both parameters are provided,
@@ -386,7 +384,7 @@ class ProcessingTracker(YamlConfig):
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
             self._load_state()
-            summary: dict[ProcessingStatus, int] = {status: 0 for status in ProcessingStatus}
+            summary: dict[ProcessingStatus, int] = dict.fromkeys(ProcessingStatus, 0)
             for job_state in self.jobs.values():
                 summary[job_state.status] += 1
             return summary
