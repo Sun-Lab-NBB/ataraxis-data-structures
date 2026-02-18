@@ -62,9 +62,6 @@ dependencies = [
 Homepage = "https://github.com/Sun-Lab-NBB/ataraxis-data-structures"
 Documentation = "https://ataraxis-data-structures-api-docs.netlify.app/"
 
-# In the future, callable scripts can be added here
-[project.scripts]
-
 # Development dependencies (PEP 735). Not published to PyPI.
 [dependency-groups]
 dev = [
@@ -86,7 +83,7 @@ exclude = [".github", "recipe"]
 
 # Specifies the library structure.
 [tool.hatch.build.targets.wheel]
-packages = ["src/ataraxis_data_structures", "examples"]
+packages = ["src/ataraxis_data_structures"]
 
 # Ruff Configuration.
 [tool.ruff]

@@ -142,11 +142,17 @@ class ProcessingTracker(YamlConfig):
                 if job_id not in self.jobs:
                     self.jobs[job_id] = JobState(job_name=job_name, specifier=specifier)
                 else:
+                    # Temporarily enables console output to ensure the warning is visible, then restores previous state.
+                    was_enabled = console.enabled
+                    if not was_enabled:
+                        console.enable()
                     console.echo(
                         message=f"Job '{job_name}' with specifier '{specifier}' (ID: {job_id}) already exists in the "
                         f"tracker. Skipping duplicate entry.",
                         level=LogLevel.WARNING,
                     )
+                    if not was_enabled:
+                        console.disable()
                 job_ids.append(job_id)
 
             self._save_state()
