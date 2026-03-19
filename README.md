@@ -19,7 +19,8 @@ This library aggregates the classes and methods used by other Ataraxis and Sun l
 This includes classes to manipulate the data, share (move) the data between different Python processes, and store the
 data in non-volatile memory (on disk). Generally, these classes either implement novel functionality not available
 through other popular libraries or extend existing functionality to match specific needs of other project Ataraxis
-libraries.
+libraries. This library is part of the
+[Ataraxis](https://github.com/Sun-Lab-NBB/ataraxis) framework for AI-assisted scientific hardware control.
 
 ## Features
 
@@ -829,6 +830,13 @@ Run any environment using `tox -e ENVIRONMENT`. For example, `tox -e lint`.
 
 ***Note,*** all pull requests for this project have to successfully complete the `tox` task before being merged. To
 expedite the task's runtime, use the `tox --parallel` command to run some tasks in parallel.
+
+### AI-Assisted Development
+
+Claude Code skills and other AI development assets for this project are distributed through the
+[ataraxis](https://github.com/Sun-Lab-NBB/ataraxis) marketplace as part of the **automation** plugin. Install the
+plugin from the marketplace to make all associated skills and development tools available to compatible AI coding
+agents.
 
 ### Automation Troubleshooting
 
