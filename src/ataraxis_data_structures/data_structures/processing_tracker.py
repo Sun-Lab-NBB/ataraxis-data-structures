@@ -90,9 +90,7 @@ class ProcessingTracker(YamlConfig):
         Returns:
             The unique hexadecimal identifier for the target job.
         """
-        # Combines job name and specifier into a single string for hashing
         combined = f"{job_name}:{specifier}" if specifier else job_name
-        # Generates and returns the xxHash64 hash
         return xxhash.xxh64(combined.encode("utf-8")).hexdigest()
 
     @staticmethod
@@ -156,7 +154,7 @@ class ProcessingTracker(YamlConfig):
 
             job_ids = []
             for job_name, specifier in jobs:
-                job_id = self.generate_job_id(job_name, specifier)
+                job_id = self.generate_job_id(job_name=job_name, specifier=specifier)
                 if job_id not in self.jobs:
                     self.jobs[job_id] = JobState(job_name=job_name, specifier=specifier)
                 else:
@@ -225,10 +223,8 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
-            # Loads tracker state from the .yaml file
             self._load_state()
 
-            # Verifies that the tracker is configured to track the specified job
             if job_id not in self.jobs:
                 message = (
                     f"The ProcessingTracker instance is not configured to track the state of the job with ID "
@@ -237,9 +233,8 @@ class ProcessingTracker(YamlConfig):
                 )
                 console.error(message=message, error=ValueError)
 
-            # Updates job status, records the executor identifier, and sets the start timestamp. Resolves the
-            # executor identifier from the runtime environment (SLURM job ID, falling back to the process ID) when
-            # the caller does not provide one explicitly.
+            # Resolves the executor identifier from the runtime environment (SLURM job ID, falling back to the
+            # process ID) when the caller does not provide one explicitly.
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.RUNNING
             job_info.executor_id = executor_id if executor_id is not None else self._resolve_executor_id()
@@ -261,10 +256,8 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
-            # Loads tracker state from the .yaml file
             self._load_state()
 
-            # Verifies that the tracker is configured to track the specified job
             if job_id not in self.jobs:
                 message = (
                     f"The ProcessingTracker instance is not configured to track the state of the job with ID "
@@ -273,7 +266,6 @@ class ProcessingTracker(YamlConfig):
                 )
                 console.error(message=message, error=ValueError)
 
-            # Updates the job's status and sets the completion timestamp
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.SUCCEEDED
             job_info.completed_at = int(
@@ -295,10 +287,8 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
-            # Loads tracker state from the .yaml file
             self._load_state()
 
-            # Verifies that the tracker is configured to track the specified job
             if job_id not in self.jobs:
                 message = (
                     f"The ProcessingTracker instance is not configured to track the state of the job with ID "
@@ -307,7 +297,6 @@ class ProcessingTracker(YamlConfig):
                 )
                 console.error(message=message, error=ValueError)
 
-            # Updates the job's status, error message, and completion timestamp
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.FAILED
             job_info.error_message = error_message
@@ -334,7 +323,6 @@ class ProcessingTracker(YamlConfig):
         with lock.acquire(timeout=10.0):
             self._load_state()
 
-            # Verifies that the tracker is configured to track the specified job
             if job_id not in self.jobs:
                 message = (
                     f"The ProcessingTracker instance is not configured to track the state of the job with ID "
@@ -349,10 +337,8 @@ class ProcessingTracker(YamlConfig):
         """Resets the tracker file to the default state."""
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
-            # Loads tracker state from the .yaml file.
             self._load_state()
 
-            # Resets the tracker file to the default state.
             self.jobs.clear()
             self._save_state()
 
@@ -393,6 +379,7 @@ class ProcessingTracker(YamlConfig):
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+            KeyError: If status is a string that does not name a valid ProcessingStatus member.
         """
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
@@ -447,7 +434,7 @@ class ProcessingTracker(YamlConfig):
     def retry_failed_jobs(self) -> list[str]:
         """Resets all failed jobs back to SCHEDULED status for retry.
 
-        This clears the error_message, started_at, and completed_at fields for each failed job.
+        This clears the error_message, started_at, completed_at, and executor_id fields for each failed job.
 
         Returns:
             A list of job IDs that were reset for retry.

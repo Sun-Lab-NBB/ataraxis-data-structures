@@ -26,7 +26,7 @@ def test_data_logger_initialization(tmp_path):
     assert logger._thread_count == 5
     assert logger._poll_interval == 5
     assert logger._output_directory == tmp_path / "test_logger_data_log"
-    assert logger._started is False
+    assert not logger._started
     assert logger._logger_process is None
     assert logger.name == "test_logger"
 
@@ -34,7 +34,7 @@ def test_data_logger_initialization(tmp_path):
     logger = DataLogger(output_directory=tmp_path, instance_name="custom_logger", thread_count=10, poll_interval=1000)
     assert logger._thread_count == 10
     assert logger._poll_interval == 1000
-    print(logger)  # Ensures __repr__ works as expected.
+    assert repr(logger)  # Ensures __repr__ works as expected.
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -55,7 +55,7 @@ def test_data_logger_start_stop(tmp_path):
     logger.start()
     assert logger.alive
     logger.start()  # Ensures that calling start() twice does nothing.
-    assert logger._started is True
+    assert logger._started
     assert logger._logger_process.is_alive()
 
     # Tests activating multiple concurrent loggers with different instance names.
@@ -83,9 +83,9 @@ def test_data_logger_multithreading(tmp_path, thread_count, sample_data):
     logger.start()
 
     # Submits multiple data points.
-    for i in range(5):
+    for index in range(5):
         source_id, timestamp, data = sample_data
-        timestamp += i
+        timestamp += index
         packed_data = LogPackage(
             source_id=np.uint8(source_id), acquisition_time=np.uint64(timestamp), serialized_data=data
         )
@@ -95,8 +95,8 @@ def test_data_logger_multithreading(tmp_path, thread_count, sample_data):
     logger.stop()
 
     # Verifies files were created.
-    log_dir = tmp_path / "test_logger_data_log"
-    files = list(log_dir.glob("*.npy"))
+    log_directory = tmp_path / "test_logger_data_log"
+    files = list(log_directory.glob("*.npy"))
     assert files
 
 
@@ -137,9 +137,9 @@ def test_data_logger_assembly(tmp_path, sample_data):
 
     # Submits multiple data points with different source IDs.
     source_ids = [1, 1, 2, 2]
-    for i, source_id in enumerate(source_ids):
+    for index, source_id in enumerate(source_ids):
         _, timestamp, data = sample_data
-        timestamp += i
+        timestamp += index
         packed_data = LogPackage(
             source_id=np.uint8(source_id), acquisition_time=np.uint64(timestamp), serialized_data=data
         )
@@ -156,7 +156,7 @@ def test_data_logger_assembly(tmp_path, sample_data):
 
     # Verifies original files were removed.
     original_files = list(logger.output_directory.glob("*.npy"))
-    assert len(original_files) == 0
+    assert not original_files
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -165,9 +165,9 @@ def test_data_logger_concurrent_access(tmp_path, sample_data):
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger", thread_count=5)
     logger.start()
 
-    def submit_data(i):
+    def submit_data(index):
         source_id, timestamp, data = sample_data
-        timestamp += i
+        timestamp += index
         packed_data = LogPackage(
             source_id=np.uint8(source_id), acquisition_time=np.uint64(timestamp), serialized_data=data
         )
@@ -186,7 +186,7 @@ def test_data_logger_concurrent_access(tmp_path, sample_data):
     # Verifies archive creation with source deletion and not memory mapping.
     assemble_log_archives(log_directory=logger.output_directory, remove_sources=True, memory_mapping=False)
     files = list(logger.output_directory.glob("*.npy"))
-    assert len(files) == 0
+    assert not files
     files = list(logger.output_directory.glob("*.npz"))
     assert len(files) == 1
 
@@ -202,7 +202,7 @@ def test_data_logger_empty_queue_shutdown(tmp_path):
 
     # Verifies no files were created.
     files = list(logger.output_directory.glob("*.npy"))
-    assert len(files) == 0
+    assert not files
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -241,9 +241,9 @@ def test_assemble_log_archives_with_integrity_check(tmp_path, sample_data):
     logger.start()
 
     # Submits test data.
-    for i in range(3):
+    for index in range(3):
         source_id, timestamp, data = sample_data
-        timestamp += i
+        timestamp += index
         packed_data = LogPackage(
             source_id=np.uint8(source_id), acquisition_time=np.uint64(timestamp), serialized_data=data
         )

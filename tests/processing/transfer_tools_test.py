@@ -20,22 +20,21 @@ def sample_directory_structure(tmp_path) -> Path:
     root = tmp_path / "test_source"
     root.mkdir()
 
-    # Creates files in root
     (root / "file1.txt").write_text("content1")
     (root / "file2.txt").write_text("content2")
 
     # Creates subdirectories with files
-    subdir1 = root / "subdir1"
-    subdir1.mkdir()
-    (subdir1 / "file3.txt").write_text("content3")
-    (subdir1 / "file4.txt").write_text("content4")
+    subdirectory_one = root / "subdir1"
+    subdirectory_one.mkdir()
+    (subdirectory_one / "file3.txt").write_text("content3")
+    (subdirectory_one / "file4.txt").write_text("content4")
 
-    subdir2 = root / "subdir2"
-    subdir2.mkdir()
-    (subdir2 / "file5.txt").write_text("content5")
+    subdirectory_two = root / "subdir2"
+    subdirectory_two.mkdir()
+    (subdirectory_two / "file5.txt").write_text("content5")
 
     # Creates a nested subdirectory
-    nested = subdir1 / "nested"
+    nested = subdirectory_one / "nested"
     nested.mkdir()
     (nested / "file6.txt").write_text("content6")
 
@@ -53,10 +52,10 @@ def large_directory_structure(tmp_path) -> Path:
         (root / f"file_{i}.txt").write_text(f"content_{i}" * 100)
 
     for i in range(5):
-        subdir = root / f"subdir_{i}"
-        subdir.mkdir()
+        subdirectory = root / f"subdir_{i}"
+        subdirectory.mkdir()
         for j in range(10):
-            (subdir / f"file_{j}.txt").write_text(f"nested_content_{i}_{j}" * 50)
+            (subdirectory / f"file_{j}.txt").write_text(f"nested_content_{i}_{j}" * 50)
 
     return root
 
@@ -69,13 +68,10 @@ def test_delete_directory_basic(tmp_path):
     (test_dir / "file1.txt").write_text("content")
     (test_dir / "file2.txt").write_text("content")
 
-    # Verifies directory exists
     assert test_dir.exists()
 
-    # Deletes directory
-    delete_directory(test_dir)
+    delete_directory(directory_path=test_dir)
 
-    # Verifies directory is gone
     assert not test_dir.exists()
 
 
@@ -95,7 +91,7 @@ def test_delete_directory_nested(tmp_path):
     (level2 / "file3.txt").write_text("content3")
 
     # Deletes entire structure
-    delete_directory(root)
+    delete_directory(directory_path=root)
 
     # Verifies all levels are deleted
     assert not root.exists()
@@ -107,7 +103,7 @@ def test_delete_directory_nonexistent(tmp_path):
     """Verifies that deleting a non-existent directory does not raise errors."""
     nonexistent = tmp_path / "does_not_exist"
     # Should not raise any exception
-    delete_directory(nonexistent)
+    delete_directory(directory_path=nonexistent)
 
 
 def test_delete_directory_empty(tmp_path):
@@ -116,7 +112,7 @@ def test_delete_directory_empty(tmp_path):
     empty_dir.mkdir()
 
     assert empty_dir.exists()
-    delete_directory(empty_dir)
+    delete_directory(directory_path=empty_dir)
     assert not empty_dir.exists()
 
 
@@ -125,10 +121,8 @@ def test_transfer_directory_basic(sample_directory_structure, tmp_path):
     source = sample_directory_structure
     destination = tmp_path / "test_destination"
 
-    # Performs transfer
     transfer_directory(source=source, destination=destination)
 
-    # Verifies destination exists
     assert destination.exists()
 
     # Verifies all files were transferred
@@ -171,16 +165,13 @@ def test_transfer_directory_with_removal(sample_directory_structure, tmp_path):
 
     # Stores original file count
     original_files = list(source.rglob("*.txt"))
-    assert len(original_files) > 0
+    assert original_files
 
-    # Performs transfer with removal
     transfer_directory(source=source, destination=destination, remove_source=True)
 
-    # Verifies destination has all files
     transferred_files = list(destination.rglob("*.txt"))
     assert len(transferred_files) == len(original_files)
 
-    # Verifies the source is deleted
     assert not source.exists()
 
 
@@ -189,10 +180,8 @@ def test_transfer_directory_with_integrity_check(sample_directory_structure, tmp
     source = sample_directory_structure
     destination = tmp_path / "dest_integrity"
 
-    # Performs transfer with integrity verification
     transfer_directory(source=source, destination=destination, verify_integrity=True)
 
-    # Verifies destination exists and has correct files
     assert destination.exists()
     assert (destination / "file1.txt").exists()
     assert (destination / "subdir1" / "file3.txt").exists()
@@ -210,10 +199,8 @@ def test_transfer_directory_with_existing_checksum(sample_directory_structure, t
     calculate_directory_checksum(directory=source, progress=False, save_checksum=True)
     assert (source / "ax_checksum.txt").exists()
 
-    # Performs transfer with verification
     transfer_directory(source=source, destination=destination, verify_integrity=True)
 
-    # Verifies successful transfer
     assert destination.exists()
     assert (destination / "file1.txt").read_text() == "content1"
 
@@ -249,7 +236,6 @@ def test_transfer_directory_preserves_structure(tmp_path):
     destination = tmp_path / "complex_dest"
     transfer_directory(source=source, destination=destination)
 
-    # Verifies structure
     assert (destination / "root.txt").exists()
     assert (destination / "level1" / "l1.txt").exists()
     assert (destination / "level1" / "level2" / "l2.txt").exists()
@@ -270,7 +256,7 @@ def test_transfer_directory_empty_source(tmp_path):
 
     # Verifies destination exists but is empty
     assert destination.exists()
-    assert len(list(destination.iterdir())) == 0
+    assert not list(destination.iterdir())
 
 
 def test_transfer_directory_large_dataset(large_directory_structure, tmp_path):
@@ -282,12 +268,10 @@ def test_transfer_directory_large_dataset(large_directory_structure, tmp_path):
     source_files = list(source.rglob("*.txt"))
     source_count = len(source_files)
 
-    # Performs parallel transfer
     transfer_directory(source=source, destination=destination, num_threads=4)
 
-    # Verifies all files transferred
-    dest_files = list(destination.rglob("*.txt"))
-    assert len(dest_files) == source_count
+    destination_files = list(destination.rglob("*.txt"))
+    assert len(destination_files) == source_count
 
     # Spot checks some files
     assert (destination / "file_0.txt").exists()
@@ -299,7 +283,6 @@ def test_transfer_directory_with_integrity_and_removal(sample_directory_structur
     source = sample_directory_structure
     destination = tmp_path / "dest_integrity_removal"
 
-    # Performs transfer with both options
     transfer_directory(
         source=source,
         destination=destination,
@@ -307,12 +290,10 @@ def test_transfer_directory_with_integrity_and_removal(sample_directory_structur
         remove_source=True,
     )
 
-    # Verifies destination has files
     assert destination.exists()
     assert (destination / "file1.txt").exists()
     assert (destination / "subdir1" / "file3.txt").exists()
 
-    # Verifies the source is removed
     assert not source.exists()
 
 
@@ -327,20 +308,17 @@ def test_delete_directory_parallel_performance(tmp_path):
 
     # Creates subdirectories
     for i in range(10):
-        subdir = test_dir / f"subdir_{i}"
-        subdir.mkdir()
+        subdirectory = test_dir / f"subdir_{i}"
+        subdirectory.mkdir()
         for j in range(10):
-            (subdir / f"file_{j}.txt").write_text(f"content_{i}_{j}")
+            (subdirectory / f"file_{j}.txt").write_text(f"content_{i}_{j}")
 
-    # Verifies creation
     assert test_dir.exists()
     file_count = len(list(test_dir.rglob("*.txt")))
     assert file_count == 200
 
-    # Deletes in parallel
-    delete_directory(test_dir)
+    delete_directory(directory_path=test_dir)
 
-    # Verifies deletion
     assert not test_dir.exists()
 
 
@@ -353,7 +331,6 @@ def test_transfer_directory_metadata_preservation(sample_directory_structure, tm
     original_file = source / "file1.txt"
     original_stat = original_file.stat()
 
-    # Performs transfer
     transfer_directory(source=source, destination=destination)
 
     # Gets transferred file stats
@@ -362,7 +339,7 @@ def test_transfer_directory_metadata_preservation(sample_directory_structure, tm
 
     # Verifies metadata (shutil.copy2 should preserve modification time)
     assert transferred_stat.st_size == original_stat.st_size
-    # Note: Depending on filesystem, mtime might not be exactly preserved
+    # Note: Depending on filesystem, modification time might not be exactly preserved
     # but should be very close
     assert abs(transferred_stat.st_mtime - original_stat.st_mtime) < 1
 
@@ -376,7 +353,6 @@ def test_transfer_directory_to_existing_destination(sample_directory_structure, 
     destination.mkdir()
     (destination / "existing_file.txt").write_text("existing")
 
-    # Performs transfer
     transfer_directory(source=source, destination=destination)
 
     # Verifies both old and new files exist
@@ -388,25 +364,25 @@ def test_transfer_directory_to_existing_destination(sample_directory_structure, 
 def test_transfer_directory_single_vs_multi_thread_consistency(sample_directory_structure, tmp_path):
     """Verifies that single-threaded and multithreaded transfers produce identical results."""
     source = sample_directory_structure
-    dest_single = tmp_path / "dest_single"
-    dest_multi = tmp_path / "dest_multi"
+    destination_single = tmp_path / "dest_single"
+    destination_multi = tmp_path / "dest_multi"
 
     # Single-threaded transfer
-    transfer_directory(source=source, destination=dest_single, num_threads=1)
+    transfer_directory(source=source, destination=destination_single, num_threads=1)
 
     # Multithreaded transfer
-    transfer_directory(source=source, destination=dest_multi, num_threads=4)
+    transfer_directory(source=source, destination=destination_multi, num_threads=4)
 
     # Compares file lists
-    single_files = sorted([f.relative_to(dest_single) for f in dest_single.rglob("*") if f.is_file()])
-    multi_files = sorted([f.relative_to(dest_multi) for f in dest_multi.rglob("*") if f.is_file()])
+    single_files = sorted([f.relative_to(destination_single) for f in destination_single.rglob("*") if f.is_file()])
+    multi_files = sorted([f.relative_to(destination_multi) for f in destination_multi.rglob("*") if f.is_file()])
 
     assert single_files == multi_files
 
     # Verifies content matches
-    for rel_path in single_files:
-        single_content = (dest_single / rel_path).read_text()
-        multi_content = (dest_multi / rel_path).read_text()
+    for relative_path in single_files:
+        single_content = (destination_single / relative_path).read_text()
+        multi_content = (destination_multi / relative_path).read_text()
         assert single_content == multi_content
 
 
@@ -429,7 +405,6 @@ def test_transfer_directory_integrity_check_detects_corruption(sample_directory_
             return "corrupted_checksum_00000000000000"
         return result
 
-    # Applies monkeypatch
     monkeypatch.setattr(
         "ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum", mock_calculate_checksum
     )
@@ -470,12 +445,12 @@ def test_transfer_directory_checksum_path_truncation(tmp_path, monkeypatch):
 
     # Mocks calculate_directory_checksum to return a corrupted hash for destination
     def mock_calculate(directory, **kwargs):
+        """Mocks calculate_directory_checksum to return a corrupted checksum for the destination directory."""
         result = original_calculate_checksum(directory=directory, **kwargs)
         if directory == destination:
             return "corrupted_hash_00000000000000"
         return result
 
-    # Applies a monkeypatch to where the function is called in transfer_tools
     monkeypatch.setattr(
         "ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum", mock_calculate
     )
@@ -543,7 +518,6 @@ def test_transfer_directory_integrity_check_with_progress(sample_directory_struc
         progress=True,
     )
 
-    # Verifies successful transfer
     assert destination.exists()
     assert (destination / "file1.txt").exists()
     assert (destination / "subdir1" / "file3.txt").exists()
@@ -565,7 +539,6 @@ def test_transfer_directory_creates_checksum_when_missing(tmp_path):
     # Verifies no checksum exists initially
     assert not (source / "ax_checksum.txt").exists()
 
-    # Performs transfer with integrity verification
     transfer_directory(
         source=source,
         destination=destination,
@@ -575,7 +548,6 @@ def test_transfer_directory_creates_checksum_when_missing(tmp_path):
     # Verifies checksum was automatically created
     assert (source / "ax_checksum.txt").exists()
 
-    # Verifies successful transfer
     assert destination.exists()
     assert (destination / "file1.txt").read_text() == "content1"
 
@@ -588,7 +560,6 @@ def test_transfer_directory_preserves_checksum_file(sample_directory_structure, 
     # Verifies no checksum initially
     assert not (source / "ax_checksum.txt").exists()
 
-    # Performs transfer with integrity verification
     transfer_directory(
         source=source,
         destination=destination,
@@ -609,7 +580,6 @@ def test_transfer_directory_integrity_multithread_consistency(large_directory_st
     source = large_directory_structure
     destination = tmp_path / "dest_multi_integrity"
 
-    # Performs multithreaded transfer with integrity verification
     transfer_directory(
         source=source,
         destination=destination,
@@ -619,9 +589,9 @@ def test_transfer_directory_integrity_multithread_consistency(large_directory_st
 
     # Verifies all files transferred correctly
     source_files = sorted([f.relative_to(source) for f in source.rglob("*.txt")])
-    dest_files = sorted([f.relative_to(destination) for f in destination.rglob("*.txt")])
+    destination_files = sorted([f.relative_to(destination) for f in destination.rglob("*.txt")])
 
-    assert source_files == dest_files
+    assert source_files == destination_files
 
     # Spot checks file contents
     assert (destination / "file_0.txt").exists()

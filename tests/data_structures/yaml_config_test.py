@@ -24,10 +24,8 @@ from ataraxis_data_structures.data_structures.yaml_config import _serialize_valu
 def test_yaml_config_to_yaml(tmp_path, config_path, expected_content):
     """Verifies the functionality of the YamlConfig class to_yaml() method.
 
-    Evaluates the following scenarios:
-        0 - Saving a simple key-value pair configuration to a .yaml file.
-        1 - Saving a nested configuration with lists to a .yml file.
-        2 - Saving an empty configuration to a .yaml file.
+    Verifies saving a simple key-value pair configuration to a .yaml file, a nested configuration with lists to a .yml
+    file, and an empty configuration to a .yaml file.
     """
 
     @dataclass
@@ -84,9 +82,8 @@ def test_yaml_config_to_yaml_errors(tmp_path):
 def test_yaml_config_from_yaml(tmp_path, config_path, content):
     """Verifies the functionality of the YamlConfig class from_yaml() method.
 
-    Evaluates the following scenarios:
-        0 - Loading a simple key-value pair configuration from a .yaml file.
-        1 - Loading a nested configuration with lists from a .yml file.
+    Verifies loading a simple key-value pair configuration from a .yaml file and a nested configuration with lists from
+    a .yml file.
     """
 
     @dataclass

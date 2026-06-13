@@ -63,9 +63,9 @@ def _make_union_enum_hook(enum_types: list[type]) -> Callable[[Any], Any]:
         identically to ``Color | str``) because dacite invokes the union-level hook before iterating individual union
         members.
 
-        This approach relies on Enum constructors raising ``ValueError`` for invalid members, which provides a natural
-        discriminator. It is intentionally not used for Path unions because ``Path(any_string)`` always succeeds,
-        making discrimination impossible.
+        This approach relies on Enum constructors raising ``ValueError`` or ``KeyError`` for invalid members, which
+        provides a natural discriminator. It is intentionally not used for Path unions because ``Path(any_string)``
+        always succeeds, making discrimination impossible.
 
     Args:
         enum_types: The Enum subclass types to try converting to, in the order they should be attempted.
@@ -216,12 +216,12 @@ class YamlConfig:
         # Defines YAML formatting options. The purpose of these settings is to make YAML blocks more readable when
         # being edited by the user.
         yaml_formatting = {
-            "default_style": "",  # Use double quotes for scalars as needed
-            "default_flow_style": False,  # Use block style for mappings
-            "indent": 10,  # The number of spaces for indentation
-            "width": 200,  # Maximum line width before wrapping
-            "explicit_start": True,  # Mark the beginning of the document with ___
-            "explicit_end": True,  # Mark the end of the document with ___
+            "default_style": "",  # Uses plain (unquoted) scalar style, quoting only when required
+            "default_flow_style": False,  # Uses block style for mappings
+            "indent": 10,
+            "width": 200,
+            "explicit_start": True,  # Marks the beginning of the document with ---
+            "explicit_end": True,  # Marks the end of the document with ...
             "sort_keys": False,  # Preserves the order of the keys as written by creators
         }
 
@@ -273,7 +273,7 @@ class YamlConfig:
         # Builds type_hooks from the class hierarchy to auto-convert str -> Path, raw value -> Enum, etc. The cast
         # list converts YAML lists back to tuples at the field level. check_types=False is preserved for backward
         # compatibility with union annotations like ``BaselineMethod | str``.
-        type_hooks = _collect_type_hooks(cls)
+        type_hooks = _collect_type_hooks(cls=cls)
         class_config = Config(type_hooks=type_hooks, cast=[tuple], check_types=False)
 
         # Loads the data from the .yaml file.

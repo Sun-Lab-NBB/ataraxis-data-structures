@@ -22,28 +22,25 @@ def test_processing_tracker_generate_job_id():
     job_name = "suite2p_processing"
     specifier = "plane_0"
 
-    # Generates the same ID multiple times
-    id1 = ProcessingTracker.generate_job_id(job_name, specifier)
-    id2 = ProcessingTracker.generate_job_id(job_name, specifier)
+    first_id = ProcessingTracker.generate_job_id(job_name=job_name, specifier=specifier)
+    second_id = ProcessingTracker.generate_job_id(job_name=job_name, specifier=specifier)
 
-    # Should be consistent
-    assert id1 == id2
-    # Should be a hexadecimal string
-    assert len(id1) == 16
-    assert all(c in "0123456789abcdef" for c in id1)
+    assert first_id == second_id
+    assert len(first_id) == 16
+    assert all(character in "0123456789abcdef" for character in first_id)
 
 
 def test_processing_tracker_generate_job_id_unique():
     """Verifies that different jobs produce different IDs."""
     # Different job names produce different IDs
-    id1 = ProcessingTracker.generate_job_id("job1", "")
-    id2 = ProcessingTracker.generate_job_id("job2", "")
-    assert id1 != id2
+    first_id = ProcessingTracker.generate_job_id(job_name="job1", specifier="")
+    second_id = ProcessingTracker.generate_job_id(job_name="job2", specifier="")
+    assert first_id != second_id
 
     # Same job name with different specifiers produce different IDs
-    id3 = ProcessingTracker.generate_job_id("process_plane", "plane_0")
-    id4 = ProcessingTracker.generate_job_id("process_plane", "plane_1")
-    assert id3 != id4
+    third_id = ProcessingTracker.generate_job_id(job_name="process_plane", specifier="plane_0")
+    fourth_id = ProcessingTracker.generate_job_id(job_name="process_plane", specifier="plane_1")
+    assert third_id != fourth_id
 
 
 def test_processing_tracker_generate_job_id_without_specifier():
@@ -51,12 +48,12 @@ def test_processing_tracker_generate_job_id_without_specifier():
     job_name = "suite2p_processing"
 
     # With empty specifier
-    id1 = ProcessingTracker.generate_job_id(job_name, "")
+    first_id = ProcessingTracker.generate_job_id(job_name=job_name, specifier="")
     # Without specifier (default)
-    id2 = ProcessingTracker.generate_job_id(job_name)
+    second_id = ProcessingTracker.generate_job_id(job_name=job_name)
 
-    assert id1 == id2
-    assert len(id1) == 16
+    assert first_id == second_id
+    assert len(first_id) == 16
 
 
 def test_processing_tracker_initialize_jobs(tmp_path):
@@ -74,14 +71,14 @@ def test_processing_tracker_initialize_jobs(tmp_path):
 
     # Verifies returned job IDs
     assert len(job_ids) == 3
-    for (job_name, specifier), job_id in zip(jobs, job_ids):
-        assert job_id == ProcessingTracker.generate_job_id(job_name, specifier)
+    for (job_name, specifier), job_id in zip(jobs, job_ids, strict=True):
+        assert job_id == ProcessingTracker.generate_job_id(job_name=job_name, specifier=specifier)
 
     # Reloads to verify persistence
     tracker._load_state()
     assert len(tracker.jobs) == 3
     for job_name, specifier in jobs:
-        job_id = ProcessingTracker.generate_job_id(job_name, specifier)
+        job_id = ProcessingTracker.generate_job_id(job_name=job_name, specifier=specifier)
         assert job_id in tracker.jobs
         assert tracker.jobs[job_id].job_name == job_name
         assert tracker.jobs[job_id].specifier == specifier
@@ -98,13 +95,13 @@ def test_processing_tracker_initialize_jobs_preserves_existing(tmp_path):
         ("job1", ""),
         ("job2", ""),
     ]
-    job_ids = [ProcessingTracker.generate_job_id(name, spec) for name, spec in jobs]
+    job_ids = [ProcessingTracker.generate_job_id(job_name=name, specifier=specifier) for name, specifier in jobs]
 
     # Initializes first time
     tracker.initialize_jobs(jobs=jobs)
 
     # Starts one job
-    tracker.start_job(job_ids[0])
+    tracker.start_job(job_id=job_ids[0])
 
     # Reinitializes with the same jobs
     tracker.initialize_jobs(jobs=jobs)
@@ -136,7 +133,7 @@ def test_processing_tracker_find_jobs(tmp_path):
     # Searches by specifier only
     matches = tracker.find_jobs(specifier="plane_1")
     assert len(matches) == 1
-    assert list(matches.values())[0] == ("process_plane", "plane_1")
+    assert next(iter(matches.values())) == ("process_plane", "plane_1")
 
     # Searches by partial job name
     matches = tracker.find_jobs(job_name="process")
@@ -171,10 +168,10 @@ def test_processing_tracker_start_job(tmp_path, monkeypatch):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
 
     tracker.initialize_jobs(jobs=[("test_job", "")])
-    tracker.start_job(job_id)
+    tracker.start_job(job_id=job_id)
 
     tracker._load_state()
     assert tracker.jobs[job_id].status == ProcessingStatus.RUNNING
@@ -187,10 +184,10 @@ def test_processing_tracker_start_job_resolves_slurm_id(tmp_path, monkeypatch):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
 
     tracker.initialize_jobs(jobs=[("test_job", "")])
-    tracker.start_job(job_id)
+    tracker.start_job(job_id=job_id)
 
     tracker._load_state()
     assert tracker.jobs[job_id].executor_id == "987654"
@@ -201,10 +198,10 @@ def test_processing_tracker_start_job_with_executor_id(tmp_path):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
 
     tracker.initialize_jobs(jobs=[("test_job", "")])
-    tracker.start_job(job_id, executor_id="slurm-12345")
+    tracker.start_job(job_id=job_id, executor_id="slurm-12345")
 
     tracker._load_state()
     assert tracker.jobs[job_id].status == ProcessingStatus.RUNNING
@@ -219,7 +216,7 @@ def test_processing_tracker_start_job_raises_for_unknown_job(tmp_path):
     unknown_job_id = "nonexistent_job_id"
 
     with pytest.raises(ValueError, match="not configured to track"):
-        tracker.start_job(unknown_job_id)
+        tracker.start_job(job_id=unknown_job_id)
 
 
 def test_processing_tracker_complete_job(tmp_path):
@@ -227,11 +224,11 @@ def test_processing_tracker_complete_job(tmp_path):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
 
     tracker.initialize_jobs(jobs=[("test_job", "")])
-    tracker.start_job(job_id)
-    tracker.complete_job(job_id)
+    tracker.start_job(job_id=job_id)
+    tracker.complete_job(job_id=job_id)
 
     tracker._load_state()
     assert tracker.jobs[job_id].status == ProcessingStatus.SUCCEEDED
@@ -242,11 +239,11 @@ def test_processing_tracker_fail_job(tmp_path):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
 
     tracker.initialize_jobs(jobs=[("test_job", "")])
-    tracker.start_job(job_id)
-    tracker.fail_job(job_id)
+    tracker.start_job(job_id=job_id)
+    tracker.fail_job(job_id=job_id)
 
     tracker._load_state()
     assert tracker.jobs[job_id].status == ProcessingStatus.FAILED
@@ -257,20 +254,19 @@ def test_processing_tracker_get_job_status(tmp_path):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
 
     tracker.initialize_jobs(jobs=[("test_job", "")])
 
-    # Checks scheduled status
-    assert tracker.get_job_status(job_id) == ProcessingStatus.SCHEDULED
+    assert tracker.get_job_status(job_id=job_id) == ProcessingStatus.SCHEDULED
 
     # Starts and checks the running status
-    tracker.start_job(job_id)
-    assert tracker.get_job_status(job_id) == ProcessingStatus.RUNNING
+    tracker.start_job(job_id=job_id)
+    assert tracker.get_job_status(job_id=job_id) == ProcessingStatus.RUNNING
 
     # Completes and checks succeeded status
-    tracker.complete_job(job_id)
-    assert tracker.get_job_status(job_id) == ProcessingStatus.SUCCEEDED
+    tracker.complete_job(job_id=job_id)
+    assert tracker.get_job_status(job_id=job_id) == ProcessingStatus.SUCCEEDED
 
 
 def test_processing_tracker_reset(tmp_path):
@@ -279,12 +275,11 @@ def test_processing_tracker_reset(tmp_path):
     tracker = ProcessingTracker(file_path=tracker_file)
 
     jobs = [("job1", ""), ("job2", "")]
-    job_ids = [ProcessingTracker.generate_job_id(name, spec) for name, spec in jobs]
+    job_ids = [ProcessingTracker.generate_job_id(job_name=name, specifier=specifier) for name, specifier in jobs]
 
     tracker.initialize_jobs(jobs=jobs)
-    tracker.start_job(job_ids[0])
+    tracker.start_job(job_id=job_ids[0])
 
-    # Resets
     tracker.reset()
 
     tracker._load_state()
@@ -297,19 +292,19 @@ def test_processing_tracker_complete_property(tmp_path):
     tracker = ProcessingTracker(file_path=tracker_file)
 
     jobs = [("job1", ""), ("job2", "")]
-    job_ids = [ProcessingTracker.generate_job_id(name, spec) for name, spec in jobs]
+    job_ids = [ProcessingTracker.generate_job_id(job_name=name, specifier=specifier) for name, specifier in jobs]
 
     tracker.initialize_jobs(jobs=jobs)
     assert not tracker.complete
 
     # Completes the first job
-    tracker.start_job(job_ids[0])
-    tracker.complete_job(job_ids[0])
+    tracker.start_job(job_id=job_ids[0])
+    tracker.complete_job(job_id=job_ids[0])
     assert not tracker.complete
 
     # Completes the second job
-    tracker.start_job(job_ids[1])
-    tracker.complete_job(job_ids[1])
+    tracker.start_job(job_id=job_ids[1])
+    tracker.complete_job(job_id=job_ids[1])
     assert tracker.complete
 
 
@@ -319,19 +314,19 @@ def test_processing_tracker_encountered_error_property(tmp_path):
     tracker = ProcessingTracker(file_path=tracker_file)
 
     jobs = [("job1", ""), ("job2", "")]
-    job_ids = [ProcessingTracker.generate_job_id(name, spec) for name, spec in jobs]
+    job_ids = [ProcessingTracker.generate_job_id(job_name=name, specifier=specifier) for name, specifier in jobs]
 
     tracker.initialize_jobs(jobs=jobs)
     assert not tracker.encountered_error
 
     # Completes the first job successfully
-    tracker.start_job(job_ids[0])
-    tracker.complete_job(job_ids[0])
+    tracker.start_job(job_id=job_ids[0])
+    tracker.complete_job(job_id=job_ids[0])
     assert not tracker.encountered_error
 
-    # Fails second job
-    tracker.start_job(job_ids[1])
-    tracker.fail_job(job_ids[1])
+    # Fails the second job
+    tracker.start_job(job_id=job_ids[1])
+    tracker.fail_job(job_id=job_ids[1])
     assert tracker.encountered_error
 
 
@@ -343,19 +338,19 @@ def test_processing_tracker_concurrent_access(tmp_path):
     tracker1 = ProcessingTracker(file_path=tracker_file)
     tracker2 = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
 
     # Initializes from the first process
     tracker1.initialize_jobs(jobs=[("test_job", "")])
 
-    # The second process can see the job
-    assert tracker2.get_job_status(job_id) == ProcessingStatus.SCHEDULED
+    # Confirms the second process sees the job.
+    assert tracker2.get_job_status(job_id=job_id) == ProcessingStatus.SCHEDULED
 
     # The first process starts the job
-    tracker1.start_job(job_id)
+    tracker1.start_job(job_id=job_id)
 
-    # The second process sees the update
-    assert tracker2.get_job_status(job_id) == ProcessingStatus.RUNNING
+    # Confirms the second process sees the update.
+    assert tracker2.get_job_status(job_id=job_id) == ProcessingStatus.RUNNING
 
 
 def test_processing_tracker_yaml_serialization(tmp_path):
@@ -364,10 +359,10 @@ def test_processing_tracker_yaml_serialization(tmp_path):
     tracker = ProcessingTracker(file_path=tracker_file)
 
     jobs = [("job1", ""), ("job2", "specifier")]
-    job_ids = [ProcessingTracker.generate_job_id(name, spec) for name, spec in jobs]
+    job_ids = [ProcessingTracker.generate_job_id(job_name=name, specifier=specifier) for name, specifier in jobs]
 
     tracker.initialize_jobs(jobs=jobs)
-    tracker.start_job(job_ids[0])
+    tracker.start_job(job_id=job_ids[0])
 
     # Creates a new instance and verifies it loads correctly
     tracker2 = ProcessingTracker(file_path=tracker_file)
@@ -434,17 +429,17 @@ def test_processing_tracker_timestamps(tmp_path):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
     tracker.initialize_jobs(jobs=[("test_job", "")])
 
     # Starts the job and verifies started_at is set
-    tracker.start_job(job_id)
+    tracker.start_job(job_id=job_id)
     job_info = tracker.get_job_info(job_id)
     assert job_info.started_at is not None
     assert job_info.completed_at is None
 
     # Completes the job and verifies completed_at is set
-    tracker.complete_job(job_id)
+    tracker.complete_job(job_id=job_id)
     job_info = tracker.get_job_info(job_id)
     assert job_info.completed_at is not None
     assert job_info.completed_at >= job_info.started_at
@@ -455,10 +450,10 @@ def test_processing_tracker_fail_job_with_error_message(tmp_path):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("test_job", "")
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
     tracker.initialize_jobs(jobs=[("test_job", "")])
-    tracker.start_job(job_id)
-    tracker.fail_job(job_id, error_message="CUDA out of memory")
+    tracker.start_job(job_id=job_id)
+    tracker.fail_job(job_id=job_id, error_message="CUDA out of memory")
 
     job_info = tracker.get_job_info(job_id)
     assert job_info.status == ProcessingStatus.FAILED
@@ -474,21 +469,19 @@ def test_processing_tracker_get_jobs_by_status(tmp_path):
     jobs = [("job1", ""), ("job2", ""), ("job3", ""), ("job4", "")]
     job_ids = tracker.initialize_jobs(jobs=jobs)
 
-    # Initially all are scheduled
     scheduled = tracker.get_jobs_by_status(ProcessingStatus.SCHEDULED)
     assert len(scheduled) == 4
 
-    # Starts two jobs
-    tracker.start_job(job_ids[0])
-    tracker.start_job(job_ids[1])
+    tracker.start_job(job_id=job_ids[0])
+    tracker.start_job(job_id=job_ids[1])
     running = tracker.get_jobs_by_status(ProcessingStatus.RUNNING)
     assert len(running) == 2
     assert job_ids[0] in running
     assert job_ids[1] in running
 
     # Completes one, fails one
-    tracker.complete_job(job_ids[0])
-    tracker.fail_job(job_ids[1])
+    tracker.complete_job(job_id=job_ids[0])
+    tracker.fail_job(job_id=job_ids[1])
     succeeded = tracker.get_jobs_by_status(ProcessingStatus.SUCCEEDED)
     failed = tracker.get_jobs_by_status(ProcessingStatus.FAILED)
     assert len(succeeded) == 1
@@ -503,7 +496,6 @@ def test_processing_tracker_get_summary(tmp_path):
     jobs = [("job1", ""), ("job2", ""), ("job3", ""), ("job4", "")]
     job_ids = tracker.initialize_jobs(jobs=jobs)
 
-    # Initially all scheduled
     summary = tracker.get_summary()
     assert summary[ProcessingStatus.SCHEDULED] == 4
     assert summary[ProcessingStatus.RUNNING] == 0
@@ -511,10 +503,10 @@ def test_processing_tracker_get_summary(tmp_path):
     assert summary[ProcessingStatus.FAILED] == 0
 
     # Mixed states
-    tracker.start_job(job_ids[0])
-    tracker.start_job(job_ids[1])
-    tracker.complete_job(job_ids[0])
-    tracker.fail_job(job_ids[1])
+    tracker.start_job(job_id=job_ids[0])
+    tracker.start_job(job_id=job_ids[1])
+    tracker.complete_job(job_id=job_ids[0])
+    tracker.fail_job(job_id=job_ids[1])
 
     summary = tracker.get_summary()
     assert summary[ProcessingStatus.SCHEDULED] == 2
@@ -528,9 +520,9 @@ def test_processing_tracker_get_job_info(tmp_path):
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    job_id = ProcessingTracker.generate_job_id("process_plane", "plane_0")
+    job_id = ProcessingTracker.generate_job_id(job_name="process_plane", specifier="plane_0")
     tracker.initialize_jobs(jobs=[("process_plane", "plane_0")])
-    tracker.start_job(job_id, executor_id="slurm-12345")
+    tracker.start_job(job_id=job_id, executor_id="slurm-12345")
 
     job_info = tracker.get_job_info(job_id)
     assert job_info.job_name == "process_plane"
@@ -558,13 +550,12 @@ def test_processing_tracker_retry_failed_jobs(tmp_path):
     jobs = [("job1", ""), ("job2", ""), ("job3", "")]
     job_ids = tracker.initialize_jobs(jobs=jobs)
 
-    # Fails two jobs
-    tracker.start_job(job_ids[0])
-    tracker.start_job(job_ids[1])
-    tracker.fail_job(job_ids[0], error_message="Error 1")
-    tracker.fail_job(job_ids[1], error_message="Error 2")
-    tracker.start_job(job_ids[2])
-    tracker.complete_job(job_ids[2])
+    tracker.start_job(job_id=job_ids[0])
+    tracker.start_job(job_id=job_ids[1])
+    tracker.fail_job(job_id=job_ids[0], error_message="Error 1")
+    tracker.fail_job(job_id=job_ids[1], error_message="Error 2")
+    tracker.start_job(job_id=job_ids[2])
+    tracker.complete_job(job_id=job_ids[2])
 
     # Retries failed jobs
     retried = tracker.retry_failed_jobs()
@@ -580,7 +571,7 @@ def test_processing_tracker_retry_failed_jobs(tmp_path):
     assert job_info.completed_at is None
     assert job_info.executor_id is None
 
-    # Succeeded job should not be affected
+    # Confirms the succeeded job is not affected.
     job_info = tracker.get_job_info(job_ids[2])
     assert job_info.status == ProcessingStatus.SUCCEEDED
 
@@ -592,7 +583,7 @@ def test_processing_tracker_complete_job_invalid_id(tmp_path):
     tracker.initialize_jobs(jobs=[("job1", "")])
 
     with pytest.raises(ValueError, match="not configured to track"):
-        tracker.complete_job("invalid_job_id")
+        tracker.complete_job(job_id="invalid_job_id")
 
 
 def test_processing_tracker_fail_job_invalid_id(tmp_path):
@@ -602,7 +593,7 @@ def test_processing_tracker_fail_job_invalid_id(tmp_path):
     tracker.initialize_jobs(jobs=[("job1", "")])
 
     with pytest.raises(ValueError, match="not configured to track"):
-        tracker.fail_job("invalid_job_id")
+        tracker.fail_job(job_id="invalid_job_id")
 
 
 def test_processing_tracker_get_job_status_invalid_id(tmp_path):
@@ -612,7 +603,7 @@ def test_processing_tracker_get_job_status_invalid_id(tmp_path):
     tracker.initialize_jobs(jobs=[("job1", "")])
 
     with pytest.raises(ValueError, match="not configured to track"):
-        tracker.get_job_status("invalid_job_id")
+        tracker.get_job_status(job_id="invalid_job_id")
 
 
 def test_processing_tracker_complete_property_empty_jobs(tmp_path):

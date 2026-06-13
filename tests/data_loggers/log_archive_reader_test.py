@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 from ataraxis_time import TimestampFormats, TimestampPrecisions, get_timestamp
+from ataraxis_base_utilities import convert_scalar_to_bytes
 
 from ataraxis_data_structures import DataLogger, LogMessage, LogPackage, LogArchiveReader, assemble_log_archives
 
@@ -22,7 +23,7 @@ def _create_log_message(source_id: int, timestamp_us: int, payload: NDArray[np.u
         A numpy array representing the serialized message.
     """
     source_bytes = np.array([source_id], dtype=np.uint8)
-    timestamp_bytes = np.array([timestamp_us], dtype=np.uint64).view(np.uint8)
+    timestamp_bytes = convert_scalar_to_bytes(value=timestamp_us, dtype=np.dtype(np.uint64))
     return np.concatenate([source_bytes, timestamp_bytes, payload])
 
 
@@ -37,8 +38,8 @@ def _create_onset_message(source_id: int, onset_us: int) -> NDArray[np.uint8]:
         A numpy array representing the onset message.
     """
     source_bytes = np.array([source_id], dtype=np.uint8)
-    timestamp_bytes = np.array([0], dtype=np.uint64).view(np.uint8)
-    onset_bytes = np.array([onset_us], dtype=np.int64).view(np.uint8)
+    timestamp_bytes = convert_scalar_to_bytes(value=0, dtype=np.dtype(np.uint64))
+    onset_bytes = convert_scalar_to_bytes(value=onset_us, dtype=np.dtype(np.int64))
     return np.concatenate([source_bytes, timestamp_bytes, onset_bytes])
 
 
@@ -59,22 +60,19 @@ def _create_test_archive(
     """
     arrays = {}
 
-    # Creates the onset message (first entry).
     onset_key = f"{source_id:03d}_{0:020d}"
     arrays[onset_key] = _create_onset_message(source_id=source_id, onset_us=onset_us)
 
-    # Creates data messages.
     payloads = []
-    for i in range(message_count):
-        elapsed_us = (i + 1) * 1000  # 1ms between messages
-        payload = np.array([(i + j) % 256 for j in range(payload_size)], dtype=np.uint8)
+    for index in range(message_count):
+        elapsed_us = (index + 1) * 1000  # 1ms between messages
+        payload = np.array([(index + payload_index) % 256 for payload_index in range(payload_size)], dtype=np.uint8)
         payloads.append(payload)
 
         message_key = f"{source_id:03d}_{elapsed_us:020d}"
         arrays[message_key] = _create_log_message(source_id=source_id, timestamp_us=elapsed_us, payload=payload)
 
-    # Saves as .npz archive.
-    np.savez(archive_path, **arrays)
+    np.savez(file=archive_path, **arrays)
 
     return payloads
 
@@ -200,10 +198,8 @@ class TestLogArchiveReaderOnsetTimestamp:
         archive_path, _, _, payloads = sample_archive
         reader = LogArchiveReader(archive_path=archive_path)
 
-        # Triggers onset discovery.
         _ = reader.onset_timestamp_us
 
-        # Verifies message keys were cached.
         assert reader._message_keys is not None
         assert len(reader._message_keys) == len(payloads)
 
@@ -212,12 +208,12 @@ class TestLogArchiveReaderOnsetTimestamp:
         # Creates an archive without an onset message (all non-zero timestamps).
         archive_path = tmp_path / "no_onset.npz"
         arrays = {}
-        for i in range(5):
-            key = f"001_{(i + 1) * 1000:020d}"
+        for index in range(5):
+            key = f"001_{(index + 1) * 1000:020d}"
             # All messages have non-zero timestamps.
-            payload = np.array([i], dtype=np.uint8)
-            arrays[key] = _create_log_message(source_id=1, timestamp_us=(i + 1) * 1000, payload=payload)
-        np.savez(archive_path, **arrays)
+            payload = np.array([index], dtype=np.uint8)
+            arrays[key] = _create_log_message(source_id=1, timestamp_us=(index + 1) * 1000, payload=payload)
+        np.savez(file=archive_path, **arrays)
 
         reader = LogArchiveReader(archive_path=archive_path)
 
@@ -238,8 +234,8 @@ class TestLogArchiveReaderMessageKeys:
         keys = reader._get_message_keys()
 
         assert len(keys) == len(payloads)
-        # Verifies onset was discovered.
-        assert reader._onset_us is None  # Original field is None, cached property stores it differently.
+        # Original field is None, cached property stores it differently.
+        assert reader._onset_us is None
 
     def test_message_keys_excludes_onset(self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]) -> None:
         """Verifies that message_keys does not include the onset message."""
@@ -263,13 +259,12 @@ class TestLogArchiveReaderMessageKeys:
         onset_key = "onset_message"
         arrays[onset_key] = _create_onset_message(source_id=1, onset_us=1700000000000000)
 
-        # Data messages.
-        for i in range(3):
-            key = f"001_{(i + 1) * 1000:020d}"
-            payload = np.array([i], dtype=np.uint8)
-            arrays[key] = _create_log_message(source_id=1, timestamp_us=(i + 1) * 1000, payload=payload)
+        for index in range(3):
+            key = f"001_{(index + 1) * 1000:020d}"
+            payload = np.array([index], dtype=np.uint8)
+            arrays[key] = _create_log_message(source_id=1, timestamp_us=(index + 1) * 1000, payload=payload)
 
-        np.savez(archive_path, **arrays)
+        np.savez(file=archive_path, **arrays)
 
         # Pre-provides onset to skip discovery, forcing the fallback path.
         reader = LogArchiveReader(archive_path=archive_path, onset_us=np.uint64(1700000000000000))
@@ -311,7 +306,7 @@ class TestLogArchiveReaderGetBatches:
         archive_path = tmp_path / "empty.npz"
         onset_key = f"{1:03d}_{0:020d}"
         arrays = {onset_key: _create_onset_message(source_id=1, onset_us=1700000000000000)}
-        np.savez(archive_path, **arrays)
+        np.savez(file=archive_path, **arrays)
 
         reader = LogArchiveReader(archive_path=archive_path)
         batches = reader.get_batches(workers=4)
@@ -368,11 +363,10 @@ class TestLogArchiveReaderIterMessages:
 
         assert len(messages) == len(payloads)
 
-        # Verifies each message.
-        for i, message in enumerate(messages):
-            expected_timestamp = onset_us + (i + 1) * 1000
+        for index, message in enumerate(messages):
+            expected_timestamp = onset_us + (index + 1) * 1000
             assert message.timestamp_us == np.uint64(expected_timestamp)
-            np.testing.assert_array_equal(message.payload, payloads[i])
+            np.testing.assert_array_equal(message.payload, payloads[index])
 
     def test_iter_messages_subset(self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]) -> None:
         """Verifies iteration over a subset of messages."""
@@ -387,11 +381,10 @@ class TestLogArchiveReaderIterMessages:
 
         assert len(messages) == 3
 
-        # Verifies each message.
-        for i, message in enumerate(messages):
-            expected_timestamp = onset_us + (i + 1) * 1000
+        for index, message in enumerate(messages):
+            expected_timestamp = onset_us + (index + 1) * 1000
             assert message.timestamp_us == np.uint64(expected_timestamp)
-            np.testing.assert_array_equal(message.payload, payloads[i])
+            np.testing.assert_array_equal(message.payload, payloads[index])
 
     def test_iter_messages_with_pre_provided_onset(
         self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]
@@ -418,14 +411,12 @@ class TestLogArchiveReaderReadAllMessages:
         assert len(timestamps) == len(payloads)
         assert len(read_payloads) == len(payloads)
 
-        # Verifies timestamps.
-        for i, timestamp in enumerate(timestamps):
-            expected_timestamp = onset_us + (i + 1) * 1000
+        for index, timestamp in enumerate(timestamps):
+            expected_timestamp = onset_us + (index + 1) * 1000
             assert timestamp == np.uint64(expected_timestamp)
 
-        # Verifies payloads.
-        for i, payload in enumerate(read_payloads):
-            np.testing.assert_array_equal(payload, payloads[i])
+        for index, payload in enumerate(read_payloads):
+            np.testing.assert_array_equal(payload, payloads[index])
 
     def test_read_all_messages_returns_correct_types(
         self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]
@@ -439,7 +430,7 @@ class TestLogArchiveReaderReadAllMessages:
         assert isinstance(timestamps, np.ndarray)
         assert timestamps.dtype == np.uint64
         assert isinstance(payloads, list)
-        assert all(isinstance(p, np.ndarray) for p in payloads)
+        assert all(isinstance(payload, np.ndarray) for payload in payloads)
 
 
 class TestLogArchiveReaderIntegration:
@@ -455,30 +446,26 @@ class TestLogArchiveReaderIntegration:
         onset_us = get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
 
         # Submits the onset message first (timestamp=0, payload contains UTC epoch as int64).
-        onset_payload = np.array([onset_us], dtype=np.int64).view(np.uint8)
+        onset_payload = convert_scalar_to_bytes(value=onset_us, dtype=np.dtype(np.int64))
         onset_packed = LogPackage(source_id=np.uint8(1), acquisition_time=np.uint64(0), serialized_data=onset_payload)
         logger.input_queue.put(onset_packed)
 
-        # Submits test data.
         test_payloads = []
-        for i in range(5):
-            payload = np.array([i, i + 1, i + 2], dtype=np.uint8)
+        for index in range(5):
+            payload = np.array([index, index + 1, index + 2], dtype=np.uint8)
             test_payloads.append(payload)
             packed = LogPackage(
-                source_id=np.uint8(1), acquisition_time=np.uint64(i * 1000 + 1000), serialized_data=payload
+                source_id=np.uint8(1), acquisition_time=np.uint64(index * 1000 + 1000), serialized_data=payload
             )
             logger.input_queue.put(packed)
 
         logger.stop()
 
-        # Assembles the archive.
         assemble_log_archives(log_directory=logger.output_directory, remove_sources=True, verbose=False)
 
-        # Finds the archive.
         archives = list(logger.output_directory.glob("*.npz"))
         assert len(archives) == 1
 
-        # Reads using LogArchiveReader.
         reader = LogArchiveReader(archive_path=archives[0])
 
         # Verifies onset was discovered.
@@ -495,4 +482,4 @@ class TestLogArchiveReaderIntegration:
         # Verifies payloads match (order may differ due to timing).
         read_payloads = [m.payload for m in messages]
         for payload in test_payloads:
-            assert any(np.array_equal(payload, rp) for rp in read_payloads)
+            assert any(np.array_equal(payload, read_payload) for read_payload in read_payloads)

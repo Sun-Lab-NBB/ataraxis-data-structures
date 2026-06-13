@@ -1,9 +1,13 @@
 """Provides data interpolation utilities for time-series alignment."""
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 
 def interpolate_data(
@@ -34,9 +38,7 @@ def interpolate_data(
         A one-dimensional NumPy array with the same length as the 'target_coordinates' array that stores the
         interpolated data values.
     """
-    # Discrete data.
     if is_discrete:
-        # Pre-allocates the output array.
         interpolated_data = np.empty(target_coordinates.shape, dtype=source_values.dtype)
 
         # Handles boundary conditions in bulk using boolean masks. Clamps all target coordinates below the first source
@@ -45,10 +47,8 @@ def interpolate_data(
         below_minimum = target_coordinates < source_coordinates[0]
         above_maximum = target_coordinates > source_coordinates[-1]
 
-        # Determines which target coordinates are within the source boundaries.
         within_bounds = ~(below_minimum | above_maximum)
 
-        # Assigns out-of-bounds values in bulk.
         interpolated_data[below_minimum] = source_values[0]
         interpolated_data[above_maximum] = source_values[-1]
 
@@ -60,9 +60,9 @@ def interpolate_data(
 
         return interpolated_data
 
-    # Continuous data. Due to interpolation, continuous data is always returned using float64 datatype.
+    # Casts all inputs to float64 because linear interpolation always produces float64 outputs.
     return np.interp(
-        target_coordinates.astype(np.float64),
-        source_coordinates.astype(np.float64),
-        source_values.astype(np.float64),
+        x=target_coordinates.astype(np.float64),
+        xp=source_coordinates.astype(np.float64),
+        fp=source_values.astype(np.float64),
     )

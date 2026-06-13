@@ -3,6 +3,12 @@
 import multiprocessing
 from multiprocessing import Process
 
+import numpy as np
+import pytest
+from ataraxis_base_utilities import error_format
+
+from ataraxis_data_structures import SharedMemoryArray
+
 # When spawn creates child processes, they re-import this module with __name__ == '__mp_main__'.
 # This configures the main process to use the 'spawn' multiprocessing method, which is the default for Windows systems.
 if __name__ != "__mp_main__":
@@ -11,12 +17,6 @@ if __name__ != "__mp_main__":
             multiprocessing.set_start_method("spawn", force=True)
     except RuntimeError:
         pass  # Already set.
-
-import numpy as np
-import pytest
-from ataraxis_base_utilities import error_format
-
-from ataraxis_data_structures import SharedMemoryArray
 
 
 @pytest.fixture
@@ -58,7 +58,7 @@ def test_create_array(int_array):
         - 2: Verifying the data integrity of the created array
     """
     # Creates a SharedMemoryArray instance.
-    sma = SharedMemoryArray.create_array("test_create_array", int_array)
+    sma = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array)
     sma.connect()
     assert sma.name == "test_create_array"
     assert sma.shape == int_array.shape
@@ -66,20 +66,20 @@ def test_create_array(int_array):
     assert sma.is_connected
 
     # Verifies data integrity using array context manager.
-    with sma.array(with_lock=False) as arr:
-        np.testing.assert_array_equal(arr, int_array)
+    with sma.array(with_lock=False) as shared_array:
+        np.testing.assert_array_equal(shared_array, int_array)
 
     # Destroys the array, freeing up the buffer name to be used by other SMA instances.
     sma.disconnect()
     sma.destroy()
 
     # Verifies that the buffer has been freed up.
-    sma = SharedMemoryArray.create_array("test_create_array", int_array)
+    sma = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array)
     sma.connect()
     sma.disconnect()
 
     # Verifies that exist_ok flag works as expected by recreating an already existing buffer.
-    sma = SharedMemoryArray.create_array("test_create_array", int_array, exists_ok=True)
+    sma = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array, exists_ok=True)
     sma.connect()
 
     # Cleans up after the runtime.
@@ -95,14 +95,14 @@ def test_create_array_multidimensional(multi_dim_array):
         - 1: Verifying the shape and data integrity of the multidimensional array
     """
     # Creates a SharedMemoryArray instance with a 2D array.
-    sma = SharedMemoryArray.create_array("test_multidim", multi_dim_array)
+    sma = SharedMemoryArray.create_array(name="test_multidim", prototype=multi_dim_array)
     sma.connect()
     assert sma.shape == multi_dim_array.shape
     assert sma.datatype == multi_dim_array.dtype
 
     # Verifies data integrity.
-    with sma.array(with_lock=False) as arr:
-        np.testing.assert_array_equal(arr, multi_dim_array)
+    with sma.array(with_lock=False) as shared_array:
+        np.testing.assert_array_equal(shared_array, multi_dim_array)
 
     # Cleans up.
     sma.destroy()
@@ -115,7 +115,7 @@ def test_repr(int_array):
         - 0: Creating a SharedMemoryArray and verifying its string representation
     """
     # Creates a SharedMemoryArray instance.
-    sma = SharedMemoryArray.create_array("test_repr", int_array)
+    sma = SharedMemoryArray.create_array(name="test_repr", prototype=int_array)
     sma.connect()
     expected_repr = (
         f"SharedMemoryArray(name='test_repr', shape={int_array.shape}, datatype={int_array.dtype}, connected=True)"
@@ -163,7 +163,7 @@ def test_getitem(request, array_fixture, buffer_name, index, expected, expected_
     """
     # Uses the test-specific fixture to get the prototype array and instantiate the SMA instance.
     sample_array = request.getfixturevalue(array_fixture)
-    sma = SharedMemoryArray.create_array(buffer_name, sample_array)
+    sma = SharedMemoryArray.create_array(name=buffer_name, prototype=sample_array)
     sma.connect()
 
     # Reads data using a test-specific index.
@@ -221,7 +221,7 @@ def test_setitem(request, array_fixture, buffer_name, index, data, expected):
     """
     # Uses the test-specific fixture to get the prototype array and instantiate the SMA object.
     sample_array = request.getfixturevalue(array_fixture)
-    sma = SharedMemoryArray.create_array(buffer_name, sample_array)
+    sma = SharedMemoryArray.create_array(name=buffer_name, prototype=sample_array)
     sma.connect()
 
     # Writes test data using the tested combination of index and input data.
@@ -253,21 +253,21 @@ def test_array_context_manager(int_array):
         - 2: Modifying the array through the context manager
     """
     # Creates a SharedMemoryArray instance.
-    sma = SharedMemoryArray.create_array("test_array_cm", int_array)
+    sma = SharedMemoryArray.create_array(name="test_array_cm", prototype=int_array)
     sma.connect()
 
     # Tests reading with lock.
-    with sma.array(with_lock=True) as arr:
-        np.testing.assert_array_equal(arr, int_array)
-        assert isinstance(arr, np.ndarray)
+    with sma.array(with_lock=True) as shared_array:
+        np.testing.assert_array_equal(shared_array, int_array)
+        assert isinstance(shared_array, np.ndarray)
 
     # Tests reading without the lock.
-    with sma.array(with_lock=False) as arr:
-        np.testing.assert_array_equal(arr, int_array)
+    with sma.array(with_lock=False) as shared_array:
+        np.testing.assert_array_equal(shared_array, int_array)
 
     # Tests modification through context manager.
-    with sma.array(with_lock=True) as arr:
-        arr[0] = 100
+    with sma.array(with_lock=True) as shared_array:
+        shared_array[0] = 100
 
     # Verifies the modification persisted.
     assert sma[0] == 100
@@ -285,27 +285,27 @@ def test_disconnect_connect(int_array):
         - 2: Verifying data integrity after reconnection
     """
     # Creates two arrays to handle Windows garbage collection behavior.
-    smu = SharedMemoryArray.create_array("test_connect", int_array)
-    sma = SharedMemoryArray.create_array("test_disconnect", int_array)
+    connection_array = SharedMemoryArray.create_array(name="test_connect", prototype=int_array)
+    sma = SharedMemoryArray.create_array(name="test_disconnect", prototype=int_array)
 
     # Connects to tested arrays.
     sma.connect()
-    smu.connect()
+    connection_array.connect()
 
     # Tests disconnection.
     sma.disconnect()
     assert not sma.is_connected
 
     # Tests reconnection.
-    smu.connect()
-    assert smu.is_connected
+    connection_array.connect()
+    assert connection_array.is_connected
 
     # Verifies data integrity after reconnection.
-    with smu.array(with_lock=False) as arr:
-        np.testing.assert_array_equal(arr, int_array)
+    with connection_array.array(with_lock=False) as shared_array:
+        np.testing.assert_array_equal(shared_array, int_array)
 
     # Cleans up.
-    smu.destroy()
+    connection_array.destroy()
 
 
 def test_enable_buffer_destruction(int_array):
@@ -316,12 +316,12 @@ def test_enable_buffer_destruction(int_array):
         - 1: Verifying the flag is set correctly
     """
     # Creates a SharedMemoryArray instance.
-    sma = SharedMemoryArray.create_array("test_destruction", int_array)
+    sma = SharedMemoryArray.create_array(name="test_destruction", prototype=int_array)
     sma.connect()
 
     # Enables buffer destruction.
     sma.enable_buffer_destruction()
-    assert sma._destroy_buffer is True
+    assert sma._destroy_buffer
 
     # Manually cleans up (to prevent automatic destruction during test).
     sma._destroy_buffer = False
@@ -365,7 +365,7 @@ def test_getitem_errors(int_array):
         - 0: Attempting to read from a disconnected array
     """
     # Creates the array without connecting.
-    sma = SharedMemoryArray.create_array("test_getitem_error", int_array)
+    sma = SharedMemoryArray.create_array(name="test_getitem_error", prototype=int_array)
 
     # Tests reading from the disconnected array.
     message = (
@@ -384,7 +384,7 @@ def test_setitem_errors(int_array):
         - 0: Attempting to write to a disconnected array
     """
     # Creates the array without connecting.
-    sma = SharedMemoryArray.create_array("test_setitem_error", int_array)
+    sma = SharedMemoryArray.create_array(name="test_setitem_error", prototype=int_array)
 
     # Tests writing to the disconnected array.
     message = (
@@ -403,7 +403,7 @@ def test_array_context_manager_errors(int_array):
         - 0: Attempting to use array() on a disconnected instance
     """
     # Creates the array without connecting.
-    sma = SharedMemoryArray.create_array("test_array_error", int_array)
+    sma = SharedMemoryArray.create_array(name="test_array_error", prototype=int_array)
 
     # Tests using array() on disconnected instance.
     message = (
@@ -467,12 +467,13 @@ def test_cross_process_read_write():
         - 1: Reading the written data from the parent process
     """
     # Instantiates the SMA object.
-    sma = SharedMemoryArray.create_array("test_cross_process", np.array([1, 2, 3, 4, 5], dtype=np.int32))
+    prototype = np.array([1, 2, 3, 4, 5], dtype=np.int32)
+    sma = SharedMemoryArray.create_array(name="test_cross_process", prototype=prototype)
 
     # Writes (and reads) to the SMA from a different process.
-    p = Process(target=read_write_worker, args=(sma,))
-    p.start()
-    p.join()
+    process = Process(target=read_write_worker, args=(sma,))
+    process.start()
+    process.join()
 
     # Finishes setting up the array in the local process.
     sma.connect()
@@ -494,22 +495,22 @@ def test_cross_process_concurrent_access():
         - 1: Verifying the final value of each array element after concurrent incrementing
     """
     # Instantiates the SMA object.
-    sma = SharedMemoryArray.create_array("test_concurrent", np.zeros(5, dtype=np.int32))
+    sma = SharedMemoryArray.create_array(name="test_concurrent", prototype=np.zeros(5, dtype=np.int32))
 
     # Generates multiple processes and uses each to repeatedly increment different indices.
-    processes = [Process(target=concurrent_worker, args=(sma, i)) for i in range(5)]
-    for p in processes:
-        p.start()
-    for p in processes:
-        p.join()
+    processes = [Process(target=concurrent_worker, args=(sma, index)) for index in range(5)]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join()
 
     # Finishes setting up the array in the local process.
     sma.connect()
     sma.enable_buffer_destruction()
 
     # Verifies all indices were incremented to the expected value.
-    with sma.array(with_lock=False) as arr:
-        assert np.all(arr == 100)
+    with sma.array(with_lock=False) as shared_array:
+        assert np.all(shared_array == 100)
 
     # Cleans up.
     sma.destroy()

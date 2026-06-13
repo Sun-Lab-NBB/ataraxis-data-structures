@@ -60,17 +60,16 @@ class LogArchiveReader:
         FileNotFoundError: If the specified archive file does not exist.
     """
 
-    # The number of bytes used to store the timestamp in each message header.
     _TIMESTAMP_BYTE_SIZE: int = 8
+    """The number of bytes used to store the timestamp in each message header."""
 
-    # The threshold for parallel processing. Archives with fewer messages are processed sequentially.
     _PARALLEL_PROCESSING_THRESHOLD: int = 2000
+    """The threshold for parallel processing. Archives with fewer messages are processed sequentially."""
 
-    # The suffix pattern for onset message keys (underscore + 20 zeros for timestamp=0).
     _ONSET_KEY_SUFFIX: str = "_00000000000000000000"
+    """The suffix pattern for onset message keys (underscore + 20 zeros for timestamp=0)."""
 
     def __init__(self, archive_path: Path, onset_us: np.uint64 | None = None) -> None:
-        # Validates the archive path.
         if not archive_path.exists():
             message = f"Unable to open log archive. The file does not exist at the expected path: {archive_path}."
             console.error(message=message, error=FileNotFoundError)
@@ -101,11 +100,9 @@ class LogArchiveReader:
         Raises:
             ValueError: If the archive does not contain a valid onset timestamp message.
         """
-        # Returns the pre-provided onset timestamp if available.
         if self._onset_us is not None:
             return self._onset_us
 
-        # Scans the archive to discover the onset timestamp.
         with np.load(self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
             file_list = list(archive.files)
 
@@ -168,11 +165,7 @@ class LogArchiveReader:
 
     @property
     def message_count(self) -> int:
-        """Returns the number of data messages in the archive, excluding the onset message.
-
-        Returns:
-            The count of data messages available for iteration.
-        """
+        """Returns the number of data messages in the archive, excluding the onset message."""
         return len(self._get_message_keys())
 
     def get_batches(self, workers: int = -1, batch_multiplier: int = 4) -> list[list[str]]:
@@ -188,8 +181,8 @@ class LogArchiveReader:
         Args:
             workers: The number of worker processes to optimize batching for. A value less than 1 uses all available
                 CPU cores minus 2.
-            batch_multiplier: The over-batching factor. Creates (workers * batch_multiplier) batches for better load
-                distribution.
+            batch_multiplier: The over-batching factor. Creates up to (workers * batch_multiplier) batches for better
+                load distribution.
 
         Returns:
             A list of message key batches. Each batch is a list of string keys that can be passed to iter_messages().
@@ -197,17 +190,13 @@ class LogArchiveReader:
         keys = self._get_message_keys()
         total_messages = len(keys)
 
-        # For small archives, returns a single batch.
         if total_messages < self._PARALLEL_PROCESSING_THRESHOLD:
             return [keys] if keys else []
 
-        # Resolves the worker count.
         resolved_workers = resolve_worker_count(requested_workers=max(0, workers))
 
-        # Calculates batch size using over-batching for better load distribution.
         batch_size = max(1, ceil(total_messages / (resolved_workers * batch_multiplier)))
 
-        # Splits keys into batches and returns them.
         return [keys[i : i + batch_size] for i in range(0, total_messages, batch_size)]
 
     def iter_messages(self, keys: list[str] | None = None) -> Iterator[LogMessage]:
@@ -226,13 +215,10 @@ class LogArchiveReader:
         Yields:
             LogMessage instances containing the absolute timestamp and payload for each message.
         """
-        # Resolves the onset timestamp (triggers discovery if needed).
         onset = self.onset_timestamp_us
 
-        # Resolves the keys to iterate.
         target_keys = keys if keys is not None else self._get_message_keys()
 
-        # Opens the archive and iterates through messages.
         with np.load(self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
             for key in target_keys:
                 message: NDArray[np.uint8] = archive[key]
@@ -240,10 +226,8 @@ class LogArchiveReader:
                 # Extracts the elapsed microseconds from the message header.
                 elapsed_us = message[1 : 1 + self._TIMESTAMP_BYTE_SIZE].view(np.uint64).item()
 
-                # Calculates the absolute timestamp.
                 absolute_timestamp = onset + elapsed_us
 
-                # Extracts the payload (everything after the header).
                 payload = message[1 + self._TIMESTAMP_BYTE_SIZE :].copy()
 
                 yield LogMessage(timestamp_us=np.uint64(absolute_timestamp), payload=payload)
