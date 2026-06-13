@@ -119,7 +119,6 @@ class DataLogger:
         thread_count: int = 5,
         poll_interval: int = 5,
     ) -> None:
-        # Initializes runtime control attributes.
         self._started: bool = False
         self._mp_manager: SyncManager = Manager()
 
@@ -186,7 +185,6 @@ class DataLogger:
         self._watchdog_thread = Thread(target=self._watchdog, daemon=True)
         self._watchdog_thread.start()
 
-        # Sets the tracker flag.
         self._started = True
 
     def stop(self) -> None:
@@ -252,7 +250,7 @@ class DataLogger:
         This worker function is the target for each data-saving thread.
 
         Args:
-            filename: The name of the file to save the data to, without the suffix.
+            filename: The full path to the .npy file to save the data to. The name already includes the .npy suffix.
             data: The data to be saved, packaged into a one-dimensional bytes' array.
         """
         np.save(file=filename, arr=data, allow_pickle=False)
@@ -303,7 +301,7 @@ class DataLogger:
                     filename = output_directory.joinpath(file_name)
 
                     # Submits the task to the thread pool to be executed.
-                    executor.submit(DataLogger._save_data, filename, data)
+                    executor.submit(DataLogger._save_data, filename=filename, data=data)
 
                 # If the queue is empty, invokes the sleep timer to reduce CPU load.
                 except (Empty, KeyError):
@@ -403,7 +401,6 @@ def assemble_log_archives(
         load_numpy = partial(_load_numpy_files, memory_map=memory_mapping)
         batch_size = int(np.ceil(total_files / max_workers * 4))
 
-        # Groups files into batches across all sources.
         load_futures = [
             (source_id, p_executor.submit(load_numpy, file_batch))
             for source_id, files in source_files.items()
@@ -411,7 +408,6 @@ def assemble_log_archives(
             for file_batch in [tuple(files[i : i + batch_size])]
         ]
 
-        # Waits for all log entries to be loaded.
         with console.progress(
             total=total_files,
             description="Loading log entry data into memory",
@@ -431,7 +427,6 @@ def assemble_log_archives(
             p_executor.submit(assemble, source_id, loaded_data[source_id]): source_id for source_id in source_files
         }
 
-        # Waits for all archives to be assembled.
         archives = {}
         with console.progress(
             total=len(source_files),
@@ -450,7 +445,6 @@ def assemble_log_archives(
                 source_id: p_executor.submit(_load_numpy_archive, path) for source_id, path in archives.items()
             }
 
-            # Waits for the data to be loaded.
             archive_data = {}
             with console.progress(
                 total=len(archives), description="Loading archive data into memory", unit="archives"
@@ -515,15 +509,15 @@ def _load_numpy_files(
         element is a tuple of loaded or memory-mapped data arrays.
     """
     mmap_mode: Literal["r"] | None = "r" if memory_map else None
-    results = [(file_path.stem, np.load(file_path, mmap_mode=mmap_mode)) for file_path in file_paths]
+    results = [(file_path.stem, np.load(file=file_path, mmap_mode=mmap_mode)) for file_path in file_paths]
     return tuple(zip(*results, strict=False)) if results else ((), ())  # type: ignore[return-value]
 
 
 def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:  # pragma: no cover
     """Loads a NumPy .npz archive containing multiple arrays as a dictionary.
 
-    This service function is used during compressed log verification to load all entries from a compressed log archive
-    into memory in parallel.
+    This service function is used during log verification to load all entries from a .npz log archive into memory in
+    parallel.
 
     Args:
         file_path: The path to the .npz log archive to load.
@@ -531,8 +525,7 @@ def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:  # pragma: 
     Returns:
         A dictionary that uses log entry names as keys and serialized log entry data (stored in NumPy arrays) as values.
     """
-    # Loads the data and formats it as a dictionary before returning it to caller.
-    with np.load(file_path) as npz_data:
+    with np.load(file=file_path) as npz_data:
         return {key: npz_data[key] for key in npz_data.files}
 
 
@@ -553,15 +546,14 @@ def _assemble_archive(
 
     Returns:
         A tuple of two elements. The first element is the source ID code. The second element is the path to the
-        compressed log file.
+        uncompressed .npz log archive.
     """
     # Computes the output path.
     output_path = output_directory.joinpath(f"{source_id}_log.npz")
 
     # Assembles all source data into an uncompressed .npz archive.
-    np.savez(output_path, allow_pickle=False, **source_data)
+    np.savez(file=output_path, allow_pickle=False, **source_data)
 
-    # Returns the source ID and the path to the compressed log file to caller.
     return source_id, output_path
 
 

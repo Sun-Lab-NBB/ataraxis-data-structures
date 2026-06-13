@@ -1,7 +1,8 @@
 """Provides classes and structures for storing, manipulating, and sharing data between Python processes.
 
-See the `source code repository <https://github.com/Sun-Lab-NBB/ataraxis-data-structures>`_ for more details.
-API documentation: `ataraxis-data-structures-api-docs <https://ataraxis-data-structures-api-docs.netlify.app/>`_
+See the `API documentation <https://ataraxis-data-structures-api-docs.netlify.app/>`_ for the description of
+available classes and structures. See the `source code repository
+<https://github.com/Sun-Lab-NBB/ataraxis-data-structures>`_ for more details.
 
 Authors: Ivan Kondratyev (Inkaros)
 """

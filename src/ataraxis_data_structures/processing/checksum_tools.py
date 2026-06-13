@@ -13,13 +13,12 @@ def _calculate_file_checksum(base_directory: Path, file_path: Path) -> tuple[str
 
     Args:
         base_directory: The path to the directory being processed by the 'calculate_directory_checksum' function.
-        file_path: The path to the target file relative to the base directory.
+        file_path: The full path to the target file located inside the base directory.
 
     Returns:
-        A tuple with two elements. The first element is the path to the file relative to the base directory. The second
-        element is the xxHash3-128 checksum that reflects the file's path and data.
+        The first element is the file path relative to the base directory; the second is the xxHash3-128 checksum
+        reflecting the file's path and data.
     """
-    # Initializes the hashsum object.
     checksum = xxhash.xxh3_128()
 
     # Encodes the relative path and appends it to the checksum. This ensures that the hashsum reflects both the state
@@ -29,8 +28,8 @@ def _calculate_file_checksum(base_directory: Path, file_path: Path) -> tuple[str
 
     # Extends the checksum to reflect the file data state. Uses 8 MB chunks to avoid excessive RAM hogging at the cost
     # of slightly reduced throughput.
-    with file_path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024 * 8), b""):
+    with file_path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024 * 8), b""):
             checksum.update(chunk)
 
     # Returns both path and file checksum. Although the relative path information is already encoded in the hashsum, the
@@ -61,7 +60,7 @@ def calculate_directory_checksum(
     Args:
         directory: The path to the directory for which to generate the checksum.
         num_processes: The number of processes to use for parallelizing checksum calculation. If set to None, the
-            function uses all available CPU cores.
+            function uses all available CPU cores minus 2 reserved cores (via resolve_worker_count).
         progress: Determines whether to track the checksum calculation progress using a progress bar.
         save_checksum: Determines whether the checksum should be saved (written to) a .txt file.
         excluded_files: The set of filenames to exclude from the checksum calculation. If set to None, defaults to
@@ -70,58 +69,51 @@ def calculate_directory_checksum(
     Returns:
         The xxHash3-128 checksum for the input directory as a hexadecimal string.
     """
-    # Resolves excluded files default.
     if excluded_files is None:
         excluded_files = {"ax_checksum.txt"}
 
-    # Determines the number of parallel processes to use.
     if num_processes is None:
         num_processes = resolve_worker_count()
 
-    # Determines the path to each file inside the input directory structure and sorts them for consistency
+    # Sorts the discovered file paths for consistency, so that the directory checksum is order-independent.
     files = sorted(
         path
         for path in directory.rglob("*")
         if path.is_file() and f"{path.stem}{path.suffix}" not in excluded_files  # Excludes service files
     )
 
-    # Pre-creates the directory checksum
     checksum = xxhash.xxh3_128()
 
-    # Process files in parallel
     with ProcessPoolExecutor(max_workers=num_processes) as executor:
-        # Creates the partial function with fixed base_directory (the first argument of _calculate_file_hash())
-        process_file = partial(_calculate_file_checksum, directory)
+        # Binds base_directory so each submitted task only needs to supply the per-file path.
+        process_file = partial(_calculate_file_checksum, base_directory=directory)
 
-        # Submits all tasks to be executed in parallel
         # noinspection PyTypeChecker
-        future_to_path = {executor.submit(process_file, file): file for file in files}
+        future_to_path = {executor.submit(process_file, file_path=file): file for file in files}
 
-        # Collects results as they complete
         results = []
         if progress:
             with console.progress(
                 total=len(files), description=f"Calculating checksum for {directory.name}", unit="file"
-            ) as pbar:
+            ) as progress_bar:
                 for future in as_completed(future_to_path):
                     results.append(future.result())
-                    pbar.update(1)
+                    progress_bar.update(n=1)
         else:
             # For batch mode, uses a direct list comprehension with as_completed. This avoids the overhead of progress
             # tracking while maintaining parallel processing, avoiding terminal clutter in batched contexts.
             results = [future.result() for future in as_completed(future_to_path)]
 
-        # Sorts results for consistency and combines them into the final checksum
+        # Sorts results for consistency, so that the combined directory checksum does not depend on completion order.
         for file_path, file_checksum in sorted(results):
             checksum.update(file_path.encode())
             checksum.update(file_checksum)
 
     checksum_hexstring = checksum.hexdigest()
 
-    # Writes the hash to ax_checksum.txt in the root directory
     if save_checksum:
         checksum_path = directory.joinpath("ax_checksum.txt")
-        with checksum_path.open("w") as f:
-            f.write(checksum_hexstring)
+        with checksum_path.open("w") as file:
+            file.write(checksum_hexstring)
 
     return checksum_hexstring

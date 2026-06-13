@@ -223,8 +223,8 @@ class TestInterpolateData:
             is_discrete=False,
         )
 
-        assert len(result_discrete) == 0
-        assert len(result_continuous) == 0
+        assert result_discrete.size == 0
+        assert result_continuous.size == 0
 
     def test_discrete_interpolation_uint8_values(self) -> None:
         """Verifies discrete interpolation works with uint8 dtype values."""

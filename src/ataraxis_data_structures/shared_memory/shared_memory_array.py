@@ -2,15 +2,20 @@
 n-dimensional NumPy array memory buffer.
 """
 
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 from contextlib import contextmanager
-from collections.abc import Generator
 from multiprocessing import Lock
 from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
-from numpy.typing import NDArray
 from ataraxis_base_utilities import console
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from numpy.typing import NDArray
 
 
 class SharedMemoryArray:
@@ -108,10 +113,10 @@ class SharedMemoryArray:
             console.error(message=message, error=ConnectionError)
 
         # noinspection PyArgumentList
-        with self.array(with_lock=True) as arr:
+        with self.array(with_lock=True) as shared_array:
             # Returns a copy to prevent external modifications to the returned data from affecting the shared array
             # without going through __setitem__.
-            result = arr[index]
+            result = shared_array[index]
             if isinstance(result, np.ndarray):
                 return result.copy()
             return result
@@ -147,10 +152,9 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-        # Writes the input values at the specified index.
         # noinspection PyArgumentList
-        with self.array(with_lock=True) as arr:
-            arr[index] = value
+        with self.array(with_lock=True) as shared_array:
+            shared_array[index] = value
 
     def enable_buffer_destruction(self) -> None:
         """Configures the instance to destroy the shared memory buffer when it is garbage-collected.
@@ -172,7 +176,7 @@ class SharedMemoryArray:
         prototype: NDArray[Any],
         *,
         exists_ok: bool = False,
-    ) -> "SharedMemoryArray":
+    ) -> SharedMemoryArray:
         """Creates a SharedMemoryArray instance using the input prototype NumPy array.
 
         This method uses the input prototype to generate the shared memory buffer to store the prototype's data and
@@ -216,7 +220,6 @@ class SharedMemoryArray:
         except FileExistsError:
             # If the buffer already exists but the method is configured to recreate it, destroys the old buffer.
             if exists_ok:
-                # Destroys the existing shared memory buffer.
                 SharedMemory(name=name, create=False).unlink()
 
                 # Recreates the shared memory buffer using the freed buffer name.
@@ -256,7 +259,6 @@ class SharedMemoryArray:
             instance. Otherwise, the child processes may not be able to connect to the shared memory buffer.
         """
         if not self._connected:
-            # Connects to the shared memory buffer.
             self._buffer = SharedMemory(name=self._name, create=False)
             # Re-initializes the internal _array with the data from the shared memory buffer.
             self._array = np.ndarray(shape=self._shape, dtype=self._datatype, buffer=self._buffer.buf)
@@ -292,10 +294,7 @@ class SharedMemoryArray:
             # If the instance is connected to the buffer, first disconnects it from the buffer.
             self.disconnect()
 
-            # Requests the shared memory buffer to be destroyed.
             self._buffer.unlink()
-
-            # Releases the reference to the shared memory buffer.
             self._buffer = None
 
     @contextmanager

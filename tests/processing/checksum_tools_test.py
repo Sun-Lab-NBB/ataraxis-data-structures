@@ -17,11 +17,9 @@ def sample_directory_structure(tmp_path) -> Path:
     root = tmp_path / "test_source"
     root.mkdir()
 
-    # Creates files in root
     (root / "file1.txt").write_text("content1")
     (root / "file2.txt").write_text("content2")
 
-    # Creates subdirectories with files
     subdir1 = root / "subdir1"
     subdir1.mkdir()
     (subdir1 / "file3.txt").write_text("content3")
@@ -31,7 +29,6 @@ def sample_directory_structure(tmp_path) -> Path:
     subdir2.mkdir()
     (subdir2 / "file5.txt").write_text("content5")
 
-    # Creates a nested subdirectory
     nested = subdir1 / "nested"
     nested.mkdir()
     (nested / "file6.txt").write_text("content6")
@@ -103,7 +100,6 @@ def test_calculate_directory_checksum_progress_mode(sample_directory_structure, 
 
 def test_calculate_directory_checksum_excludes_default_service_files(tmp_path):
     """Verifies that the default excluded file (ax_checksum.txt) is excluded from checksum calculation."""
-    # Creates a directory with regular and service files
     test_dir = tmp_path / "test_exclude"
     test_dir.mkdir()
 
@@ -189,7 +185,6 @@ def test_calculate_directory_checksum_content_sensitivity(tmp_path):
     test_dir = tmp_path / "content_test"
     test_dir.mkdir()
 
-    # Creates the initial file
     (test_dir / "file.txt").write_text("original content")
     checksum1 = calculate_directory_checksum(directory=test_dir, save_checksum=False)
 
@@ -206,7 +201,6 @@ def test_calculate_directory_checksum_structure_sensitivity(tmp_path):
     test_dir = tmp_path / "structure_test"
     test_dir.mkdir()
 
-    # Creates initial structure
     (test_dir / "file.txt").write_text("content")
     checksum1 = calculate_directory_checksum(directory=test_dir, save_checksum=False)
 
@@ -260,13 +254,12 @@ def test_calculate_directory_checksum_large_files(tmp_path):
 
 def test_calculate_directory_checksum_nested_structure(tmp_path):
     """Verifies checksum calculation with deeply nested directory structures."""
-    # Creates a deeply nested structure
     test_dir = tmp_path / "nested"
     current = test_dir
-    for i in range(5):
-        current /= f"level_{i}"
+    for level_index in range(5):
+        current /= f"level_{level_index}"
         current.mkdir(parents=True, exist_ok=True)
-        (current / f"file_{i}.txt").write_text(f"content_{i}")
+        (current / f"file_{level_index}.txt").write_text(f"content_{level_index}")
 
     checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
 
@@ -295,7 +288,6 @@ def test_calculate_directory_checksum_with_existing_checksum_file(tmp_path):
 
 def test_calculate_directory_checksum_different_structures(tmp_path):
     """Verifies that different directory structures produce different checksums."""
-    # Creates first structure
     dir1 = tmp_path / "struct1"
     dir1.mkdir()
     (dir1 / "a.txt").write_text("content_a")
@@ -321,7 +313,6 @@ def test_calculate_directory_checksum_binary_files(tmp_path):
     test_dir = tmp_path / "binary_test"
     test_dir.mkdir()
 
-    # Creates various binary files
     (test_dir / "data.bin").write_bytes(bytes(range(256)))
     (test_dir / "zeros.bin").write_bytes(b"\x00" * 1000)
     (test_dir / "random.bin").write_bytes(os.urandom(500))
