@@ -1,5 +1,7 @@
 """Contains tests for the ProcessingTracker, ProcessingStatus, and JobState classes."""
 
+import os
+
 import pytest
 
 from ataraxis_data_structures import JobState, ProcessingStatus, ProcessingTracker
@@ -162,8 +164,10 @@ def test_processing_tracker_find_jobs_requires_argument(tmp_path):
         tracker.find_jobs()
 
 
-def test_processing_tracker_start_job(tmp_path):
-    """Verifies that start_job marks a job as running."""
+def test_processing_tracker_start_job(tmp_path, monkeypatch):
+    """Verifies that start_job marks a job as running and auto-resolves the executor ID to the process ID."""
+    # Ensures no SLURM allocation is detected so the resolver falls back to the process ID.
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
@@ -174,11 +178,26 @@ def test_processing_tracker_start_job(tmp_path):
 
     tracker._load_state()
     assert tracker.jobs[job_id].status == ProcessingStatus.RUNNING
-    assert tracker.jobs[job_id].executor_id is None
+    assert tracker.jobs[job_id].executor_id == str(os.getpid())
+
+
+def test_processing_tracker_start_job_resolves_slurm_id(tmp_path, monkeypatch):
+    """Verifies that start_job auto-resolves the executor ID to the SLURM job ID when running under SLURM."""
+    monkeypatch.setenv("SLURM_JOB_ID", "987654")
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    job_id = ProcessingTracker.generate_job_id("test_job", "")
+
+    tracker.initialize_jobs(jobs=[("test_job", "")])
+    tracker.start_job(job_id)
+
+    tracker._load_state()
+    assert tracker.jobs[job_id].executor_id == "987654"
 
 
 def test_processing_tracker_start_job_with_executor_id(tmp_path):
-    """Verifies that start_job records the executor_id when provided."""
+    """Verifies that start_job records an explicitly provided executor_id without resolving from the environment."""
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 

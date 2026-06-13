@@ -1,5 +1,6 @@
 """Provides assets for running data processing pipelines and tracking their progress."""
 
+import os
 from enum import IntEnum
 from pathlib import Path
 from dataclasses import field, dataclass
@@ -93,6 +94,23 @@ class ProcessingTracker(YamlConfig):
         combined = f"{job_name}:{specifier}" if specifier else job_name
         # Generates and returns the xxHash64 hash
         return xxhash.xxh64(combined.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _resolve_executor_id() -> str:
+        """Resolves the identifier of the executor running a job from the runtime environment.
+
+        Prefers the SLURM job ID exposed through the ``SLURM_JOB_ID`` environment variable when the job runs under
+        the SLURM workload manager, so that tracker entries can be correlated with the scheduler's runtime logs.
+        Falls back to the current process ID when no SLURM allocation is detected, so that locally executed jobs
+        still record a meaningful executor identifier.
+
+        Returns:
+            The SLURM job ID when running under SLURM, otherwise the current process ID, as a string.
+        """
+        slurm_job_id = os.environ.get("SLURM_JOB_ID")
+        if slurm_job_id:
+            return slurm_job_id
+        return str(os.getpid())
 
     def _load_state(self) -> None:
         """Reads the processing pipeline's runtime state from the cached .YAML file."""
@@ -193,12 +211,13 @@ class ProcessingTracker(YamlConfig):
             return matches
 
     def start_job(self, job_id: str, executor_id: str | None = None) -> None:
-        """Marks the target job as running and optionally records the executor identifier.
+        """Marks the target job as running and records the identifier of the executor running it.
 
         Args:
             job_id: The unique identifier of the job to mark as started.
-            executor_id: An optional identifier for the executor running the job (e.g. a SLURM job ID, a process PID,
-                or any user-defined string).
+            executor_id: An optional explicit identifier for the executor running the job. When None (default), the
+                identifier is resolved automatically from the runtime environment, preferring the SLURM job ID and
+                falling back to the current process ID.
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
@@ -218,10 +237,12 @@ class ProcessingTracker(YamlConfig):
                 )
                 console.error(message=message, error=ValueError)
 
-            # Updates job status, records the executor identifier, and sets the start timestamp
+            # Updates job status, records the executor identifier, and sets the start timestamp. Resolves the
+            # executor identifier from the runtime environment (SLURM job ID, falling back to the process ID) when
+            # the caller does not provide one explicitly.
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.RUNNING
-            job_info.executor_id = executor_id
+            job_info.executor_id = executor_id if executor_id is not None else self._resolve_executor_id()
             job_info.started_at = int(
                 get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
             )
