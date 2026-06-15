@@ -114,8 +114,8 @@ class LogArchiveReader:
 
                 # A timestamp value of 0 indicates the onset message.
                 if timestamp_value == 0:
-                    # The payload contains the onset timestamp as a signed 64-bit integer.
-                    onset = np.uint64(entry[1 + self._TIMESTAMP_BYTE_SIZE :].view(np.int64).item())
+                    # The payload contains the onset timestamp as an unsigned 64-bit integer.
+                    onset = np.uint64(entry[1 + self._TIMESTAMP_BYTE_SIZE :].view(np.uint64).item())
 
                     # Caches the message keys excluding the onset message for later use.
                     self._message_keys = file_list[number + 1 :]
