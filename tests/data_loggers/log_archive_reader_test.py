@@ -39,7 +39,7 @@ def _create_onset_message(source_id: int, onset_us: int) -> NDArray[np.uint8]:
     """
     source_bytes = np.array([source_id], dtype=np.uint8)
     timestamp_bytes = convert_scalar_to_bytes(value=0, dtype=np.dtype(np.uint64))
-    onset_bytes = convert_scalar_to_bytes(value=onset_us, dtype=np.dtype(np.int64))
+    onset_bytes = convert_scalar_to_bytes(value=onset_us, dtype=np.dtype(np.uint64))
     return np.concatenate([source_bytes, timestamp_bytes, onset_bytes])
 
 
@@ -445,8 +445,8 @@ class TestLogArchiveReaderIntegration:
         # Gets the current UTC timestamp for the onset message.
         onset_us = get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
 
-        # Submits the onset message first (timestamp=0, payload contains UTC epoch as int64).
-        onset_payload = convert_scalar_to_bytes(value=onset_us, dtype=np.dtype(np.int64))
+        # Submits the onset message first (timestamp=0, payload contains UTC epoch as uint64).
+        onset_payload = convert_scalar_to_bytes(value=onset_us, dtype=np.dtype(np.uint64))
         onset_packed = LogPackage(source_id=np.uint8(1), acquisition_time=np.uint64(0), serialized_data=onset_payload)
         logger.input_queue.put(onset_packed)
 
