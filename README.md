@@ -408,9 +408,9 @@ if __name__ == "__main__":
     # packaged into a LogPackage instance to ensure that it adheres to the proper format expected by the logger
     # instance.
     source_id = np.uint8(1)  # Has to be an uint8 type
-    timestamp = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))  # Has to be an uint64 type
+    acquisition_time = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))  # Has to be an uint64 type
     data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)  # Has to be an uint8 NumPy array
-    logger_queue.put(LogPackage(source_id, timestamp, data))
+    logger_queue.put(LogPackage(source_id, acquisition_time, data))
 
     # The timer used to timestamp the log entries has to be precise enough to resolve two consecutive data
     # entries. Due to these constraints, it is recommended to use a nanosecond or microsecond timer, such as the
@@ -683,7 +683,7 @@ from ataraxis_data_structures import calculate_directory_checksum
 # Calculates checksum with progress tracking
 checksum = calculate_directory_checksum(
     directory=Path("/path/to/data"),
-    num_processes=None,  # Uses all available CPU cores
+    num_processes=None,  # Uses all available CPU cores minus 2 reserved cores
     progress=True,       # Shows progress bar
     save_checksum=True,  # Saves to ax_checksum.txt in the directory
 )
@@ -720,7 +720,7 @@ transfer_directory(
 transfer_directory(
     source=Path("/path/to/source"),
     destination=Path("/path/to/destination"),
-    num_threads=0,           # Uses all available CPU cores
+    num_threads=0,           # Uses all available CPU cores minus a few reserved for the host
     verify_integrity=True,
     remove_source=True,      # Removes source after successful transfer
 )

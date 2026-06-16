@@ -60,14 +60,22 @@ state to prevent integration errors.
 
 ## Available Skills
 
-| Skill               | Description                                                                    |
-|---------------------|--------------------------------------------------------------------------------|
-| `/explore-codebase` | Perform in-depth codebase exploration at session start                         |
-| `/python-style`     | Apply Ataraxis framework Python coding conventions (REQUIRED for code changes) |
-| `/readme-style`     | Apply Ataraxis framework README conventions                                    |
-| `/commit`           | Draft Ataraxis framework style-compliant git commit messages                   |
-| `/pyproject-style`  | Apply Ataraxis framework pyproject.toml conventions                            |
-| `/tox-config`       | Apply Ataraxis framework tox.ini conventions                                   |
+| Skill                   | Description                                                                    |
+|-------------------------|--------------------------------------------------------------------------------|
+| `/explore-codebase`     | Perform in-depth codebase exploration at session start                         |
+| `/python-style`         | Apply Ataraxis framework Python coding conventions (REQUIRED for code changes) |
+| `/readme-style`         | Apply Ataraxis framework README conventions                                    |
+| `/commit`               | Draft Ataraxis framework style-compliant git commit messages                   |
+| `/pyproject-style`      | Apply Ataraxis framework pyproject.toml conventions                            |
+| `/tox-config`           | Apply Ataraxis framework tox.ini conventions                                   |
+| `/api-docs`             | Apply Ataraxis framework Sphinx API documentation conventions                  |
+| `/audit-facts`          | Fact-check documentation against authoritative source code                     |
+| `/audit-style`          | Audit files for style and convention compliance                                |
+| `/explore-dependencies` | Build an API snapshot of installed ataraxis dependencies                       |
+| `/pr`                   | Draft a style-compliant pull request summary                                   |
+| `/project-layout`       | Apply Ataraxis framework project structure conventions                         |
+| `/release`              | Draft style-compliant release notes from merged PRs                            |
+| `/skill-design`         | Generate and verify skill files and CLAUDE.md instructions                     |
 
 ## Project Context
 
@@ -104,22 +112,22 @@ dependency for other Ataraxis framework projects.
 
 ### Core Components
 
-| Component                    | File                                     | Purpose                                         |
-|------------------------------|------------------------------------------|-------------------------------------------------|
-| SharedMemoryArray            | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory       |
-| YamlConfig                   | `data_structures/yaml_config.py`         | Dataclass with YAML serialization               |
-| ProcessingTracker            | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking       |
-| JobState                     | `data_structures/processing_tracker.py`  | Dataclass for job metadata                      |
-| ProcessingStatus             | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED) |
-| DataLogger                   | `data_loggers/serialized_data_logger.py` | Process-based serialized data logging           |
-| LogPackage                   | `data_loggers/serialized_data_logger.py` | Container for source_id, timestamp, payload     |
-| LogArchiveReader             | `data_loggers/log_archive_reader.py`     | Batch reader for .npz archives                  |
-| LogMessage                   | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload          |
-| assemble_log_archives        | `data_loggers/serialized_data_logger.py` | Aggregates .npy files into .npz archives        |
-| calculate_directory_checksum | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                 |
-| transfer_directory           | `processing/transfer_tools.py`           | Parallel directory copy with verification       |
-| delete_directory             | `processing/transfer_tools.py`           | Parallel directory deletion                     |
-| interpolate_data             | `processing/interpolation.py`            | Time-series interpolation                       |
+| Component                    | File                                     | Purpose                                                    |
+|------------------------------|------------------------------------------|------------------------------------------------------------|
+| SharedMemoryArray            | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory                  |
+| YamlConfig                   | `data_structures/yaml_config.py`         | Dataclass with YAML serialization                          |
+| ProcessingTracker            | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking                  |
+| JobState                     | `data_structures/processing_tracker.py`  | Dataclass for job metadata                                 |
+| ProcessingStatus             | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED)            |
+| DataLogger                   | `data_loggers/serialized_data_logger.py` | Process-based serialized data logging                      |
+| LogPackage                   | `data_loggers/serialized_data_logger.py` | Container for source_id, acquisition_time, serialized_data |
+| LogArchiveReader             | `data_loggers/log_archive_reader.py`     | Batch reader for .npz archives                             |
+| LogMessage                   | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload                     |
+| assemble_log_archives        | `data_loggers/serialized_data_logger.py` | Aggregates .npy files into .npz archives                   |
+| calculate_directory_checksum | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                            |
+| transfer_directory           | `processing/transfer_tools.py`           | Parallel directory copy with verification                  |
+| delete_directory             | `processing/transfer_tools.py`           | Parallel directory deletion                                |
+| interpolate_data             | `processing/interpolation.py`            | Time-series interpolation                                  |
 
 ### Code Standards
 
@@ -150,7 +158,7 @@ dependency for other Ataraxis framework projects.
 
 1. Review `src/ataraxis_data_structures/data_loggers/serialized_data_logger.py` for current implementation
 2. Understand the Process/Queue/watchdog thread architecture
-3. Maintain the LogPackage format (uint8 source_id, uint64 timestamp, uint8 array payload)
+3. Maintain the LogPackage format (uint8 source_id, uint64 acquisition_time, uint8 array serialized_data)
 4. Test with multiprocessing scenarios and verify proper cleanup
 
 **Modifying ProcessingTracker:**
