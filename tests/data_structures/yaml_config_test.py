@@ -142,6 +142,38 @@ def test_yaml_config_from_yaml_errors(tmp_path: Path) -> None:
         TestConfig.from_yaml(invalid_path)
 
 
+@pytest.mark.parametrize(
+    "file_contents, expected_type_name",
+    [
+        ("", "NoneType"),
+        ("- 1\n- 2\n- 3\n", "list"),
+        ("42\n", "int"),
+    ],
+)
+def test_yaml_config_from_yaml_non_mapping_errors(tmp_path: Path, file_contents: str, expected_type_name: str) -> None:
+    """Verifies that the YamlConfig class from_yaml() method raises an error when the file does not contain a
+    top-level mapping.
+
+    Verifies the behavior for an empty file (yields None), a sequence document, and a scalar document.
+    """
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        pass
+
+    yaml_path = tmp_path / "non_mapping.yaml"
+    yaml_path.write_text(file_contents)
+
+    error_message: str = (
+        f"Invalid data encountered when attempting to create the dataclass instance using the data from a "
+        f".yaml file. Expected the file {yaml_path} to contain a top-level mapping, but encountered "
+        f"{expected_type_name}."
+    )
+
+    with pytest.raises(ValueError, match=error_format(error_message)):
+        TestConfig.from_yaml(yaml_path)
+
+
 def test_yaml_config_initialization() -> None:
     """Verifies the initialization of the YamlConfig class with different input parameters."""
 

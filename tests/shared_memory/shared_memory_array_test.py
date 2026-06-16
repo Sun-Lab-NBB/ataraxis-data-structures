@@ -317,6 +317,47 @@ def test_enable_buffer_destruction(int_array: NDArray[np.int32]) -> None:
     sma.destroy()
 
 
+def test_pickle_state_round_trip(int_array: NDArray[np.int32]) -> None:
+    """Verifies the functionality of the SharedMemoryArray class __getstate__() and __setstate__() pickle hooks.
+
+    Verifies that __getstate__() reports the instance as disconnected and drops the live buffer handle, and that
+    __setstate__() restores the metadata so the receiving instance can reconnect to the same shared buffer. The hooks
+    are exercised directly because the underlying Lock can only be transferred to a child process through inheritance,
+    rather than through an in-process pickle round-trip.
+    """
+    # Creates and connects a source instance, then writes a sentinel value through it.
+    sma = SharedMemoryArray.create_array(name="test_pickle", prototype=int_array)
+    sma.connect()
+    sma[0] = 99
+
+    # Captures the picklable state and verifies the live handle and connection flags are reset.
+    state = sma.__getstate__()
+    assert state["_buffer"] is None
+    assert state["_array"] is None
+    assert state["_connected"] is False
+    assert state["_destroy_buffer"] is False
+
+    # Restores the state into a fresh instance the same way the pickle protocol does after __new__.
+    restored = SharedMemoryArray.__new__(SharedMemoryArray)
+    restored.__setstate__(state)
+
+    # Verifies that the metadata survived the transfer and the restored instance reports as disconnected.
+    assert restored.name == sma.name
+    assert restored.shape == sma.shape
+    assert restored.datatype == sma.datatype
+    assert not restored.is_connected
+
+    # Verifies that the restored instance can reconnect to the same buffer and read the sentinel value.
+    restored.connect()
+    assert restored.is_connected
+    assert restored[0] == 99
+
+    # Cleans up. Releases the source handle, then destroys the buffer through the restored instance.
+    sma.disconnect()
+    restored.enable_buffer_destruction()
+    restored.destroy()
+
+
 def test_create_array_errors() -> None:
     """Verifies error handling in the SharedMemoryArray class create_array() method.
 
