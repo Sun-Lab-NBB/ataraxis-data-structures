@@ -1,5 +1,6 @@
 """Contains tests for classes and functions provided by the serialized_data_logger.py module."""
 
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -19,7 +20,7 @@ def sample_data() -> tuple[int, int, NDArray[np.uint8]]:
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_data_logger_initialization(tmp_path):
+def test_data_logger_initialization(tmp_path: Path) -> None:
     """Verifies the initialization of the DataLogger class with different parameters."""
     # Tests default initialization.
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
@@ -34,11 +35,12 @@ def test_data_logger_initialization(tmp_path):
     logger = DataLogger(output_directory=tmp_path, instance_name="custom_logger", thread_count=10, poll_interval=1000)
     assert logger._thread_count == 10
     assert logger._poll_interval == 1000
-    assert repr(logger)  # Ensures __repr__ works as expected.
+    # Ensures __repr__ works as expected.
+    assert repr(logger)
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_data_logger_directory_creation(tmp_path):
+def test_data_logger_directory_creation(tmp_path: Path) -> None:
     """Verifies that the DataLogger creates the necessary output directory."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     assert logger.output_directory.exists()
@@ -46,7 +48,7 @@ def test_data_logger_directory_creation(tmp_path):
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_data_logger_start_stop(tmp_path):
+def test_data_logger_start_stop(tmp_path: Path) -> None:
     """Verifies the start and stop functionality of the DataLogger."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     assert not logger.alive
@@ -54,7 +56,8 @@ def test_data_logger_start_stop(tmp_path):
     # Tests start.
     logger.start()
     assert logger.alive
-    logger.start()  # Ensures that calling start() twice does nothing.
+    # Ensures that calling start() twice does nothing.
+    logger.start()
     assert logger._started
     assert logger._logger_process.is_alive()
 
@@ -66,7 +69,8 @@ def test_data_logger_start_stop(tmp_path):
     logger.stop()
     assert not logger.alive
     assert not logger._logger_process.is_alive()
-    logger.stop()  # Verifies that calling stop twice does nothing.
+    # Verifies that calling stop twice does nothing.
+    logger.stop()
 
     # Cleans up the second logger.
     logger_2.stop()
@@ -77,7 +81,9 @@ def test_data_logger_start_stop(tmp_path):
     "thread_count",
     [5, 3, 10],  # Different thread configurations
 )
-def test_data_logger_multithreading(tmp_path, thread_count, sample_data):
+def test_data_logger_multithreading(
+    tmp_path: Path, thread_count: int, sample_data: tuple[int, int, NDArray[np.uint8]]
+) -> None:
     """Verifies that DataLogger correctly handles multiple threads."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger", thread_count=thread_count)
     logger.start()
@@ -101,7 +107,7 @@ def test_data_logger_multithreading(tmp_path, thread_count, sample_data):
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_data_logger_data_integrity(tmp_path, sample_data):
+def test_data_logger_data_integrity(tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]]) -> None:
     """Verifies that saved data maintains integrity through the logging process."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
@@ -130,7 +136,7 @@ def test_data_logger_data_integrity(tmp_path, sample_data):
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_data_logger_assembly(tmp_path, sample_data):
+def test_data_logger_assembly(tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]]) -> None:
     """Verifies the log archive assembly functionality using the standalone function."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
@@ -160,12 +166,12 @@ def test_data_logger_assembly(tmp_path, sample_data):
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_data_logger_concurrent_access(tmp_path, sample_data):
+def test_data_logger_concurrent_access(tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]]) -> None:
     """Verifies that DataLogger handles concurrent access correctly."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger", thread_count=5)
     logger.start()
 
-    def submit_data(index):
+    def submit_data(index: int) -> None:
         source_id, timestamp, data = sample_data
         timestamp += index
         packed_data = LogPackage(
@@ -192,7 +198,7 @@ def test_data_logger_concurrent_access(tmp_path, sample_data):
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_data_logger_empty_queue_shutdown(tmp_path):
+def test_data_logger_empty_queue_shutdown(tmp_path: Path) -> None:
     """Verifies that DataLogger shuts down correctly with an empty queue."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
@@ -207,7 +213,9 @@ def test_data_logger_empty_queue_shutdown(tmp_path):
 
 @pytest.mark.xdist_group(name="group1")
 @pytest.mark.parametrize("poll_interval", [0, 1000, 5000])
-def test_data_logger_poll_interval(tmp_path, poll_interval, sample_data):
+def test_data_logger_poll_interval(
+    tmp_path: Path, poll_interval: int, sample_data: tuple[int, int, NDArray[np.uint8]]
+) -> None:
     """Verifies that DataLogger respects different poll interval settings."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger", poll_interval=poll_interval)
     logger.start()
@@ -225,7 +233,7 @@ def test_data_logger_poll_interval(tmp_path, poll_interval, sample_data):
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_data_logger_start_stop_cycling(tmp_path):
+def test_data_logger_start_stop_cycling(tmp_path: Path) -> None:
     """Verifies that cycling start and stop method of DataLogger does not produce errors."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
@@ -235,7 +243,9 @@ def test_data_logger_start_stop_cycling(tmp_path):
 
 
 @pytest.mark.xdist_group(name="group1")
-def test_assemble_log_archives_with_integrity_check(tmp_path, sample_data):
+def test_assemble_log_archives_with_integrity_check(
+    tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]]
+) -> None:
     """Verifies the integrity checking feature of assemble_log_archives."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
@@ -263,7 +273,7 @@ def test_assemble_log_archives_with_integrity_check(tmp_path, sample_data):
     assert len(compressed_files) == 1
 
 
-def test_log_package_data_golden_bytes():
+def test_log_package_data_golden_bytes() -> None:
     """Verifies that LogPackage.data serializes the header and payload to the exact byte layout consumers depend on."""
     # The on-disk layout is a fixed contract shared with LogArchiveReader and downstream parsers:
     # [source_id (1 byte)][acquisition_time (8 bytes, little-endian uint64)][payload (N bytes)].
@@ -287,7 +297,7 @@ def test_log_package_data_golden_bytes():
     np.testing.assert_array_equal(data[9:], payload)
 
 
-def test_log_package_data_large_timestamp():
+def test_log_package_data_large_timestamp() -> None:
     """Verifies that LogPackage.data serializes uint64 timestamps at or above 2**63 without overflow or truncation."""
     source_id = np.uint8(255)
     acquisition_time = np.uint64(2**63 + 5)  # Exceeds the signed int64 range.
