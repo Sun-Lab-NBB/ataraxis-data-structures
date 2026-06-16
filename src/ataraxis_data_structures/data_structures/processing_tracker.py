@@ -67,7 +67,7 @@ class ProcessingTracker(YamlConfig):
     """Maps the unique identifiers of the jobs that make up the processing pipeline to their current state and
     metadata."""
     lock_path: str = field(init=False)
-    """The path to the .LOCK file used to ensure thread-safe access to the tracker's data."""
+    """The path to the .LOCK file used to ensure process-safe access to the tracker's data."""
 
     def __post_init__(self) -> None:
         """Resolves the .LOCK file for the managed tracker .YAML file."""
@@ -134,8 +134,8 @@ class ProcessingTracker(YamlConfig):
         """Configures the tracker with the list of one or more jobs to be executed during the pipeline's runtime.
 
         Notes:
-            If the job already has a section in the tracker, this method does not duplicate or modify the existing
-            job entry. Use the reset() method to clear all cached job states.
+            If the job already has a section in the tracker, this method emits a warning and does not duplicate or
+            modify the existing job entry. Use the reset() method to clear all cached job states.
 
         Args:
             jobs: A list of (job_name, specifier) tuples defining the jobs to track. Each tuple contains the

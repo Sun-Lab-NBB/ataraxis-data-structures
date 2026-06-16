@@ -91,7 +91,7 @@ class DataLogger:
 
     Args:
         output_directory: The directory where to save the logged data. The data is saved under a subdirectory named
-            after the logger instance.
+            '{instance_name}_data_log'.
         instance_name: The name of the logger instance. This name has to be unique across all concurrently active
             DataLogger instances.
         thread_count: The number of threads to use for saving the data to disk. It is recommended to use multiple
@@ -122,7 +122,7 @@ class DataLogger:
         self._started: bool = False
         self._mp_manager: SyncManager = Manager()
 
-        # Ensures numeric inputs are not negative.
+        # Clamps thread_count to a minimum of 1 and prevents a negative poll_interval.
         self._thread_count: int = max(1, thread_count)
         self._poll_interval: int = max(0, poll_interval)
         self._name: str = str(instance_name)
@@ -346,13 +346,14 @@ def assemble_log_archives(
     This function is designed to post-process the directories filled by DataLogger instances during runtime.
 
     Notes:
-        All log entries inside each archive are grouped by their acquisition timestamp value before consolidation. The
-        consolidated archive names include the ID code of the source that generated the original log entries.
+        Log entries are grouped into archives by their source, and the entries within each archive are sorted by their
+        acquisition timestamp value before consolidation. The consolidated archive names include the ID code of the
+        source that generated the original log entries.
 
     Args:
         log_directory: The path to the directory that stores the log entries as .npy files.
-        max_workers: Determines the number of threads used to process the data in parallel. If set to None, the
-            function uses the number of CPU cores - 2 threads.
+        max_workers: Determines the number of worker processes and threads used to process the data in parallel. If
+            set to None, the function uses the number of CPU cores minus 2.
         remove_sources: Determines whether to remove the .npy files after consolidating their data into .npz archives.
         memory_mapping: Determines whether to memory-map or load the processed data into RAM during processing. Due to
             Windows not releasing memory-mapped file handles, this function always loads the data into RAM when running

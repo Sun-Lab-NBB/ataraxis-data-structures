@@ -18,8 +18,9 @@ class LogMessage:
     """Stores a single message extracted from a log archive.
 
     Notes:
-        This class is yielded by the LogArchiveReader.iter_messages() method for each message in the archive. The
-        structure of the payload is domain-specific and must be parsed by the consumer.
+        This class is yielded by the LogArchiveReader.iter_messages() method for each message in the archive; the same
+        data is available in array form from the read_all_messages() method. The structure of the payload is
+        domain-specific and must be parsed by the consumer.
     """
 
     timestamp_us: np.uint64
@@ -58,6 +59,7 @@ class LogArchiveReader:
 
     Raises:
         FileNotFoundError: If the specified archive file does not exist.
+        ValueError: If the archive lacks a valid onset timestamp message when the onset timestamp is accessed.
     """
 
     _TIMESTAMP_BYTE_SIZE: int = 8

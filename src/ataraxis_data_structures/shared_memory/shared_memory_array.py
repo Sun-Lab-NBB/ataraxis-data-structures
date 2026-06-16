@@ -193,7 +193,7 @@ class SharedMemoryArray:
             name: The unique name to use for the shared memory buffer.
             prototype: The prototype NumPy array instance for the created SharedMemoryArray.
             exists_ok: Determines how the method handles the case where the shared memory buffer with the same name
-                already exists. If False, the method raises an exception. If True, the method destroys the existing
+                already exists. If False, the method raises an exception. If True, the method unlinks the existing
                 buffer and creates a new buffer using the input name and prototype data.
 
         Returns:
@@ -208,7 +208,7 @@ class SharedMemoryArray:
         if not isinstance(prototype, np.ndarray):
             message = (
                 f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object '{name}'. "
-                f"Expected a flat (one-dimensional) NumPy array but instead encountered {type(prototype).__name__}."
+                f"Expected a NumPy array but instead encountered {type(prototype).__name__}."
             )
             console.error(message=message, error=TypeError)
 

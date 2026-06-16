@@ -18,7 +18,7 @@ _DELETION_RETRY_DELAY_MS: int = 500
 
 
 def delete_directory(directory_path: Path) -> None:
-    """Deletes the target directory and all its subdirectories using parallel processing.
+    """Deletes the target directory and all its subdirectories, unlinking the files within each directory in parallel.
 
     Args:
         directory_path: The path to the directory to delete.
@@ -84,8 +84,8 @@ def transfer_directory(
         This function recreates the moved directory hierarchy on the destination if the hierarchy does not exist. This
         is done before copying the files.
 
-        The function executes a multithreaded copy operation and does not by default remove the source data after the
-        copy is complete.
+        The function performs a multithreaded copy operation when 'num_threads' is greater than 1 and a sequential
+        copy otherwise. By default, it does not remove the source data after the copy is complete.
 
         If the function is configured to verify the transferred data's integrity, it generates an xxHash3-128 checksum
         of the data before and after the transfer and compares the two checksums to detect data corruption.
