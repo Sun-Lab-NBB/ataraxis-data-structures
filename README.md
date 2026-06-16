@@ -15,7 +15,7 @@ ___
 
 ## Detailed Description
 
-This library aggregates the classes and methods used by other Ataraxis and Sun lab libraries for working with data.
+This library aggregates the classes and methods used by other Ataraxis and Sollertia libraries for working with data.
 This includes classes to manipulate the data, share (move) the data between different Python processes, and store the
 data in non-volatile memory (on disk). Generally, these classes either implement novel functionality not available
 through other popular libraries or extend existing functionality to match specific needs of other project Ataraxis
@@ -786,13 +786,14 @@ the source code of this library.
 
 ### Installing the Project
 
-***Note,*** this installation method requires **mamba version 2.3.2 or above**. Currently, all Sun lab automation
-pipelines require that mamba is installed through the [miniforge3](https://github.com/conda-forge/miniforge) installer.
+***Note,*** this installation method requires **mamba version 2.3.2 or above**. Currently, all Ataraxis framework
+automation pipelines require that mamba is installed through the [miniforge3](https://github.com/conda-forge/miniforge)
+installer.
 
 1. Download this repository to the local machine using the preferred method, such as git-cloning.
 2. If the downloaded distribution is stored as a compressed archive, unpack it using the appropriate decompression tool.
 3. `cd` to the root directory of the prepared project distribution.
-4. Install the core Sun lab development dependencies into the ***base*** mamba environment via the
+4. Install the core Ataraxis framework development dependencies into the ***base*** mamba environment via the
    `mamba install tox uv tox-uv` command.
 5. Use the `tox -e create` command to create the project-specific development environment followed by `tox -e install`
    command to install the project into that environment as a library.

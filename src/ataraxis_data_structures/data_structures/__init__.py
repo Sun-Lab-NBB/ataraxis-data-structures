@@ -1,4 +1,4 @@
-"""Provides custom data structures used by other Ataraxis and Sun Lab libraries."""
+"""Provides custom data structures used by other Ataraxis and Sollertia libraries."""
 
 from .yaml_config import YamlConfig
 from .processing_tracker import JobState, ProcessingStatus, ProcessingTracker
