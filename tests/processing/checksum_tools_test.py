@@ -2,13 +2,10 @@
 
 import os
 from pathlib import Path
-import multiprocessing
 
 import pytest
 
 from ataraxis_data_structures import calculate_directory_checksum
-
-multiprocessing.set_start_method("spawn", force=True)  # Improves reproducibility.
 
 
 @pytest.fixture

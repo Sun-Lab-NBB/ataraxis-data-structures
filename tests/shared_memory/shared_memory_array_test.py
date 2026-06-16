@@ -1,7 +1,6 @@
 """Contains tests for SharedMemoryArray class and related methods, stored in the shared_memory package."""
 
 from typing import Any
-import multiprocessing
 from multiprocessing import Process
 
 import numpy as np
@@ -10,15 +9,6 @@ from numpy.typing import NDArray
 from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import SharedMemoryArray
-
-# When spawn creates child processes, they re-import this module with __name__ == '__mp_main__'.
-# Configures the main process to use the 'spawn' multiprocessing method, which is the default for Windows systems.
-if __name__ != "__mp_main__":
-    try:
-        if multiprocessing.get_start_method(allow_none=True) != "spawn":
-            multiprocessing.set_start_method("spawn", force=True)
-    except RuntimeError:
-        pass  # Already set.
 
 
 @pytest.fixture

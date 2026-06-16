@@ -172,4 +172,4 @@ dependency for other Ataraxis framework projects.
 - This library is a dependency for other Ataraxis framework projects; maintain backwards compatibility
 - Use `console.error()` from ataraxis-base-utilities for all error handling
 - Use `ataraxis-time` for precision timestamps in logging contexts
-- All multiprocessing code must use spawn context for cross-platform compatibility
+- All multiprocessing code uses an explicit spawn context (`get_context("spawn")`) for identical cross-platform behavior

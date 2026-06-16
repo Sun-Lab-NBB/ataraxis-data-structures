@@ -254,6 +254,10 @@ While all methods showcased above run in the same process, the main advantage of
 it behaves the same way when used from different Python processes. The following example demonstrates using a
 SharedMemoryArray across multiple concurrent processes:
 
+***Note,*** the main process can connect to the array and enable buffer destruction either before or after starting
+the child processes. Each process independently establishes its own connection to the shared buffer, so the only
+ordering requirement is that the buffer is not destroyed until all processes have finished using it.
+
 ```python
 from multiprocessing import Process
 from ataraxis_base_utilities import console

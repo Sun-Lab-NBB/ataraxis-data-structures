@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 from contextlib import contextmanager
-from multiprocessing import Lock
+from multiprocessing import get_context
 from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
@@ -15,8 +15,14 @@ from ataraxis_base_utilities import console
 if TYPE_CHECKING:
     from collections.abc import Generator
     from multiprocessing import synchronize
+    from multiprocessing.context import SpawnContext
 
     from numpy.typing import NDArray
+
+
+_MULTIPROCESSING_CONTEXT: SpawnContext = get_context("spawn")
+"""The spawn-based multiprocessing context used to create all synchronization primitives for SharedMemoryArray
+instances, ensuring identical cross-process behavior on all supported platforms."""
 
 
 class SharedMemoryArray:
@@ -62,8 +68,8 @@ class SharedMemoryArray:
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
         self._buffer: SharedMemory | None = buffer
-        self._lock: synchronize.Lock = Lock()
-        self._array: NDArray[Any] = np.zeros(shape=shape, dtype=datatype)
+        self._lock: synchronize.Lock = _MULTIPROCESSING_CONTEXT.Lock()
+        self._array: NDArray[Any] | None = np.zeros(shape=shape, dtype=datatype)
         self._connected: bool = False
         self._destroy_buffer: bool = False
 
@@ -82,6 +88,28 @@ class SharedMemoryArray:
             self.destroy()
         else:
             self.disconnect()
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Returns a picklable representation of the instance for transfer to other Python processes.
+
+        Excludes the live shared memory handle, which each process rebuilds by connecting to the shared buffer through
+        the connect() method. The state always reports the instance as disconnected, ensuring every process establishes
+        its own connection regardless of the originating instance's connection state.
+        """
+        state = self.__dict__.copy()
+        # The SharedMemory handle and the NumPy view into it are bound to the originating process and are rebuilt in
+        # each process via connect(). Excluding the view also avoids copying the entire array payload during transfer.
+        # Resetting the connection flags lets each process connect regardless of the source instance's connection
+        # state, preventing an already-connected source from suppressing the receiving process's connect() call.
+        state["_buffer"] = None
+        state["_array"] = None
+        state["_connected"] = False
+        state["_destroy_buffer"] = False
+        return state
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restores the instance state after it is transferred to another Python process."""
+        self.__dict__.update(state)
 
     def __getitem__(self, index: int | slice) -> Any:
         """Gets value(s) at the specified array index or slice with automatic locking.
@@ -161,9 +189,9 @@ class SharedMemoryArray:
         when the program runtime ends.
 
         Notes:
-            This method should only be called in the main runtime thread after setting up all child processes. Calling
-            this method before starting the child processes may result in unexpected behavior due to child processes
-            destroying the buffer as part of their shutdown sequence.
+            This method should only be called in the main runtime thread. Child processes never inherit the buffer
+            destruction setting, so each child only disconnects from the buffer during its shutdown, leaving the main
+            process solely responsible for destroying it.
         """
         self._destroy_buffer = True
 
@@ -185,9 +213,10 @@ class SharedMemoryArray:
             This method should only be called when the array is first created in the main runtime thread (scope). All
             child processes should use the connect() method to connect to the existing array.
 
-            After passing the returned instance to all child processes, call the instance's connect() and
-            enable_buffer_destruction() methods. Calling these methods before sharing the instance with the child
-            processes is likely to result in undefined behavior.
+            The main process may call connect() and enable_buffer_destruction() either before or after sharing the
+            instance with child processes, as each process re-establishes its own connection when it calls connect().
+            The only requirement is that the shared memory buffer must remain alive (not destroyed) until every process
+            has finished using it.
 
         Args:
             name: The unique name to use for the shared memory buffer.
@@ -252,8 +281,9 @@ class SharedMemoryArray:
         methods.
 
         Notes:
-            Do not call this method from the main runtime thread before starting all child processes that use this
-            instance. Otherwise, the child processes may not be able to connect to the shared memory buffer.
+            Each process, including the main process, must call this method before accessing the array data. The main
+            process may connect either before or after starting the child processes, as each process establishes an
+            independent connection to the shared memory buffer.
         """
         if not self._connected:
             self._buffer = SharedMemory(name=self._name, create=False)

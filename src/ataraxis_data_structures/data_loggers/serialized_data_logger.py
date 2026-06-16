@@ -13,8 +13,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from multiprocessing import (
     Queue as MPQueue,
-    Manager,
-    Process,
+    get_context,
 )
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
@@ -26,6 +25,8 @@ from ..shared_memory import SharedMemoryArray
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from multiprocessing.context import SpawnContext
+    from multiprocessing.process import BaseProcess
     from multiprocessing.managers import SyncManager
 
     from numpy.typing import NDArray
@@ -107,6 +108,7 @@ class DataLogger:
 
     Attributes:
         _started: Tracks whether the logger process is running.
+        _mp_context: Stores the spawn-based multiprocessing context used to create the manager and the logger process.
         _mp_manager: Stores the manager object used to instantiate and manage the multiprocessing Queue.
         _thread_count: Stores the number of concurrently active data saving threads.
         _poll_interval: Stores the data queue poll interval, in milliseconds.
@@ -126,7 +128,8 @@ class DataLogger:
         poll_interval: int = 5,
     ) -> None:
         self._started: bool = False
-        self._mp_manager: SyncManager = Manager()
+        self._mp_context: SpawnContext = get_context("spawn")
+        self._mp_manager: SyncManager = self._mp_context.Manager()
 
         # Clamps thread_count to a minimum of 1 and prevents a negative poll_interval.
         self._thread_count: int = max(1, thread_count)
@@ -142,7 +145,7 @@ class DataLogger:
 
         # Creates the infrastructure for running the logger.
         self._terminator_array: SharedMemoryArray | None = None
-        self._logger_process: Process | None = None
+        self._logger_process: BaseProcess | None = None
         self._watchdog_thread: Thread | None = None
 
     def __repr__(self) -> str:
@@ -170,7 +173,7 @@ class DataLogger:
         )
 
         # Creates and starts the logger process.
-        self._logger_process = Process(
+        self._logger_process = self._mp_context.Process(
             target=self._log_cycle,
             args=(
                 self._input_queue,

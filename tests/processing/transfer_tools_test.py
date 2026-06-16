@@ -2,7 +2,6 @@
 
 from typing import Any
 from pathlib import Path
-import multiprocessing
 
 import pytest
 
@@ -11,8 +10,6 @@ from ataraxis_data_structures import (
     transfer_directory,
     calculate_directory_checksum,
 )
-
-multiprocessing.set_start_method("spawn", force=True)  # Improves reproducibility.
 
 
 @pytest.fixture
