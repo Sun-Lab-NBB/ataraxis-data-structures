@@ -1,16 +1,14 @@
 # Claude Code Instructions
 
-## Session Start Behavior
+## Session start behavior
 
 At the beginning of each coding session, before making any code changes, you should build a comprehensive
 understanding of the codebase by invoking the `/explore-codebase` skill.
 
-This ensures you:
-- Understand the project architecture before modifying code
-- Follow existing patterns and conventions
-- Don't introduce inconsistencies or break integrations
+This builds an accurate model of the project architecture before changes are made, preventing inconsistencies with
+the patterns that downstream Ataraxis framework projects depend on.
 
-## Style Guide Compliance
+## Style guide compliance
 
 Before writing, modifying, or reviewing any code or documentation, you MUST invoke the appropriate skill to load
 Ataraxis framework conventions. This applies to ALL file types:
@@ -31,7 +29,7 @@ All contributions must strictly follow these conventions. Key conventions includ
 - Proper error handling with `console.error()`
 - 120 character line limit
 
-## Cross-Referenced Library Verification
+## Cross-referenced library verification
 
 Ataraxis framework projects often depend on other `ataraxis-*` libraries. These libraries may be
 stored locally in the same parent directory as this project (`/home/cyberaxolotl/Desktop/GitHubRepos/`).
@@ -58,7 +56,7 @@ stored locally in the same parent directory as this project (`/home/cyberaxolotl
 **Why this matters**: Skills and documentation may reference outdated APIs. Always verify against the actual library
 state to prevent integration errors.
 
-## Available Skills
+## Available skills
 
 | Skill                   | Description                                                                    |
 |-------------------------|--------------------------------------------------------------------------------|
@@ -77,13 +75,13 @@ state to prevent integration errors.
 | `/release`              | Draft style-compliant release notes from merged PRs                            |
 | `/skill-design`         | Generate and verify skill files and CLAUDE.md instructions                     |
 
-## Project Context
+## Project context
 
 This is **ataraxis-data-structures**, a Python library that provides classes and structures for storing, manipulating,
 and sharing data between Python processes. The library is part of the Ataraxis ecosystem and serves as a foundational
 dependency for other Ataraxis framework projects.
 
-### Key Areas
+### Key areas
 
 | Directory                                | Purpose                                                  |
 |------------------------------------------|----------------------------------------------------------|
@@ -110,7 +108,7 @@ dependency for other Ataraxis framework projects.
 - **Processing Utilities**: Directory checksums (xxHash3-128), parallel directory transfer with integrity verification,
   and time-series interpolation (linear for continuous, last-known-value for discrete data).
 
-### Core Components
+### Core components
 
 | Component                    | File                                     | Purpose                                                    |
 |------------------------------|------------------------------------------|------------------------------------------------------------|
@@ -129,7 +127,7 @@ dependency for other Ataraxis framework projects.
 | delete_directory             | `processing/transfer_tools.py`           | Parallel directory deletion                                |
 | interpolate_data             | `processing/interpolation.py`            | Time-series interpolation                                  |
 
-### Code Standards
+### Code standards
 
 - MyPy strict mode with full type annotations
 - Google-style docstrings
@@ -138,40 +136,39 @@ dependency for other Ataraxis framework projects.
 - Python 3.12, 3.13, 3.14 support
 - See style skills for complete conventions
 
-### Workflow Guidance
+### Workflow guidance
 
-**Modifying SharedMemoryArray:**
+Before modifying any component below, review its source file for the current implementation, then follow the
+component-specific steps.
 
-1. Review `src/ataraxis_data_structures/shared_memory/shared_memory_array.py` for current implementation
-2. Understand the multiprocessing.Lock integration for process-safety
-3. Maintain the `connect()`/`disconnect()`/`destroy()` lifecycle contract
-4. Test with actual multiprocessing scenarios (not just single-process)
+**Modifying SharedMemoryArray** (`src/ataraxis_data_structures/shared_memory/shared_memory_array.py`):
 
-**Modifying YamlConfig:**
+1. Understand the multiprocessing.Lock integration for process-safety
+2. Maintain the `connect()`/`disconnect()`/`destroy()` lifecycle contract
+3. Test with actual multiprocessing scenarios (not just single-process)
 
-1. Review `src/ataraxis_data_structures/data_structures/yaml_config.py` for current implementation
-2. Understand the dacite integration for nested dataclass conversion
-3. Maintain type hook support for Path, Enum, and custom conversions
-4. Test with complex nested structures and edge cases
+**Modifying YamlConfig** (`src/ataraxis_data_structures/data_structures/yaml_config.py`):
 
-**Modifying DataLogger:**
+1. Understand the dacite integration for nested dataclass conversion
+2. Maintain type hook support for Path, Enum, and custom conversions
+3. Test with complex nested structures and edge cases
 
-1. Review `src/ataraxis_data_structures/data_loggers/serialized_data_logger.py` for current implementation
-2. Understand the Process/Queue/watchdog thread architecture
-3. Maintain the LogPackage format (uint8 source_id, uint64 acquisition_time, uint8 array serialized_data)
-4. Test with multiprocessing scenarios and verify proper cleanup
+**Modifying DataLogger** (`src/ataraxis_data_structures/data_loggers/serialized_data_logger.py`):
 
-**Modifying ProcessingTracker:**
+1. Understand the Process/Queue/watchdog thread architecture
+2. Maintain the LogPackage format (uint8 source_id, uint64 acquisition_time, uint8 array serialized_data)
+3. Test with multiprocessing scenarios and verify proper cleanup
 
-1. Review `src/ataraxis_data_structures/data_structures/processing_tracker.py` for current implementation
-2. Understand the FileLock integration for concurrent access safety
-3. Maintain the job state lifecycle (SCHEDULED → RUNNING → SUCCEEDED/FAILED)
-4. Test with concurrent access from multiple processes
+**Modifying ProcessingTracker** (`src/ataraxis_data_structures/data_structures/processing_tracker.py`):
 
-**Adding processing utilities:**
+1. Understand the FileLock integration for concurrent access safety
+2. Maintain the job state lifecycle (SCHEDULED → RUNNING → SUCCEEDED/FAILED)
+3. Test with concurrent access from multiple processes
 
-1. Review existing utilities in `src/ataraxis_data_structures/processing/`
-2. Follow the same patterns for type hints, docstrings, and error handling
+**Adding processing utilities** (`src/ataraxis_data_structures/processing/`):
+
+1. Review existing utilities for the patterns to follow
+2. Follow the same conventions for type hints, docstrings, and error handling
 3. Export new functions in `src/ataraxis_data_structures/__init__.py`
 4. Add corresponding tests in `tests/processing/`
 

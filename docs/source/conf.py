@@ -5,7 +5,8 @@ import importlib_metadata
 project = 'ataraxis-data-structures'
 copyright = '2026, Sun (NeuroAI) lab'
 author = 'Ivan Kondratyev'
-release = importlib_metadata.version("ataraxis-data-structures")  # Extracts the project version from the metadata .toml file.
+# Extracts the project version from the metadata .toml file.
+release = importlib_metadata.version("ataraxis-data-structures")
 
 # -- General configuration ---------------------------------------------------
 extensions = [

@@ -110,7 +110,7 @@ lint.ignore = [
     "ISC001",  # Conflicts with the formatter
     "PT001",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-182590771
     "PT023",   # https://github.com/astral-sh/ruff/issues/8796#issuecomment-1825907715
-    "D107",    # Project-specific, __init__ is documented inside the main class docstring where applicable
+    "D107",    # __init__ is documented inside the main class docstring where applicable
     "D205",    # Bugs out for file descriptions
     "PLW0603", # While global statement usage is not ideal, it streamlines certain development patterns
     "TID252",  # Conflicts with library import management strategy
