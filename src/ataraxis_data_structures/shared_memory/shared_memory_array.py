@@ -14,6 +14,7 @@ from ataraxis_base_utilities import console
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from multiprocessing import synchronize
 
     from numpy.typing import NDArray
 
@@ -55,13 +56,13 @@ class SharedMemoryArray:
     """
 
     def __init__(self, name: str, shape: tuple[int, ...], datatype: np.dtype[Any], buffer: SharedMemory) -> None:
-        # Saves input data into attributes. The method that actually sets up the class is the create_array() class
-        # method.
+        """Initializes the SharedMemoryArray instance from data prepared by the create_array() method."""
+        # The create_array() class method is the actual constructor; __init__ only stores the precomputed values.
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
         self._buffer: SharedMemory | None = buffer
-        self._lock = Lock()
+        self._lock: synchronize.Lock = Lock()
         self._array: NDArray[Any] = np.zeros(shape=shape, dtype=datatype)
         self._connected: bool = False
         self._destroy_buffer: bool = False
@@ -80,7 +81,6 @@ class SharedMemoryArray:
         if self._destroy_buffer:
             self.destroy()
         else:
-            # Otherwise, only disconnects the shared memory buffer.
             self.disconnect()
 
     def __getitem__(self, index: int | slice) -> Any:
@@ -223,7 +223,6 @@ class SharedMemoryArray:
                 # Recreates the shared memory buffer using the freed buffer name.
                 buffer = SharedMemory(name=name, create=True, size=prototype.nbytes)
 
-            # Otherwise, raises an exception.
             else:
                 message = (
                     f"Unable to create the '{name}' SharedMemoryArray object, as an object with this name already "

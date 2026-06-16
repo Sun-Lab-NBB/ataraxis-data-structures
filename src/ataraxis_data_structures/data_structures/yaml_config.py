@@ -44,7 +44,7 @@ def _serialize_value(value: Any) -> Any:
         return {data_field.name: _serialize_value(getattr(value, data_field.name)) for data_field in fields(value)}
 
     if isinstance(value, dict):
-        return {_serialize_value(k): _serialize_value(v) for k, v in value.items()}
+        return {_serialize_value(dict_key): _serialize_value(dict_value) for dict_key, dict_value in value.items()}
 
     if isinstance(value, (list, tuple)):
         return [_serialize_value(item) for item in value]
@@ -213,16 +213,20 @@ class YamlConfig:
         Raises:
             ValueError: If the file_path does not point to a file with a '.yaml' or '.yml' extension.
         """
-        # Defines YAML formatting options. The purpose of these settings is to make YAML blocks more readable when
-        # being edited by the user.
+        # Defines YAML formatting options that keep YAML blocks readable when edited by the user.
         yaml_formatting = {
-            "default_style": "",  # Uses plain (unquoted) scalar style, quoting only when required
-            "default_flow_style": False,  # Uses block style for mappings
+            # Uses plain (unquoted) scalar style, quoting only when required.
+            "default_style": "",
+            # Uses block style for mappings.
+            "default_flow_style": False,
             "indent": 10,
             "width": 200,
-            "explicit_start": True,  # Marks the beginning of the document with ---
-            "explicit_end": True,  # Marks the end of the document with ...
-            "sort_keys": False,  # Preserves the order of the keys as written by creators
+            # Marks the beginning of the document with the "---" prefix.
+            "explicit_start": True,
+            # Marks the end of the document with the "..." suffix.
+            "explicit_end": True,
+            # Preserves the key order as written by the dataclass authors.
+            "sort_keys": False,
         }
 
         # Ensures that the output file path points to a .yaml (or .yml) file.
@@ -235,7 +239,7 @@ class YamlConfig:
             console.error(message=message, error=ValueError)
 
         # If necessary, creates the missing directory components of the file_path.
-        ensure_directory_exists(file_path)
+        ensure_directory_exists(path=file_path)
 
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
         # to the .yaml file.
@@ -278,8 +282,8 @@ class YamlConfig:
         class_config = Config(type_hooks=type_hooks, cast=[tuple], check_types=False)
 
         # Loads the data from the .yaml file.
-        with file_path.open() as yml_file:
-            data = yaml.safe_load(yml_file)
+        with file_path.open() as yaml_file:
+            data = yaml.safe_load(yaml_file)
 
         # Ensures the loaded data is a top-level mapping. An empty file yields None, and a scalar or sequence document
         # yields a non-mapping type that cannot seed a dataclass instance.

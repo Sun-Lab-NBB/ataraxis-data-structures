@@ -261,3 +261,40 @@ def test_assemble_log_archives_with_integrity_check(tmp_path, sample_data):
     compressed_files = list(logger.output_directory.glob("*.npz"))
     assert len(original_files) == 3
     assert len(compressed_files) == 1
+
+
+def test_log_package_data_golden_bytes():
+    """Verifies that LogPackage.data serializes the header and payload to the exact byte layout consumers depend on."""
+    # The on-disk layout is a fixed contract shared with LogArchiveReader and downstream parsers:
+    # [source_id (1 byte)][acquisition_time (8 bytes, little-endian uint64)][payload (N bytes)].
+    source_id = np.uint8(7)
+    acquisition_time = np.uint64(1234567890)
+    payload = np.array([10, 20, 30, 255], dtype=np.uint8)
+
+    log_name, data = LogPackage(source_id=source_id, acquisition_time=acquisition_time, serialized_data=payload).data
+
+    # Hardcoded golden bytes pin the format independently of any serialization helper.
+    expected = bytes([7]) + (1234567890).to_bytes(length=8, byteorder="little") + bytes([10, 20, 30, 255])
+    assert data.dtype == np.uint8
+    assert data.tobytes() == expected
+
+    # Verifies the zero-padded filename format.
+    assert log_name == "007_00000000001234567890.npy"
+
+    # Verifies the layout round-trips exactly as LogArchiveReader reads it.
+    assert int(data[0]) == 7
+    assert int(data[1:9].view(np.uint64)[0]) == 1234567890
+    np.testing.assert_array_equal(data[9:], payload)
+
+
+def test_log_package_data_large_timestamp():
+    """Verifies that LogPackage.data serializes uint64 timestamps at or above 2**63 without overflow or truncation."""
+    source_id = np.uint8(255)
+    acquisition_time = np.uint64(2**63 + 5)  # Exceeds the signed int64 range.
+    payload = np.array([1], dtype=np.uint8)
+
+    _, data = LogPackage(source_id=source_id, acquisition_time=acquisition_time, serialized_data=payload).data
+
+    expected = bytes([255]) + (2**63 + 5).to_bytes(length=8, byteorder="little") + bytes([1])
+    assert data.tobytes() == expected
+    assert int(data[1:9].view(np.uint64)[0]) == 2**63 + 5

@@ -38,6 +38,33 @@ def _calculate_file_checksum(base_directory: Path, file_path: Path) -> tuple[str
     return relative_path, checksum.digest()
 
 
+def _discover_checksum_files(directory: Path, excluded_files: set[str]) -> list[Path]:
+    """Discovers the files to include in a directory checksum, sorted for order-independent hashing.
+
+    Args:
+        directory: The directory whose files are discovered.
+        excluded_files: The set of filenames to omit from the checksum.
+
+    Returns:
+        The files found anywhere under the directory, excluding the omitted filenames, sorted by path.
+    """
+    return sorted(
+        path for path in directory.rglob("*") if path.is_file() and f"{path.stem}{path.suffix}" not in excluded_files
+    )
+
+
+def _write_checksum_file(directory: Path, checksum: str) -> None:
+    """Writes the directory checksum as a hexadecimal string to the ax_checksum.txt file at the directory's top level.
+
+    Args:
+        directory: The directory whose top level receives the ax_checksum.txt file.
+        checksum: The hexadecimal checksum string to write.
+    """
+    checksum_path = directory.joinpath("ax_checksum.txt")
+    with checksum_path.open("w") as file:
+        file.write(checksum)
+
+
 def calculate_directory_checksum(
     directory: Path,
     num_processes: int | None = None,
@@ -60,7 +87,7 @@ def calculate_directory_checksum(
     Args:
         directory: The path to the directory for which to generate the checksum.
         num_processes: The number of processes to use for parallelizing checksum calculation. If set to None, the
-            function uses all available CPU cores minus 2 reserved cores (via resolve_worker_count).
+            function uses all available CPU cores minus 2 reserved cores (via ``resolve_worker_count``).
         progress: Determines whether to track the checksum calculation progress using a progress bar.
         save_checksum: Determines whether the checksum should be saved (written to) a .txt file.
         excluded_files: The set of filenames to exclude from the checksum calculation. If set to None, defaults to
@@ -75,12 +102,7 @@ def calculate_directory_checksum(
     if num_processes is None:
         num_processes = resolve_worker_count()
 
-    # Sorts the discovered file paths for consistency, so that the directory checksum is order-independent.
-    files = sorted(
-        path
-        for path in directory.rglob("*")
-        if path.is_file() and f"{path.stem}{path.suffix}" not in excluded_files  # Excludes service files
-    )
+    files = _discover_checksum_files(directory=directory, excluded_files=excluded_files)
 
     checksum = xxhash.xxh3_128()
 
@@ -111,8 +133,6 @@ def calculate_directory_checksum(
     checksum_hexstring = checksum.hexdigest()
 
     if save_checksum:
-        checksum_path = directory.joinpath("ax_checksum.txt")
-        with checksum_path.open("w") as file:
-            file.write(checksum_hexstring)
+        _write_checksum_file(directory=directory, checksum=checksum_hexstring)
 
     return checksum_hexstring
