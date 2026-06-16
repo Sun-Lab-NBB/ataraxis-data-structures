@@ -341,7 +341,6 @@ def test_create_array_errors():
         f"Expected a flat (one-dimensional) NumPy array but instead encountered {type([1, 2, 3]).__name__}."
     )
     with pytest.raises(TypeError, match=error_format(message)):
-        # noinspection PyTypeChecker
         SharedMemoryArray.create_array(name="test_error", prototype=[1, 2, 3])
 
     # Tests with existing name.

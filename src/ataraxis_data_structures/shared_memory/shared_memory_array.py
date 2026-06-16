@@ -112,7 +112,6 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-        # noinspection PyArgumentList
         with self.array(with_lock=True) as shared_array:
             # Returns a copy to prevent external modifications to the returned data from affecting the shared array
             # without going through __setitem__.
@@ -152,7 +151,6 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-        # noinspection PyArgumentList
         with self.array(with_lock=True) as shared_array:
             shared_array[index] = value
 

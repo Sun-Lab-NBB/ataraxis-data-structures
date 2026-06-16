@@ -422,7 +422,6 @@ def assemble_log_archives(
         # PHASE 2: Assembles archives. Here, each archive is processed in parallel, but all archive log entries for
         # each archive are processed sequentially.
         assemble = partial(_assemble_archive, log_directory)
-        # noinspection PyTypeChecker
         archive_futures = {
             p_executor.submit(assemble, source_id, loaded_data[source_id]): source_id for source_id in source_files
         }
@@ -454,7 +453,6 @@ def assemble_log_archives(
                     pbar.update(1)
 
             # Verifies the integrity of each archive data against the original data.
-            # noinspection PyTypeChecker
             verification_futures = [
                 t_executor.submit(
                     partial(_compare_arrays, source_id), stem, original_array, archive_data[source_id][stem]

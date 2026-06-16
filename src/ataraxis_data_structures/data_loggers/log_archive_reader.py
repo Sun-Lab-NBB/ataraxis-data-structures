@@ -130,7 +130,6 @@ class LogArchiveReader:
         console.error(message=error_message, error=ValueError)
 
         # This return is never reached but satisfies type checkers.
-        # noinspection PyUnreachableCode
         return np.uint64(0)  # pragma: no cover
 
     def _get_message_keys(self) -> list[str]:

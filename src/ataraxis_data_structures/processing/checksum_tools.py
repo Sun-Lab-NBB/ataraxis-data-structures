@@ -88,7 +88,6 @@ def calculate_directory_checksum(
         # Binds base_directory so each submitted task only needs to supply the per-file path.
         process_file = partial(_calculate_file_checksum, base_directory=directory)
 
-        # noinspection PyTypeChecker
         future_to_path = {executor.submit(process_file, file_path=file): file for file in files}
 
         results = []

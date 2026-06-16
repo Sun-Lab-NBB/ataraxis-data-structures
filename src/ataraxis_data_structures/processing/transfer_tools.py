@@ -40,7 +40,6 @@ def delete_directory(directory_path: Path) -> None:
     # an optional delay step to give Windows time to release file handles.
     delay_timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
     for _ in range(_MAXIMUM_DELETION_ATTEMPTS):
-        # noinspection PyBroadException
         try:
             directory_path.rmdir()
             break

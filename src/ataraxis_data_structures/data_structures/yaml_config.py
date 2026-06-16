@@ -284,5 +284,4 @@ class YamlConfig:
         data_dictionary: dict[Any, Any] = dict(data)
 
         # Uses dacite to instantiate the class using the imported dictionary.
-        # noinspection PyTypeChecker
         return from_dict(data_class=cls, data=data_dictionary, config=class_config)
