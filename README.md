@@ -15,7 +15,7 @@ ___
 
 ## Detailed Description
 
-This library aggregates the classes and methods used by other Ataraxis and Sun lab libraries for working with data.
+This library aggregates the classes and methods used by other Ataraxis and Sollertia libraries for working with data.
 This includes classes to manipulate the data, share (move) the data between different Python processes, and store the
 data in non-volatile memory (on disk). Generally, these classes either implement novel functionality not available
 through other popular libraries or extend existing functionality to match specific needs of other project Ataraxis
@@ -254,6 +254,10 @@ While all methods showcased above run in the same process, the main advantage of
 it behaves the same way when used from different Python processes. The following example demonstrates using a
 SharedMemoryArray across multiple concurrent processes:
 
+***Note,*** the main process can connect to the array and enable buffer destruction either before or after starting
+the child processes. Each process independently establishes its own connection to the shared buffer, so the only
+ordering requirement is that the buffer is not destroyed until all processes have finished using it.
+
 ```python
 from multiprocessing import Process
 from ataraxis_base_utilities import console
@@ -404,9 +408,9 @@ if __name__ == "__main__":
     # packaged into a LogPackage instance to ensure that it adheres to the proper format expected by the logger
     # instance.
     source_id = np.uint8(1)  # Has to be an uint8 type
-    timestamp = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))  # Has to be an uint64 type
+    acquisition_time = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))  # Has to be an uint64 type
     data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)  # Has to be an uint8 NumPy array
-    logger_queue.put(LogPackage(source_id, timestamp, data))
+    logger_queue.put(LogPackage(source_id, acquisition_time, data))
 
     # The timer used to timestamp the log entries has to be precise enough to resolve two consecutive data
     # entries. Due to these constraints, it is recommended to use a nanosecond or microsecond timer, such as the
@@ -679,7 +683,7 @@ from ataraxis_data_structures import calculate_directory_checksum
 # Calculates checksum with progress tracking
 checksum = calculate_directory_checksum(
     directory=Path("/path/to/data"),
-    num_processes=None,  # Uses all available CPU cores
+    num_processes=None,  # Uses all available CPU cores minus 2 reserved cores
     progress=True,       # Shows progress bar
     save_checksum=True,  # Saves to ax_checksum.txt in the directory
 )
@@ -716,7 +720,7 @@ transfer_directory(
 transfer_directory(
     source=Path("/path/to/source"),
     destination=Path("/path/to/destination"),
-    num_threads=0,           # Uses all available CPU cores
+    num_threads=0,           # Uses all available CPU cores minus a few reserved for the host
     verify_integrity=True,
     remove_source=True,      # Removes source after successful transfer
 )
@@ -786,13 +790,14 @@ the source code of this library.
 
 ### Installing the Project
 
-***Note,*** this installation method requires **mamba version 2.3.2 or above**. Currently, all Sun lab automation
-pipelines require that mamba is installed through the [miniforge3](https://github.com/conda-forge/miniforge) installer.
+***Note,*** this installation method requires **mamba version 2.3.2 or above**. Currently, all automation
+pipelines require that mamba is installed through the [miniforge3](https://github.com/conda-forge/miniforge)
+installer.
 
 1. Download this repository to the local machine using the preferred method, such as git-cloning.
 2. If the downloaded distribution is stored as a compressed archive, unpack it using the appropriate decompression tool.
 3. `cd` to the root directory of the prepared project distribution.
-4. Install the core Sun lab development dependencies into the ***base*** mamba environment via the
+4. Install the core development dependencies into the ***base*** mamba environment via the
    `mamba install tox uv tox-uv` command.
 5. Use the `tox -e create` command to create the project-specific development environment followed by `tox -e install`
    command to install the project into that environment as a library.

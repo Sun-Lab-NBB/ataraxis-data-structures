@@ -30,8 +30,8 @@ def _serialize_value(value: Any) -> Any:
     if value is None:
         return None
 
-    # Checks Path before str, since PurePosixPath / PureWindowsPath are not str subclasses, but PosixPath and
-    # WindowsPath inherit from os.PathLike, not str.
+    # Checks Path before the scalar pass-through, since Path instances are not str subclasses and require explicit
+    # conversion to a serializable string.
     if isinstance(value, Path):
         return value.as_posix()
 
@@ -44,7 +44,7 @@ def _serialize_value(value: Any) -> Any:
         return {data_field.name: _serialize_value(getattr(value, data_field.name)) for data_field in fields(value)}
 
     if isinstance(value, dict):
-        return {_serialize_value(k): _serialize_value(v) for k, v in value.items()}
+        return {_serialize_value(dict_key): _serialize_value(dict_value) for dict_key, dict_value in value.items()}
 
     if isinstance(value, (list, tuple)):
         return [_serialize_value(item) for item in value]
@@ -213,16 +213,20 @@ class YamlConfig:
         Raises:
             ValueError: If the file_path does not point to a file with a '.yaml' or '.yml' extension.
         """
-        # Defines YAML formatting options. The purpose of these settings is to make YAML blocks more readable when
-        # being edited by the user.
+        # Defines YAML formatting options that keep YAML blocks readable when edited by the user.
         yaml_formatting = {
-            "default_style": "",  # Uses plain (unquoted) scalar style, quoting only when required
-            "default_flow_style": False,  # Uses block style for mappings
+            # Uses plain (unquoted) scalar style, quoting only when required.
+            "default_style": "",
+            # Uses block style for mappings.
+            "default_flow_style": False,
             "indent": 10,
             "width": 200,
-            "explicit_start": True,  # Marks the beginning of the document with ---
-            "explicit_end": True,  # Marks the end of the document with ...
-            "sort_keys": False,  # Preserves the order of the keys as written by creators
+            # Marks the beginning of the document with the "---" prefix.
+            "explicit_start": True,
+            # Marks the end of the document with the "..." suffix.
+            "explicit_end": True,
+            # Preserves the key order as written by the dataclass authors.
+            "sort_keys": False,
         }
 
         # Ensures that the output file path points to a .yaml (or .yml) file.
@@ -235,7 +239,7 @@ class YamlConfig:
             console.error(message=message, error=ValueError)
 
         # If necessary, creates the missing directory components of the file_path.
-        ensure_directory_exists(file_path)
+        ensure_directory_exists(path=file_path)
 
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
         # to the .yaml file.
@@ -259,7 +263,8 @@ class YamlConfig:
             A new class instance that stores the data read from the .yaml file.
 
         Raises:
-            ValueError: If the provided file path does not point to a .yaml or .yml file.
+            ValueError: If the provided file path does not point to a .yaml or .yml file, or if the file does not
+                contain a top-level mapping.
         """
         # Ensures that file_path points to a .yaml / .yml file.
         if file_path.suffix not in {".yaml", ".yml"}:
@@ -272,17 +277,26 @@ class YamlConfig:
 
         # Builds type_hooks from the class hierarchy to auto-convert str -> Path, raw value -> Enum, etc. The cast
         # list converts YAML lists back to tuples at the field level. check_types=False is preserved for backward
-        # compatibility with union annotations like ``BaselineMethod | str``.
+        # compatibility with union annotations such as ``Enum | str``.
         type_hooks = _collect_type_hooks(cls=cls)
         class_config = Config(type_hooks=type_hooks, cast=[tuple], check_types=False)
 
         # Loads the data from the .yaml file.
-        with file_path.open() as yml_file:
-            data = yaml.safe_load(yml_file)
+        with file_path.open() as yaml_file:
+            data = yaml.safe_load(yaml_file)
+
+        # Ensures the loaded data is a top-level mapping. An empty file yields None, and a scalar or sequence document
+        # yields a non-mapping type that cannot seed a dataclass instance.
+        if not isinstance(data, dict):
+            message = (
+                f"Invalid data encountered when attempting to create the dataclass instance using the data from a "
+                f".yaml file. Expected the file {file_path} to contain a top-level mapping, but encountered "
+                f"{type(data).__name__}."
+            )
+            console.error(message=message, error=ValueError)
 
         # Converts the imported data to a Python dictionary.
         data_dictionary: dict[Any, Any] = dict(data)
 
         # Uses dacite to instantiate the class using the imported dictionary.
-        # noinspection PyTypeChecker
         return from_dict(data_class=cls, data=data_dictionary, config=class_config)

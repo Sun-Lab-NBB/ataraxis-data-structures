@@ -1,61 +1,51 @@
 """Contains tests for SharedMemoryArray class and related methods, stored in the shared_memory package."""
 
-import multiprocessing
+from typing import Any
 from multiprocessing import Process
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import SharedMemoryArray
 
-# When spawn creates child processes, they re-import this module with __name__ == '__mp_main__'.
-# This configures the main process to use the 'spawn' multiprocessing method, which is the default for Windows systems.
-if __name__ != "__mp_main__":
-    try:
-        if multiprocessing.get_start_method(allow_none=True) != "spawn":
-            multiprocessing.set_start_method("spawn", force=True)
-    except RuntimeError:
-        pass  # Already set.
-
 
 @pytest.fixture
-def int_array():
+def int_array() -> NDArray[np.int32]:
     """Returns an integer NumPy array prototype used by the tests below."""
     return np.array([1, 2, 3, 4, 5], dtype=np.int32)
 
 
 @pytest.fixture
-def float_array():
+def float_array() -> NDArray[np.float64]:
     """Returns a floating-point NumPy array prototype used by the tests below."""
     return np.array([1.1, 2.2, 3.3, 4.4, 5.5], dtype=np.float64)
 
 
 @pytest.fixture
-def bool_array():
+def bool_array() -> NDArray[np.bool_]:
     """Returns a boolean NumPy array prototype used by the tests below."""
     return np.array([True, False, True, False, True], dtype=bool)
 
 
 @pytest.fixture
-def string_array():
+def string_array() -> NDArray[np.str_]:
     """Returns a string NumPy array prototype used by the tests below."""
     return np.array(["a", "b", "c", "d", "e"], dtype="<U1")
 
 
 @pytest.fixture
-def multi_dim_array():
+def multi_dim_array() -> NDArray[np.int32]:
     """Returns a multidimensional NumPy array prototype used by the tests below."""
     return np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
 
 
-def test_create_array(int_array):
+def test_create_array(int_array: NDArray[np.int32]) -> None:
     """Verifies the functionality of the SharedMemoryArray class create_array() method.
 
-    Tested configurations:
-        - 0: Creating a SharedMemoryArray with a valid NumPy array
-        - 1: Verifying the name, shape, datatype, and connection status of the created array
-        - 2: Verifying the data integrity of the created array
+    Verifies creating an array from a valid NumPy prototype, checks its name, shape, datatype, and connection status,
+    and confirms data integrity after creation.
     """
     # Creates a SharedMemoryArray instance.
     sma = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array)
@@ -87,12 +77,10 @@ def test_create_array(int_array):
     sma.destroy()
 
 
-def test_create_array_multidimensional(multi_dim_array):
+def test_create_array_multidimensional(multi_dim_array: NDArray[np.int32]) -> None:
     """Verifies the SharedMemoryArray class supports multidimensional arrays.
 
-    Tested configurations:
-        - 0: Creating a SharedMemoryArray with a 2D NumPy array
-        - 1: Verifying the shape and data integrity of the multidimensional array
+    Verifies creating an array from a 2D NumPy prototype and confirms its shape and data integrity.
     """
     # Creates a SharedMemoryArray instance with a 2D array.
     sma = SharedMemoryArray.create_array(name="test_multidim", prototype=multi_dim_array)
@@ -108,11 +96,10 @@ def test_create_array_multidimensional(multi_dim_array):
     sma.destroy()
 
 
-def test_repr(int_array):
+def test_repr(int_array: NDArray[np.int32]) -> None:
     """Verifies the functionality of the SharedMemoryArray class __repr__() method.
 
-    Tested configurations:
-        - 0: Creating a SharedMemoryArray and verifying its string representation
+    Verifies that the string representation reflects the array name, shape, datatype, and connection status.
     """
     # Creates a SharedMemoryArray instance.
     sma = SharedMemoryArray.create_array(name="test_repr", prototype=int_array)
@@ -149,17 +136,22 @@ def test_repr(int_array):
         ("string_array", "test_getitem_string_3", slice(0, 3), np.array(["a", "b", "c"]), np.ndarray),
     ],
 )
-def test_getitem(request, array_fixture, buffer_name, index, expected, expected_type):
+def test_getitem(
+    request: pytest.FixtureRequest,
+    array_fixture: str,
+    buffer_name: str,
+    index: int | slice,
+    expected: Any,
+    expected_type: type,
+) -> None:
     """Verifies the functionality of the SharedMemoryArray class __getitem__() method.
+
+    Verifies reading data at positive, negative, single, and slice indices across int32, float64, bool, and string
+    arrays, and confirms the correct return type for each scenario.
 
     Notes:
         Uses separate buffer names to prevent name collisions when tests are spread over multiple cores during
         pytest-xdist runtime.
-
-    Tested configurations:
-        - Reading data at various indices (positive, negative, single, slices)
-        - Reading from different data types (int32, float64, bool, string)
-        - Verifying correct return types for all scenarios
     """
     # Uses the test-specific fixture to get the prototype array and instantiate the SMA instance.
     sample_array = request.getfixturevalue(array_fixture)
@@ -206,18 +198,22 @@ def test_getitem(request, array_fixture, buffer_name, index, expected, expected_
         ("string_array", "test_setitem_string_3", slice(0, 3), ["x", "y", "z"], ["x", "y", "z"]),
     ],
 )
-def test_setitem(request, array_fixture, buffer_name, index, data, expected):
+def test_setitem(
+    request: pytest.FixtureRequest,
+    array_fixture: str,
+    buffer_name: str,
+    index: int | slice,
+    data: Any,
+    expected: Any,
+) -> None:
     """Verifies the functionality of the SharedMemoryArray class __setitem__() method.
+
+    Verifies writing single values and lists or arrays at positive, negative, single, and slice indices across int32,
+    float64, bool, and string arrays, and confirms each write is applied correctly.
 
     Notes:
         Uses separate buffer names to prevent name collisions when tests are spread over multiple cores during
         pytest-xdist runtime.
-
-    Tested configurations:
-        - Writing data at various indices (positive, negative, single, slices)
-        - Writing to different data types (int32, float64, bool, string)
-        - Writing single values and lists/arrays of values
-        - Verifying correct data writing for all scenarios
     """
     # Uses the test-specific fixture to get the prototype array and instantiate the SMA object.
     sample_array = request.getfixturevalue(array_fixture)
@@ -244,13 +240,10 @@ def test_setitem(request, array_fixture, buffer_name, index, data, expected):
     sma.destroy()
 
 
-def test_array_context_manager(int_array):
+def test_array_context_manager(int_array: NDArray[np.int32]) -> None:
     """Verifies the functionality of the SharedMemoryArray class array() context manager.
 
-    Tested configurations:
-        - 0: Accessing the array with locking
-        - 1: Accessing the array without locking
-        - 2: Modifying the array through the context manager
+    Verifies accessing the array with and without locking, and modifying the array through the context manager.
     """
     # Creates a SharedMemoryArray instance.
     sma = SharedMemoryArray.create_array(name="test_array_cm", prototype=int_array)
@@ -276,13 +269,11 @@ def test_array_context_manager(int_array):
     sma.destroy()
 
 
-def test_disconnect_connect(int_array):
+def test_disconnect_connect(int_array: NDArray[np.int32]) -> None:
     """Verifies the functionality of the SharedMemoryArray class disconnect() and connect() methods.
 
-    Tested configurations:
-        - 0: Disconnecting from a connected SharedMemoryArray
-        - 1: Reconnecting to a disconnected SharedMemoryArray
-        - 2: Verifying data integrity after reconnection
+    Verifies disconnecting from a connected array, reconnecting to a disconnected array, and confirming data integrity
+    after reconnection.
     """
     # Creates two arrays to handle Windows garbage collection behavior.
     connection_array = SharedMemoryArray.create_array(name="test_connect", prototype=int_array)
@@ -308,12 +299,10 @@ def test_disconnect_connect(int_array):
     connection_array.destroy()
 
 
-def test_enable_buffer_destruction(int_array):
+def test_enable_buffer_destruction(int_array: NDArray[np.int32]) -> None:
     """Verifies the functionality of the enable_buffer_destruction() method.
 
-    Tested configurations:
-        - 0: Enabling buffer destruction flag
-        - 1: Verifying the flag is set correctly
+    Verifies that enabling buffer destruction sets the corresponding flag correctly.
     """
     # Creates a SharedMemoryArray instance.
     sma = SharedMemoryArray.create_array(name="test_destruction", prototype=int_array)
@@ -328,20 +317,59 @@ def test_enable_buffer_destruction(int_array):
     sma.destroy()
 
 
-def test_create_array_errors():
+def test_pickle_state_round_trip(int_array: NDArray[np.int32]) -> None:
+    """Verifies the functionality of the SharedMemoryArray class __getstate__() and __setstate__() pickle hooks.
+
+    Verifies that __getstate__() reports the instance as disconnected and drops the live buffer handle, and that
+    __setstate__() restores the metadata so the receiving instance can reconnect to the same shared buffer. The hooks
+    are exercised directly because the underlying Lock can only be transferred to a child process through inheritance,
+    rather than through an in-process pickle round-trip.
+    """
+    # Creates and connects a source instance, then writes a sentinel value through it.
+    sma = SharedMemoryArray.create_array(name="test_pickle", prototype=int_array)
+    sma.connect()
+    sma[0] = 99
+
+    # Captures the picklable state and verifies the live handle and connection flags are reset.
+    state = sma.__getstate__()
+    assert state["_buffer"] is None
+    assert state["_array"] is None
+    assert state["_connected"] is False
+    assert state["_destroy_buffer"] is False
+
+    # Restores the state into a fresh instance the same way the pickle protocol does after __new__.
+    restored = SharedMemoryArray.__new__(SharedMemoryArray)
+    restored.__setstate__(state)
+
+    # Verifies that the metadata survived the transfer and the restored instance reports as disconnected.
+    assert restored.name == sma.name
+    assert restored.shape == sma.shape
+    assert restored.datatype == sma.datatype
+    assert not restored.is_connected
+
+    # Verifies that the restored instance can reconnect to the same buffer and read the sentinel value.
+    restored.connect()
+    assert restored.is_connected
+    assert restored[0] == 99
+
+    # Cleans up. Releases the source handle, then destroys the buffer through the restored instance.
+    sma.disconnect()
+    restored.enable_buffer_destruction()
+    restored.destroy()
+
+
+def test_create_array_errors() -> None:
     """Verifies error handling in the SharedMemoryArray class create_array() method.
 
-    Tested configurations:
-        - 0: Attempting to create an array with an invalid prototype (list instead of the NumPy array)
-        - 1: Attempting to create an array with a name that already exists
+    Verifies that creating an array with an invalid prototype type and with a name that already exists raises the
+    expected errors.
     """
     # Tests with an invalid prototype type.
     message = (
         f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object 'test_error'. "
-        f"Expected a flat (one-dimensional) NumPy array but instead encountered {type([1, 2, 3]).__name__}."
+        f"Expected a NumPy array but instead encountered {type([1, 2, 3]).__name__}."
     )
     with pytest.raises(TypeError, match=error_format(message)):
-        # noinspection PyTypeChecker
         SharedMemoryArray.create_array(name="test_error", prototype=[1, 2, 3])
 
     # Tests with existing name.
@@ -358,11 +386,10 @@ def test_create_array_errors():
         SharedMemoryArray.create_array(name="existing_array", prototype=np.array([4, 5, 6]))
 
 
-def test_getitem_errors(int_array):
+def test_getitem_errors(int_array: NDArray[np.int32]) -> None:
     """Verifies error handling in the SharedMemoryArray class __getitem__() method.
 
-    Tested configurations:
-        - 0: Attempting to read from a disconnected array
+    Verifies that reading from a disconnected array raises a ConnectionError.
     """
     # Creates the array without connecting.
     sma = SharedMemoryArray.create_array(name="test_getitem_error", prototype=int_array)
@@ -377,11 +404,10 @@ def test_getitem_errors(int_array):
         _ = sma[0]
 
 
-def test_setitem_errors(int_array):
+def test_setitem_errors(int_array: NDArray[np.int32]) -> None:
     """Verifies error handling in the SharedMemoryArray class __setitem__() method.
 
-    Tested configurations:
-        - 0: Attempting to write to a disconnected array
+    Verifies that writing to a disconnected array raises a ConnectionError.
     """
     # Creates the array without connecting.
     sma = SharedMemoryArray.create_array(name="test_setitem_error", prototype=int_array)
@@ -396,11 +422,10 @@ def test_setitem_errors(int_array):
         sma[0] = 10
 
 
-def test_array_context_manager_errors(int_array):
+def test_array_context_manager_errors(int_array: NDArray[np.int32]) -> None:
     """Verifies error handling in the SharedMemoryArray class array() context manager.
 
-    Tested configurations:
-        - 0: Attempting to use array() on a disconnected instance
+    Verifies that using the array() context manager on a disconnected instance raises a ConnectionError.
     """
     # Creates the array without connecting.
     sma = SharedMemoryArray.create_array(name="test_array_error", prototype=int_array)
@@ -414,11 +439,10 @@ def test_array_context_manager_errors(int_array):
         pass
 
 
-def read_write_worker(sma: SharedMemoryArray):
-    """Worker function for cross-process read/write testing.
+def read_write_worker(sma: SharedMemoryArray) -> None:
+    """Connects to a shared array, writes a test value, verifies the write, and disconnects.
 
-    This worker connects to a shared array, writes a test value, verifies the write operation, and then disconnects.
-    It is used to verify that SharedMemoryArray can be accessed from multiple processes as intended.
+    Runs in a child process to verify that SharedMemoryArray can be accessed from multiple processes as intended.
 
     Args:
         sma: The SharedMemoryArray instance to test.
@@ -434,11 +458,10 @@ def read_write_worker(sma: SharedMemoryArray):
     sma.disconnect()
 
 
-def concurrent_worker(sma: SharedMemoryArray, index: int):
-    """Worker function for concurrent access testing.
+def concurrent_worker(sma: SharedMemoryArray, index: int) -> None:
+    """Repeatedly reads, increments, and writes back the value at a specific array index.
 
-    This worker repeatedly reads, increments, and writes back a value at a specific
-    index to test that locking prevents race conditions during concurrent access.
+    Runs in a child process to verify that locking prevents race conditions during concurrent access.
 
     Args:
         sma: The SharedMemoryArray instance to test.
@@ -459,12 +482,10 @@ def concurrent_worker(sma: SharedMemoryArray, index: int):
 
 
 @pytest.mark.xdist_group("cross_process")
-def test_cross_process_read_write():
+def test_cross_process_read_write() -> None:
     """Verifies the ability of the SharedMemoryArray class to share data across processes.
 
-    Tested configurations:
-        - 0: Writing data from a child process
-        - 1: Reading the written data from the parent process
+    Verifies writing data from a child process and reading it back from the parent process.
     """
     # Instantiates the SMA object.
     prototype = np.array([1, 2, 3, 4, 5], dtype=np.int32)
@@ -487,12 +508,10 @@ def test_cross_process_read_write():
 
 
 @pytest.mark.xdist_group("cross_process")
-def test_cross_process_concurrent_access():
+def test_cross_process_concurrent_access() -> None:
     """Verifies the ability of the SharedMemoryArray class to handle concurrent access from multiple processes.
 
-    Tested configurations:
-        - 0: Multiple processes (5) incrementing values in the shared array concurrently
-        - 1: Verifying the final value of each array element after concurrent incrementing
+    Verifies that five processes incrementing different array elements concurrently produce the expected final values.
     """
     # Instantiates the SMA object.
     sma = SharedMemoryArray.create_array(name="test_concurrent", prototype=np.zeros(5, dtype=np.int32))

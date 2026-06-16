@@ -2,15 +2,21 @@
 DataLogger instances.
 """
 
+from __future__ import annotations
+
 from math import ceil
-from pathlib import Path
+from typing import TYPE_CHECKING
 from functools import cached_property
 from dataclasses import dataclass
-from collections.abc import Iterator
 
 import numpy as np
-from numpy.typing import NDArray
 from ataraxis_base_utilities import console, resolve_worker_count
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from collections.abc import Iterator
+
+    from numpy.typing import NDArray
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,8 +24,9 @@ class LogMessage:
     """Stores a single message extracted from a log archive.
 
     Notes:
-        This class is yielded by the LogArchiveReader.iter_messages() method for each message in the archive. The
-        structure of the payload is domain-specific and must be parsed by the consumer.
+        This class is yielded by the LogArchiveReader.iter_messages() method for each message in the archive; the same
+        data is available in array form from the read_all_messages() method. The structure of the payload is
+        domain-specific and must be parsed by the consumer.
     """
 
     timestamp_us: np.uint64
@@ -58,6 +65,7 @@ class LogArchiveReader:
 
     Raises:
         FileNotFoundError: If the specified archive file does not exist.
+        ValueError: If the archive lacks a valid onset timestamp message when the onset timestamp is accessed.
     """
 
     _TIMESTAMP_BYTE_SIZE: int = 8
@@ -85,17 +93,8 @@ class LogArchiveReader:
 
     @cached_property
     def onset_timestamp_us(self) -> np.uint64:
-        """Returns the onset timestamp in microseconds since epoch.
-
-        Notes:
-            The onset timestamp is the UTC epoch reference stored in the first message with a timestamp value of 0.
-            All other message timestamps are stored as elapsed microseconds relative to this onset.
-
-            If onset_us was provided during initialization, returns that value without scanning the archive.
-            Otherwise, scans the archive to discover the onset timestamp and caches the result.
-
-        Returns:
-            The onset timestamp as a numpy uint64 value representing microseconds since epoch.
+        """Returns the onset timestamp in microseconds since epoch, taken from the pre-provided value when available
+        or discovered by scanning the archive for the first message with a timestamp of 0.
 
         Raises:
             ValueError: If the archive does not contain a valid onset timestamp message.
@@ -106,31 +105,29 @@ class LogArchiveReader:
         with np.load(self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
             file_list = list(archive.files)
 
-            for number, item in enumerate(file_list):
-                entry: NDArray[np.uint8] = archive[item]
+            for number, file_key in enumerate(file_list):
+                message_bytes: NDArray[np.uint8] = archive[file_key]
 
                 # The timestamp occupies bytes 1-9 (8 bytes after the 1-byte source_id).
-                timestamp_value = entry[1 : 1 + self._TIMESTAMP_BYTE_SIZE].view(np.uint64).item()
+                timestamp_value = message_bytes[1 : 1 + self._TIMESTAMP_BYTE_SIZE].view(np.uint64).item()
 
                 # A timestamp value of 0 indicates the onset message.
                 if timestamp_value == 0:
                     # The payload contains the onset timestamp as an unsigned 64-bit integer.
-                    onset = np.uint64(entry[1 + self._TIMESTAMP_BYTE_SIZE :].view(np.uint64).item())
+                    onset = np.uint64(message_bytes[1 + self._TIMESTAMP_BYTE_SIZE :].view(np.uint64).item())
 
                     # Caches the message keys excluding the onset message for later use.
                     self._message_keys = file_list[number + 1 :]
 
                     return onset
 
-        # If no onset message is found, raises an error.
         error_message = (
             f"Unable to discover onset timestamp in log archive. The archive must contain a message with timestamp "
             f"value 0 storing the UTC epoch reference, but none was found in: {self._archive_path}."
         )
         console.error(message=error_message, error=ValueError)
 
-        # This return is never reached but satisfies type checkers.
-        # noinspection PyUnreachableCode
+        # console.error() always raises, so this is unreachable; it only satisfies the return-type checker.
         return np.uint64(0)  # pragma: no cover
 
     def _get_message_keys(self) -> list[str]:
@@ -141,7 +138,7 @@ class LogArchiveReader:
             20 zeros for timestamp=0), then slices from that index. This avoids iterating over all keys.
 
         Returns:
-            A list of string keys for data messages (excluding the onset message).
+            The data-message keys, excluding the onset message.
         """
         if self._message_keys is None:
             # Triggers onset discovery which populates _message_keys via slicing.
@@ -197,7 +194,7 @@ class LogArchiveReader:
 
         batch_size = max(1, ceil(total_messages / (resolved_workers * batch_multiplier)))
 
-        return [keys[i : i + batch_size] for i in range(0, total_messages, batch_size)]
+        return [keys[start_index : start_index + batch_size] for start_index in range(0, total_messages, batch_size)]
 
     def iter_messages(self, keys: list[str] | None = None) -> Iterator[LogMessage]:
         """Iterates through messages in the archive, yielding LogMessage instances.
@@ -240,8 +237,7 @@ class LogArchiveReader:
             with batching instead.
 
         Returns:
-            A tuple of two elements. The first element is a numpy array of absolute timestamps in microseconds. The
-            second element is a list of payload arrays, one for each message.
+            The absolute message timestamps in microseconds, paired with a list of the per-message payload arrays.
         """
         timestamps: list[np.uint64] = []
         payloads: list[NDArray[np.uint8]] = []

@@ -1,7 +1,7 @@
 """Contains tests for classes and methods provided by the yaml_config.py module."""
 
 from enum import IntEnum, StrEnum
-from typing import Optional
+from typing import Any, Optional
 from pathlib import Path
 from dataclasses import field, dataclass
 
@@ -11,148 +11,6 @@ from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import YamlConfig
 from ataraxis_data_structures.data_structures.yaml_config import _serialize_value, _collect_type_hooks
-
-
-@pytest.mark.parametrize(
-    "config_path, expected_content",
-    [
-        (Path("config1.yaml"), {"key1": "value1", "key2": 2, "nested": {}, "list": []}),
-        (Path("config2.yml"), {"key1": "", "key2": 0, "nested": {"key": "value"}, "list": [1, 2, 3]}),
-        (Path("empty_config.yaml"), {"key1": "", "key2": 0, "nested": {}, "list": []}),  # Test case for empty config
-    ],
-)
-def test_yaml_config_to_yaml(tmp_path, config_path, expected_content):
-    """Verifies the functionality of the YamlConfig class to_yaml() method.
-
-    Verifies saving a simple key-value pair configuration to a .yaml file, a nested configuration with lists to a .yml
-    file, and an empty configuration to a .yaml file.
-    """
-
-    @dataclass
-    class TestConfig(YamlConfig):
-        """Defines the test dataclass. Each tested config should have the same fields (in the same order)."""
-
-        key1: str = ""
-        key2: int = 0
-        nested: dict = field(default_factory=dict)
-        list: list = field(default_factory=list)
-
-    # Generates and dumps the config as a .yaml file.
-    config = TestConfig(**expected_content)
-    full_path = tmp_path.joinpath(config_path)
-    config.to_yaml(full_path)
-
-    # Verifies that the file was created and contains data.
-    assert full_path.exists()
-    assert full_path.stat().st_size > 0, f"File {full_path} is empty"
-
-    # Manually reads and verifies the config data.
-    with full_path.open("r") as yaml_file:
-        loaded_content = yaml.safe_load(yaml_file)
-        assert loaded_content == expected_content, f"Expected {expected_content}, but got {loaded_content}"
-
-
-def test_yaml_config_to_yaml_errors(tmp_path):
-    """Verifies the error-handling behavior of the YamlConfig class to_yaml() method."""
-
-    @dataclass
-    class TestConfig(YamlConfig):
-        pass
-
-    config = TestConfig()
-    invalid_path = tmp_path / "invalid.txt"
-
-    error_msg: str = (
-        f"Invalid file path provided when attempting to write the dataclass instance to a .yaml file. "
-        f"Expected a path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but encountered "
-        f"{invalid_path}."
-    )
-
-    with pytest.raises(ValueError, match=error_format(error_msg)):
-        config.to_yaml(invalid_path)
-
-
-@pytest.mark.parametrize(
-    "config_path, content",
-    [
-        (Path("config1.yaml"), {"key1": "value1", "key2": 2, "nested": None, "list": None}),
-        (Path("config2.yml"), {"nested": {"key": "value"}, "list": [1, 2, 3]}),
-    ],
-)
-def test_yaml_config_from_yaml(tmp_path, config_path, content):
-    """Verifies the functionality of the YamlConfig class from_yaml() method.
-
-    Verifies loading a simple key-value pair configuration from a .yaml file and a nested configuration with lists from
-    a .yml file.
-    """
-
-    @dataclass
-    class TestConfig(YamlConfig):
-        key1: str = ""
-        key2: int = 0
-        nested: Optional[dict] = None  # noqa: UP045 - field name shadows builtin, X | None fails
-        list: Optional[list] = None  # noqa: UP045 - field name shadows builtin, X | None fails
-
-    full_path = tmp_path / config_path
-    with full_path.open("w") as yaml_file:
-        yaml.dump(content, yaml_file)
-
-    config = TestConfig.from_yaml(full_path)
-
-    for key, value in content.items():
-        assert getattr(config, key) == value
-
-
-def test_yaml_config_from_yaml_errors(tmp_path):
-    """Verifies the error-handling behavior of the YamlConfig class from_yaml() method."""
-
-    @dataclass
-    class TestConfig(YamlConfig):
-        pass
-
-    invalid_path = tmp_path / "invalid.txt"
-
-    error_msg = (
-        f"Invalid file path provided when attempting to create the dataclass instance using the data from a "
-        f".yaml file. Expected the path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but "
-        f"encountered {invalid_path}."
-    )
-
-    with pytest.raises(ValueError, match=error_format(error_msg)):
-        TestConfig.from_yaml(invalid_path)
-
-
-def test_yaml_config_initialization():
-    """Verifies the initialization of the YamlConfig class with different input parameters."""
-
-    @dataclass
-    class TestConfig(YamlConfig):
-        param1: str
-        param2: int
-        param3: list | None = None
-
-    config = TestConfig(param1="test", param2=42, param3=[1, 2, 3])
-    assert config.param1 == "test"
-    assert config.param2 == 42
-    assert config.param3 == [1, 2, 3]
-
-
-def test_yaml_config_subclassing():
-    """Verifies the subclassing of the YamlConfig class to provide additional fields."""
-
-    @dataclass
-    class ExtendedConfig(YamlConfig):
-        extra_param: str
-        another_param: dict
-
-    config = ExtendedConfig(extra_param="extra", another_param={"key": "value"})
-    assert isinstance(config, YamlConfig)
-    assert config.extra_param == "extra"
-    assert config.another_param == {"key": "value"}
-
-    # Tests that the subclass still has the 'to_yaml' and 'from_yaml' methods.
-    assert hasattr(config, "to_yaml")
-    assert hasattr(ExtendedConfig, "from_yaml")
 
 
 class Color(StrEnum):
@@ -177,7 +35,179 @@ class Priority(IntEnum):
     """Represents high priority."""
 
 
-def test_path_round_trip(tmp_path):
+@pytest.mark.parametrize(
+    "config_path, expected_content",
+    [
+        (Path("config1.yaml"), {"string_value": "value1", "integer_value": 2, "nested": {}, "list": []}),
+        (Path("config2.yml"), {"string_value": "", "integer_value": 0, "nested": {"key": "value"}, "list": [1, 2, 3]}),
+        (Path("empty_config.yaml"), {"string_value": "", "integer_value": 0, "nested": {}, "list": []}),
+    ],
+)
+def test_yaml_config_to_yaml(tmp_path: Path, config_path: Path, expected_content: dict[str, Any]) -> None:
+    """Verifies the functionality of the YamlConfig class to_yaml() method.
+
+    Verifies saving a simple key-value pair configuration to a .yaml file, a nested configuration with lists to a .yml
+    file, and an empty configuration to a .yaml file.
+    """
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        string_value: str = ""
+        integer_value: int = 0
+        nested: dict = field(default_factory=dict)
+        list: list = field(default_factory=list)
+
+    # Generates and dumps the config as a .yaml file.
+    config = TestConfig(**expected_content)
+    full_path = tmp_path.joinpath(config_path)
+    config.to_yaml(full_path)
+
+    # Verifies that the file was created and contains data.
+    assert full_path.exists()
+    assert full_path.stat().st_size > 0, f"File {full_path} is empty"
+
+    # Manually reads and verifies the config data.
+    with full_path.open("r") as yaml_file:
+        loaded_content = yaml.safe_load(yaml_file)
+        assert loaded_content == expected_content, f"Expected {expected_content}, but got {loaded_content}"
+
+
+def test_yaml_config_to_yaml_errors(tmp_path: Path) -> None:
+    """Verifies the error-handling behavior of the YamlConfig class to_yaml() method."""
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        pass
+
+    config = TestConfig()
+    invalid_path = tmp_path / "invalid.txt"
+
+    error_message: str = (
+        f"Invalid file path provided when attempting to write the dataclass instance to a .yaml file. "
+        f"Expected a path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but encountered "
+        f"{invalid_path}."
+    )
+
+    with pytest.raises(ValueError, match=error_format(error_message)):
+        config.to_yaml(invalid_path)
+
+
+@pytest.mark.parametrize(
+    "config_path, content",
+    [
+        (Path("config1.yaml"), {"string_value": "value1", "integer_value": 2, "nested": None, "list": None}),
+        (Path("config2.yml"), {"nested": {"key": "value"}, "list": [1, 2, 3]}),
+    ],
+)
+def test_yaml_config_from_yaml(tmp_path: Path, config_path: Path, content: dict[str, Any]) -> None:
+    """Verifies the functionality of the YamlConfig class from_yaml() method.
+
+    Verifies loading a simple key-value pair configuration from a .yaml file and a nested configuration with lists from
+    a .yml file.
+    """
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        string_value: str = ""
+        integer_value: int = 0
+        nested: Optional[dict] = None  # noqa: UP045 - field name shadows builtin, X | None fails
+        list: Optional[list] = None  # noqa: UP045 - field name shadows builtin, X | None fails
+
+    full_path = tmp_path / config_path
+    with full_path.open("w") as yaml_file:
+        yaml.dump(content, yaml_file)
+
+    config = TestConfig.from_yaml(full_path)
+
+    for key, value in content.items():
+        assert getattr(config, key) == value
+
+
+def test_yaml_config_from_yaml_errors(tmp_path: Path) -> None:
+    """Verifies the error-handling behavior of the YamlConfig class from_yaml() method."""
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        pass
+
+    invalid_path = tmp_path / "invalid.txt"
+
+    error_message: str = (
+        f"Invalid file path provided when attempting to create the dataclass instance using the data from a "
+        f".yaml file. Expected the path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but "
+        f"encountered {invalid_path}."
+    )
+
+    with pytest.raises(ValueError, match=error_format(error_message)):
+        TestConfig.from_yaml(invalid_path)
+
+
+@pytest.mark.parametrize(
+    "file_contents, expected_type_name",
+    [
+        ("", "NoneType"),
+        ("- 1\n- 2\n- 3\n", "list"),
+        ("42\n", "int"),
+    ],
+)
+def test_yaml_config_from_yaml_non_mapping_errors(tmp_path: Path, file_contents: str, expected_type_name: str) -> None:
+    """Verifies that the YamlConfig class from_yaml() method raises an error when the file does not contain a
+    top-level mapping.
+
+    Verifies the behavior for an empty file (yields None), a sequence document, and a scalar document.
+    """
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        pass
+
+    yaml_path = tmp_path / "non_mapping.yaml"
+    yaml_path.write_text(file_contents)
+
+    error_message: str = (
+        f"Invalid data encountered when attempting to create the dataclass instance using the data from a "
+        f".yaml file. Expected the file {yaml_path} to contain a top-level mapping, but encountered "
+        f"{expected_type_name}."
+    )
+
+    with pytest.raises(ValueError, match=error_format(error_message)):
+        TestConfig.from_yaml(yaml_path)
+
+
+def test_yaml_config_initialization() -> None:
+    """Verifies the initialization of the YamlConfig class with different input parameters."""
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        name: str
+        count: int
+        values: list | None = None
+
+    config = TestConfig(name="test", count=42, values=[1, 2, 3])
+    assert config.name == "test"
+    assert config.count == 42
+    assert config.values == [1, 2, 3]
+
+
+def test_yaml_config_subclassing() -> None:
+    """Verifies the subclassing of the YamlConfig class to provide additional fields."""
+
+    @dataclass
+    class ExtendedConfig(YamlConfig):
+        extra_param: str
+        another_param: dict
+
+    config = ExtendedConfig(extra_param="extra", another_param={"key": "value"})
+    assert isinstance(config, YamlConfig)
+    assert config.extra_param == "extra"
+    assert config.another_param == {"key": "value"}
+
+    # Tests that the subclass still has the 'to_yaml' and 'from_yaml' methods.
+    assert hasattr(config, "to_yaml")
+    assert hasattr(ExtendedConfig, "from_yaml")
+
+
+def test_path_round_trip(tmp_path: Path) -> None:
     """Verifies that Path, Path | None, and list[Path] fields round-trip through YAML correctly."""
 
     @dataclass
@@ -208,10 +238,10 @@ def test_path_round_trip(tmp_path):
     assert loaded.nullable_path == Path("/opt/output")
     assert isinstance(loaded.nullable_path, Path)
     assert loaded.path_list == [Path("/a/b"), Path("/c/d")]
-    assert all(isinstance(p, Path) for p in loaded.path_list)
+    assert all(isinstance(path, Path) for path in loaded.path_list)
 
 
-def test_path_none_round_trip(tmp_path):
+def test_path_none_round_trip(tmp_path: Path) -> None:
     """Verifies that a Path | None field with None value round-trips correctly."""
 
     @dataclass
@@ -226,7 +256,7 @@ def test_path_none_round_trip(tmp_path):
     assert loaded.maybe_path is None
 
 
-def test_str_enum_round_trip(tmp_path):
+def test_str_enum_round_trip(tmp_path: Path) -> None:
     """Verifies that StrEnum fields and StrEnum | None fields round-trip through YAML correctly."""
 
     @dataclass
@@ -251,7 +281,7 @@ def test_str_enum_round_trip(tmp_path):
     assert loaded.nullable_color is Color.BLUE
 
 
-def test_int_enum_round_trip(tmp_path):
+def test_int_enum_round_trip(tmp_path: Path) -> None:
     """Verifies that IntEnum fields are serialized as ints and deserialized back to enum members."""
 
     @dataclass
@@ -274,7 +304,7 @@ def test_int_enum_round_trip(tmp_path):
     assert isinstance(loaded.level, Priority)
 
 
-def test_tuple_round_trip(tmp_path):
+def test_tuple_round_trip(tmp_path: Path) -> None:
     """Verifies that tuple fields (int tuple, Path tuple, empty tuple) round-trip through YAML correctly."""
 
     @dataclass
@@ -304,12 +334,12 @@ def test_tuple_round_trip(tmp_path):
     assert isinstance(loaded.int_tuple, tuple)
     assert loaded.path_tuple == (Path("/a"), Path("/b"))
     assert isinstance(loaded.path_tuple, tuple)
-    assert all(isinstance(p, Path) for p in loaded.path_tuple)
+    assert all(isinstance(path, Path) for path in loaded.path_tuple)
     assert loaded.empty_tuple == ()
     assert isinstance(loaded.empty_tuple, tuple)
 
 
-def test_nested_dataclass_round_trip(tmp_path):
+def test_nested_dataclass_round_trip(tmp_path: Path) -> None:
     """Verifies that nested dataclasses with Path and Enum fields round-trip through YAML correctly."""
 
     @dataclass
@@ -339,7 +369,7 @@ def test_nested_dataclass_round_trip(tmp_path):
     assert loaded.inner.color is Color.BLUE
 
 
-def test_union_enum_str_round_trip(tmp_path):
+def test_union_enum_str_round_trip(tmp_path: Path) -> None:
     """Verifies that Enum | str fields correctly round-trip: valid enum values become enum members, non-enum values
     stay as strings.
     """
@@ -364,7 +394,7 @@ def test_union_enum_str_round_trip(tmp_path):
     assert isinstance(loaded_string.method, str)
 
 
-def test_primitive_first_union_enum_round_trip(tmp_path):
+def test_primitive_first_union_enum_round_trip(tmp_path: Path) -> None:
     """Verifies that str | Enum and int | Enum (primitive-first) annotations deserialize correctly to enum members.
 
     Dacite normally tries union members left-to-right, so str | Color would match ``str`` before trying the Color
@@ -400,7 +430,7 @@ def test_primitive_first_union_enum_round_trip(tmp_path):
     assert isinstance(loaded_fallback.color, str)
 
 
-def test_frozen_nested_dataclass_round_trip(tmp_path):
+def test_frozen_nested_dataclass_round_trip(tmp_path: Path) -> None:
     """Verifies that a nested frozen dataclass with Path and Enum fields round-trips correctly through YAML."""
 
     @dataclass(frozen=True)
@@ -424,7 +454,7 @@ def test_frozen_nested_dataclass_round_trip(tmp_path):
     assert loaded.inner.color is Color.GREEN
 
 
-def test_serialize_value_primitives():
+def test_serialize_value_primitives() -> None:
     """Verifies that _serialize_value passes through primitive types unchanged."""
     assert _serialize_value(None) is None
     assert _serialize_value("hello") == "hello"
@@ -433,14 +463,14 @@ def test_serialize_value_primitives():
     assert _serialize_value(value=True) is True
 
 
-def test_serialize_value_path_dict_keys():
+def test_serialize_value_path_dict_keys() -> None:
     """Verifies that _serialize_value converts Path keys in dicts to strings."""
     result = _serialize_value({Path("/a"): 1, Path("/b"): 2})
     assert result == {"/a": 1, "/b": 2}
-    assert all(isinstance(k, str) for k in result)
+    assert all(isinstance(key, str) for key in result)
 
 
-def test_collect_type_hooks_simple():
+def test_collect_type_hooks_simple() -> None:
     """Verifies that _collect_type_hooks discovers Path and Enum types in a simple dataclass."""
 
     @dataclass
@@ -455,7 +485,7 @@ def test_collect_type_hooks_simple():
     assert str not in hooks
 
 
-def test_collect_type_hooks_nested():
+def test_collect_type_hooks_nested() -> None:
     """Verifies that _collect_type_hooks discovers types in nested dataclasses."""
 
     @dataclass
@@ -472,7 +502,7 @@ def test_collect_type_hooks_nested():
     assert Priority in hooks
 
 
-def test_collect_type_hooks_union_enum():
+def test_collect_type_hooks_union_enum() -> None:
     """Verifies that _collect_type_hooks registers union-level hooks for str | Enum and int | Enum annotations."""
 
     @dataclass

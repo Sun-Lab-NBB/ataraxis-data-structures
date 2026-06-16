@@ -67,7 +67,7 @@ class ProcessingTracker(YamlConfig):
     """Maps the unique identifiers of the jobs that make up the processing pipeline to their current state and
     metadata."""
     lock_path: str = field(init=False)
-    """The path to the .LOCK file used to ensure thread-safe access to the tracker's data."""
+    """The path to the .LOCK file used to ensure process-safe access to the tracker's data."""
 
     def __post_init__(self) -> None:
         """Resolves the .LOCK file for the managed tracker .YAML file."""
@@ -134,8 +134,8 @@ class ProcessingTracker(YamlConfig):
         """Configures the tracker with the list of one or more jobs to be executed during the pipeline's runtime.
 
         Notes:
-            If the job already has a section in the tracker, this method does not duplicate or modify the existing
-            job entry. Use the reset() method to clear all cached job states.
+            If the job already has a section in the tracker, this method emits a warning and does not duplicate or
+            modify the existing job entry. Use the reset() method to clear all cached job states.
 
         Args:
             jobs: A list of (job_name, specifier) tuples defining the jobs to track. Each tuple contains the
@@ -344,11 +344,7 @@ class ProcessingTracker(YamlConfig):
 
     @property
     def complete(self) -> bool:
-        """Returns True if the tracked processing pipeline has been completed successfully.
-
-        Notes:
-            The pipeline is considered complete if all jobs have been marked as succeeded.
-        """
+        """Returns True when the tracked pipeline has jobs and all of them have been marked as succeeded."""
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
             self._load_state()
@@ -358,11 +354,7 @@ class ProcessingTracker(YamlConfig):
 
     @property
     def encountered_error(self) -> bool:
-        """Returns True if the tracked processing pipeline has been terminated due to a runtime error.
-
-        Notes:
-            The pipeline is considered to have encountered an error if any job has been marked as failed.
-        """
+        """Returns True when any of the tracked pipeline's jobs has been marked as failed."""
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
             self._load_state()
@@ -372,7 +364,7 @@ class ProcessingTracker(YamlConfig):
         """Returns all job IDs that have the specified status.
 
         Args:
-            status: The status to filter jobs by.
+            status: The status to match, given as a ProcessingStatus member or its member name string.
 
         Returns:
             A list of job IDs with the specified status.
@@ -434,7 +426,7 @@ class ProcessingTracker(YamlConfig):
     def retry_failed_jobs(self) -> list[str]:
         """Resets all failed jobs back to SCHEDULED status for retry.
 
-        This clears the error_message, started_at, completed_at, and executor_id fields for each failed job.
+        Clears the error_message, started_at, completed_at, and executor_id fields for each failed job.
 
         Returns:
             A list of job IDs that were reset for retry.

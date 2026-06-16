@@ -1,19 +1,17 @@
 # Claude Code Instructions
 
-## Session Start Behavior
+## Session start behavior
 
 At the beginning of each coding session, before making any code changes, you should build a comprehensive
 understanding of the codebase by invoking the `/explore-codebase` skill.
 
-This ensures you:
-- Understand the project architecture before modifying code
-- Follow existing patterns and conventions
-- Don't introduce inconsistencies or break integrations
+This builds an accurate model of the project architecture before changes are made, preventing inconsistencies with
+the patterns that downstream Ataraxis framework projects depend on.
 
-## Style Guide Compliance
+## Style guide compliance
 
-Before writing, modifying, or reviewing any code or documentation, you MUST invoke the appropriate skill to load Sun
-Lab conventions. This applies to ALL file types:
+Before writing, modifying, or reviewing any code or documentation, you MUST invoke the appropriate skill to load
+Ataraxis framework conventions. This applies to ALL file types:
 
 | Task                                | Skill to Invoke    |
 |-------------------------------------|--------------------|
@@ -31,10 +29,10 @@ All contributions must strictly follow these conventions. Key conventions includ
 - Proper error handling with `console.error()`
 - 120 character line limit
 
-## Cross-Referenced Library Verification
+## Cross-referenced library verification
 
-Sun Lab projects often depend on other `ataraxis-*` or `sl-*` libraries. These libraries may be stored locally in the
-same parent directory as this project (`/home/cyberaxolotl/Desktop/GitHubRepos/`).
+Ataraxis framework projects often depend on other `ataraxis-*` libraries. These libraries may be
+stored locally in the same parent directory as this project (`/home/cyberaxolotl/Desktop/GitHubRepos/`).
 
 **Before writing code that interacts with a cross-referenced library, you MUST:**
 
@@ -58,24 +56,32 @@ same parent directory as this project (`/home/cyberaxolotl/Desktop/GitHubRepos/`
 **Why this matters**: Skills and documentation may reference outdated APIs. Always verify against the actual library
 state to prevent integration errors.
 
-## Available Skills
+## Available skills
 
-| Skill               | Description                                                         |
-|---------------------|---------------------------------------------------------------------|
-| `/explore-codebase` | Perform in-depth codebase exploration at session start              |
-| `/python-style`     | Apply Sun Lab Python coding conventions (REQUIRED for code changes) |
-| `/readme-style`     | Apply Sun Lab README conventions                                    |
-| `/commit`           | Draft Sun Lab style-compliant git commit messages                   |
-| `/pyproject-style`  | Apply Sun Lab pyproject.toml conventions                            |
-| `/tox-config`       | Apply Sun Lab tox.ini conventions                                   |
+| Skill                   | Description                                                                    |
+|-------------------------|--------------------------------------------------------------------------------|
+| `/explore-codebase`     | Perform in-depth codebase exploration at session start                         |
+| `/python-style`         | Apply Ataraxis framework Python coding conventions (REQUIRED for code changes) |
+| `/readme-style`         | Apply Ataraxis framework README conventions                                    |
+| `/commit`               | Draft Ataraxis framework style-compliant git commit messages                   |
+| `/pyproject-style`      | Apply Ataraxis framework pyproject.toml conventions                            |
+| `/tox-config`           | Apply Ataraxis framework tox.ini conventions                                   |
+| `/api-docs`             | Apply Ataraxis framework Sphinx API documentation conventions                  |
+| `/audit-facts`          | Fact-check documentation against authoritative source code                     |
+| `/audit-style`          | Audit files for style and convention compliance                                |
+| `/explore-dependencies` | Build an API snapshot of installed ataraxis dependencies                       |
+| `/pr`                   | Draft a style-compliant pull request summary                                   |
+| `/project-layout`       | Apply Ataraxis framework project structure conventions                         |
+| `/release`              | Draft style-compliant release notes from merged PRs                            |
+| `/skill-design`         | Generate and verify skill files and CLAUDE.md instructions                     |
 
-## Project Context
+## Project context
 
 This is **ataraxis-data-structures**, a Python library that provides classes and structures for storing, manipulating,
 and sharing data between Python processes. The library is part of the Ataraxis ecosystem and serves as a foundational
-dependency for other Sun Lab projects at Cornell University.
+dependency for other Ataraxis framework projects.
 
-### Key Areas
+### Key areas
 
 | Directory                                | Purpose                                                  |
 |------------------------------------------|----------------------------------------------------------|
@@ -102,26 +108,26 @@ dependency for other Sun Lab projects at Cornell University.
 - **Processing Utilities**: Directory checksums (xxHash3-128), parallel directory transfer with integrity verification,
   and time-series interpolation (linear for continuous, last-known-value for discrete data).
 
-### Core Components
+### Core components
 
-| Component                    | File                                     | Purpose                                         |
-|------------------------------|------------------------------------------|-------------------------------------------------|
-| SharedMemoryArray            | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory       |
-| YamlConfig                   | `data_structures/yaml_config.py`         | Dataclass with YAML serialization               |
-| ProcessingTracker            | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking       |
-| JobState                     | `data_structures/processing_tracker.py`  | Dataclass for job metadata                      |
-| ProcessingStatus             | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED) |
-| DataLogger                   | `data_loggers/serialized_data_logger.py` | Process-based serialized data logging           |
-| LogPackage                   | `data_loggers/serialized_data_logger.py` | Container for source_id, timestamp, payload     |
-| LogArchiveReader             | `data_loggers/log_archive_reader.py`     | Batch reader for .npz archives                  |
-| LogMessage                   | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload          |
-| assemble_log_archives        | `data_loggers/serialized_data_logger.py` | Aggregates .npy files into .npz archives        |
-| calculate_directory_checksum | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                 |
-| transfer_directory           | `processing/transfer_tools.py`           | Parallel directory copy with verification       |
-| delete_directory             | `processing/transfer_tools.py`           | Parallel directory deletion                     |
-| interpolate_data             | `processing/interpolation.py`            | Time-series interpolation                       |
+| Component                    | File                                     | Purpose                                                    |
+|------------------------------|------------------------------------------|------------------------------------------------------------|
+| SharedMemoryArray            | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory                  |
+| YamlConfig                   | `data_structures/yaml_config.py`         | Dataclass with YAML serialization                          |
+| ProcessingTracker            | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking                  |
+| JobState                     | `data_structures/processing_tracker.py`  | Dataclass for job metadata                                 |
+| ProcessingStatus             | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED)            |
+| DataLogger                   | `data_loggers/serialized_data_logger.py` | Process-based serialized data logging                      |
+| LogPackage                   | `data_loggers/serialized_data_logger.py` | Container for source_id, acquisition_time, serialized_data |
+| LogArchiveReader             | `data_loggers/log_archive_reader.py`     | Batch reader for .npz archives                             |
+| LogMessage                   | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload                     |
+| assemble_log_archives        | `data_loggers/serialized_data_logger.py` | Aggregates .npy files into .npz archives                   |
+| calculate_directory_checksum | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                            |
+| transfer_directory           | `processing/transfer_tools.py`           | Parallel directory copy with verification                  |
+| delete_directory             | `processing/transfer_tools.py`           | Parallel directory deletion                                |
+| interpolate_data             | `processing/interpolation.py`            | Time-series interpolation                                  |
 
-### Code Standards
+### Code standards
 
 - MyPy strict mode with full type annotations
 - Google-style docstrings
@@ -130,46 +136,45 @@ dependency for other Sun Lab projects at Cornell University.
 - Python 3.12, 3.13, 3.14 support
 - See style skills for complete conventions
 
-### Workflow Guidance
+### Workflow guidance
 
-**Modifying SharedMemoryArray:**
+Before modifying any component below, review its source file for the current implementation, then follow the
+component-specific steps.
 
-1. Review `src/ataraxis_data_structures/shared_memory/shared_memory_array.py` for current implementation
-2. Understand the multiprocessing.Lock integration for process-safety
-3. Maintain the `connect()`/`disconnect()`/`destroy()` lifecycle contract
-4. Test with actual multiprocessing scenarios (not just single-process)
+**Modifying SharedMemoryArray** (`src/ataraxis_data_structures/shared_memory/shared_memory_array.py`):
 
-**Modifying YamlConfig:**
+1. Understand the multiprocessing.Lock integration for process-safety
+2. Maintain the `connect()`/`disconnect()`/`destroy()` lifecycle contract
+3. Test with actual multiprocessing scenarios (not just single-process)
 
-1. Review `src/ataraxis_data_structures/data_structures/yaml_config.py` for current implementation
-2. Understand the dacite integration for nested dataclass conversion
-3. Maintain type hook support for Path, Enum, and custom conversions
-4. Test with complex nested structures and edge cases
+**Modifying YamlConfig** (`src/ataraxis_data_structures/data_structures/yaml_config.py`):
 
-**Modifying DataLogger:**
+1. Understand the dacite integration for nested dataclass conversion
+2. Maintain type hook support for Path, Enum, and custom conversions
+3. Test with complex nested structures and edge cases
 
-1. Review `src/ataraxis_data_structures/data_loggers/serialized_data_logger.py` for current implementation
-2. Understand the Process/Queue/watchdog thread architecture
-3. Maintain the LogPackage format (uint8 source_id, uint64 timestamp, uint8 array payload)
-4. Test with multiprocessing scenarios and verify proper cleanup
+**Modifying DataLogger** (`src/ataraxis_data_structures/data_loggers/serialized_data_logger.py`):
 
-**Modifying ProcessingTracker:**
+1. Understand the Process/Queue/watchdog thread architecture
+2. Maintain the LogPackage format (uint8 source_id, uint64 acquisition_time, uint8 array serialized_data)
+3. Test with multiprocessing scenarios and verify proper cleanup
 
-1. Review `src/ataraxis_data_structures/data_structures/processing_tracker.py` for current implementation
-2. Understand the FileLock integration for concurrent access safety
-3. Maintain the job state lifecycle (SCHEDULED → RUNNING → SUCCEEDED/FAILED)
-4. Test with concurrent access from multiple processes
+**Modifying ProcessingTracker** (`src/ataraxis_data_structures/data_structures/processing_tracker.py`):
 
-**Adding processing utilities:**
+1. Understand the FileLock integration for concurrent access safety
+2. Maintain the job state lifecycle (SCHEDULED → RUNNING → SUCCEEDED/FAILED)
+3. Test with concurrent access from multiple processes
 
-1. Review existing utilities in `src/ataraxis_data_structures/processing/`
-2. Follow the same patterns for type hints, docstrings, and error handling
+**Adding processing utilities** (`src/ataraxis_data_structures/processing/`):
+
+1. Review existing utilities for the patterns to follow
+2. Follow the same conventions for type hints, docstrings, and error handling
 3. Export new functions in `src/ataraxis_data_structures/__init__.py`
 4. Add corresponding tests in `tests/processing/`
 
 **Important considerations:**
 
-- This library is a dependency for other Sun Lab projects; maintain backwards compatibility
+- This library is a dependency for other Ataraxis framework projects; maintain backwards compatibility
 - Use `console.error()` from ataraxis-base-utilities for all error handling
 - Use `ataraxis-time` for precision timestamps in logging contexts
-- All multiprocessing code must use spawn context for cross-platform compatibility
+- All multiprocessing code uses an explicit spawn context (`get_context("spawn")`) for identical cross-platform behavior

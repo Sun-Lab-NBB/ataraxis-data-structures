@@ -2,9 +2,10 @@
 disk.
 """
 
+from __future__ import annotations
+
 from queue import Empty
 from typing import TYPE_CHECKING, Any, Literal
-from pathlib import Path
 import platform
 from functools import partial
 from threading import Thread
@@ -12,20 +13,27 @@ from collections import defaultdict
 from dataclasses import dataclass
 from multiprocessing import (
     Queue as MPQueue,
-    Manager,
-    Process,
+    get_context,
 )
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 
 import numpy as np
-from numpy.typing import NDArray
 from ataraxis_time import PrecisionTimer, TimerPrecisions
-from ataraxis_base_utilities import console, resolve_worker_count, ensure_directory_exists
+from ataraxis_base_utilities import console, resolve_worker_count, convert_scalar_to_bytes, ensure_directory_exists
 
 from ..shared_memory import SharedMemoryArray
 
 if TYPE_CHECKING:
+    from pathlib import Path
+    from multiprocessing.context import SpawnContext
+    from multiprocessing.process import BaseProcess
     from multiprocessing.managers import SyncManager
+
+    from numpy.typing import NDArray
+
+
+_BATCH_OVERSCALE_FACTOR: int = 4
+"""The multiplier applied when over-batching log entries across workers to improve load balancing."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +55,7 @@ class LogPackage:
     elapsed since the onset of the data acquisition runtime."""
 
     serialized_data: NDArray[np.uint8]
-    """The serialized data to be logged, stored as a one-dimensional bytes' NumPy array."""
+    """The serialized data to be logged, stored as a one-dimensional byte array."""
 
     @property
     def data(self) -> tuple[str, NDArray[np.uint8]]:  # pragma: no cover
@@ -56,10 +64,9 @@ class LogPackage:
         Notes:
             This property is designed to be exclusively accessed by the DataLogger instance.
         """
-        # Prepares the data by converting zero-dimensional NumPy inputs to arrays and concatenating all data into one
-        # array.
-        serialized_acquisition_time = np.frombuffer(buffer=self.acquisition_time, dtype=np.uint8).copy()
-        serialized_source = np.frombuffer(buffer=self.source_id, dtype=np.uint8).copy()
+        # Serializes the scalar header fields to bytes, then concatenates them with the payload into one array.
+        serialized_acquisition_time = convert_scalar_to_bytes(value=self.acquisition_time, dtype=np.dtype(np.uint64))
+        serialized_source = convert_scalar_to_bytes(value=self.source_id, dtype=np.dtype(np.uint8))
 
         # Assumes that each source produces the data sequentially and that timestamps are acquired with high enough
         # resolution to resolve the order of data acquisition.
@@ -91,7 +98,7 @@ class DataLogger:
 
     Args:
         output_directory: The directory where to save the logged data. The data is saved under a subdirectory named
-            after the logger instance.
+            '{instance_name}_data_log'.
         instance_name: The name of the logger instance. This name has to be unique across all concurrently active
             DataLogger instances.
         thread_count: The number of threads to use for saving the data to disk. It is recommended to use multiple
@@ -101,6 +108,7 @@ class DataLogger:
 
     Attributes:
         _started: Tracks whether the logger process is running.
+        _mp_context: Stores the spawn-based multiprocessing context used to create the manager and the logger process.
         _mp_manager: Stores the manager object used to instantiate and manage the multiprocessing Queue.
         _thread_count: Stores the number of concurrently active data saving threads.
         _poll_interval: Stores the data queue poll interval, in milliseconds.
@@ -120,23 +128,24 @@ class DataLogger:
         poll_interval: int = 5,
     ) -> None:
         self._started: bool = False
-        self._mp_manager: SyncManager = Manager()
+        self._mp_context: SpawnContext = get_context("spawn")
+        self._mp_manager: SyncManager = self._mp_context.Manager()
 
-        # Ensures numeric inputs are not negative.
+        # Clamps thread_count to a minimum of 1 and prevents a negative poll_interval.
         self._thread_count: int = max(1, thread_count)
         self._poll_interval: int = max(0, poll_interval)
         self._name: str = str(instance_name)
 
         # If necessary, ensures that the output directory tree exists.
         self._output_directory: Path = output_directory.joinpath(f"{self._name}_data_log")
-        ensure_directory_exists(self._output_directory)
+        ensure_directory_exists(path=self._output_directory)
 
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
         self._input_queue: MPQueue = self._mp_manager.Queue()  # type: ignore[type-arg, assignment]
 
         # Creates the infrastructure for running the logger.
         self._terminator_array: SharedMemoryArray | None = None
-        self._logger_process: Process | None = None
+        self._logger_process: BaseProcess | None = None
         self._watchdog_thread: Thread | None = None
 
     def __repr__(self) -> str:
@@ -158,12 +167,13 @@ class DataLogger:
             return
 
         # Initializes the terminator array, used to control the logger process(es).
+        # Instantiating the array automatically connects the main process to the shared memory buffer.
         self._terminator_array = SharedMemoryArray.create_array(
             name=f"{self._name}_terminator", prototype=np.zeros(shape=1, dtype=np.uint8), exists_ok=True
-        )  # Instantiation automatically connects the main process to the array.
+        )
 
         # Creates and starts the logger process.
-        self._logger_process = Process(
+        self._logger_process = self._mp_context.Process(
             target=self._log_cycle,
             args=(
                 self._input_queue,
@@ -215,7 +225,7 @@ class DataLogger:
     def _watchdog(self) -> None:
         """Raises a ChildProcessError if the logger process has prematurely shut down.
 
-        This service function is the target for the watchdog thread.
+        Serves as the target for the watchdog thread.
         """
         timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
 
@@ -234,7 +244,8 @@ class DataLogger:
                 self._logger_process.join()
                 self._terminator_array.disconnect()
                 self._terminator_array.destroy()
-                self._started = False  # Prevents stop() from running via __del__.
+                # Prevents stop() from running again via __del__.
+                self._started = False
 
                 # Raises the error.
                 message = (
@@ -247,11 +258,11 @@ class DataLogger:
     def _save_data(filename: Path, data: NDArray[np.uint8]) -> None:  # pragma: no cover
         """Saves the input data as the specified .npy file.
 
-        This worker function is the target for each data-saving thread.
+        Serves as the target for each data-saving thread.
 
         Args:
             filename: The full path to the .npy file to save the data to. The name already includes the .npy suffix.
-            data: The data to be saved, packaged into a one-dimensional bytes' array.
+            data: The data to be saved, packaged into a one-dimensional byte array.
         """
         np.save(file=filename, arr=data, allow_pickle=False)
 
@@ -265,8 +276,8 @@ class DataLogger:
     ) -> None:  # pragma: no cover
         """Continuously queries and saves the data coming through the input_queue to disk as .npy files.
 
-        This function sets up the necessary assets (threads and queues) to accept, preprocess, and save the input data
-        as .npy files. It is the target for the DataLogger's remote process.
+        Sets up the necessary assets (threads and queues) to accept, preprocess, and save the input data as .npy
+        files. Serves as the target for the DataLogger's remote process.
 
         Args:
             input_queue: The multiprocessing Queue object used to buffer and pipe the data to the logger process.
@@ -300,7 +311,6 @@ class DataLogger:
                     # the path to the output directory.
                     filename = output_directory.joinpath(file_name)
 
-                    # Submits the task to the thread pool to be executed.
                     executor.submit(DataLogger._save_data, filename=filename, data=data)
 
                 # If the queue is empty, invokes the sleep timer to reduce CPU load.
@@ -343,16 +353,17 @@ def assemble_log_archives(
 ) -> None:
     """Consolidates all .npy files in the target log directory into .npz archives, one for each unique source.
 
-    This function is designed to post-process the directories filled by DataLogger instances during runtime.
+    Post-processes the directories filled by DataLogger instances during runtime.
 
     Notes:
-        All log entries inside each archive are grouped by their acquisition timestamp value before consolidation. The
-        consolidated archive names include the ID code of the source that generated the original log entries.
+        Log entries are grouped into archives by their source, and the entries within each archive are sorted by their
+        acquisition timestamp value before consolidation. The consolidated archive names include the ID code of the
+        source that generated the original log entries.
 
     Args:
         log_directory: The path to the directory that stores the log entries as .npy files.
-        max_workers: Determines the number of threads used to process the data in parallel. If set to None, the
-            function uses the number of CPU cores - 2 threads.
+        max_workers: Determines the number of worker processes and threads used to process the data in parallel. If
+            set to None, the function uses the number of CPU cores minus 2.
         remove_sources: Determines whether to remove the .npy files after consolidating their data into .npz archives.
         memory_mapping: Determines whether to memory-map or load the processed data into RAM during processing. Due to
             Windows not releasing memory-mapped file handles, this function always loads the data into RAM when running
@@ -370,7 +381,7 @@ def assemble_log_archives(
 
     # Configures console progress display based on the verbose flag and saves the prior progress state to allow
     # restoring it once the function runtime completes.
-    _prev_progress = console.progress_enabled
+    previous_progress = console.progress_enabled
     if verbose:
         console.enable_progress()
     else:
@@ -384,47 +395,47 @@ def assemble_log_archives(
 
     # Sorts files within each source_id group by their integer-convertible timestamp.
     for files in source_files.values():
-        files.sort(key=lambda x: int(x.stem.split("_")[1]))
+        files.sort(key=lambda file_path: int(file_path.stem.split("_")[1]))
 
     # Initiates log processing. Since some steps of log processes are more efficiently executed via multithreading and
     # others via multiprocessing, uses both process and thread pool executors to efficiently process the data.
     with (
         console.temporarily_enabled(),
-        ProcessPoolExecutor(max_workers=max_workers) as p_executor,
-        ThreadPoolExecutor(max_workers=max_workers) as t_executor,
+        ProcessPoolExecutor(max_workers=max_workers) as process_executor,
+        ThreadPoolExecutor(max_workers=max_workers) as thread_executor,
     ):
         # PHASE 1: Loads source files in parallel batches.
         total_files = sum(len(files) for files in source_files.values())
         loaded_data: dict[int, dict[str, NDArray[Any]]] = {source_id: {} for source_id in source_files}
 
-        # Over-batches the data with the scale number of 4 to optimize runtime performance.
+        # Over-batches the data by the over-scale factor to improve load balancing across workers.
         load_numpy = partial(_load_numpy_files, memory_map=memory_mapping)
-        batch_size = int(np.ceil(total_files / max_workers * 4))
+        batch_size = int(np.ceil(total_files / max_workers * _BATCH_OVERSCALE_FACTOR))
 
         load_futures = [
-            (source_id, p_executor.submit(load_numpy, file_batch))
+            (source_id, process_executor.submit(load_numpy, file_batch))
             for source_id, files in source_files.items()
-            for i in range(0, len(files), batch_size)
-            for file_batch in [tuple(files[i : i + batch_size])]
+            for start_index in range(0, len(files), batch_size)
+            for file_batch in [tuple(files[start_index : start_index + batch_size])]
         ]
 
         with console.progress(
             total=total_files,
             description="Loading log entry data into memory",
             unit="entries",
-        ) as pbar:
+        ) as progress_bar:
             for source_id, load_future in load_futures:
                 stems, arrays = load_future.result()
                 for stem, array in zip(stems, arrays, strict=False):
                     loaded_data[source_id][stem] = array
-                    pbar.update(1)
+                    progress_bar.update(1)
 
         # PHASE 2: Assembles archives. Here, each archive is processed in parallel, but all archive log entries for
         # each archive are processed sequentially.
         assemble = partial(_assemble_archive, log_directory)
-        # noinspection PyTypeChecker
         archive_futures = {
-            p_executor.submit(assemble, source_id, loaded_data[source_id]): source_id for source_id in source_files
+            process_executor.submit(assemble, source_id, loaded_data[source_id]): source_id
+            for source_id in source_files
         }
 
         archives = {}
@@ -432,31 +443,30 @@ def assemble_log_archives(
             total=len(source_files),
             description="Generating archives for all unique sources",
             unit="sources",
-        ) as pbar:
+        ) as progress_bar:
             for archive_future in as_completed(archive_futures):
                 archive_id, archive_path = archive_future.result()
                 archives[archive_id] = archive_path
-                pbar.update(1)
+                progress_bar.update(1)
 
         # PHASE 3: Verifies archived data integrity against the original data if this is requested.
         if verify_integrity:
             # Loads assembled archives into memory.
             archived_futures = {
-                source_id: p_executor.submit(_load_numpy_archive, path) for source_id, path in archives.items()
+                source_id: process_executor.submit(_load_numpy_archive, path) for source_id, path in archives.items()
             }
 
             archive_data = {}
             with console.progress(
                 total=len(archives), description="Loading archive data into memory", unit="archives"
-            ) as pbar:
+            ) as progress_bar:
                 for source_id, integrity_future in archived_futures.items():
                     archive_data[source_id] = integrity_future.result()
-                    pbar.update(1)
+                    progress_bar.update(1)
 
             # Verifies the integrity of each archive data against the original data.
-            # noinspection PyTypeChecker
             verification_futures = [
-                t_executor.submit(
+                thread_executor.submit(
                     partial(_compare_arrays, source_id), stem, original_array, archive_data[source_id][stem]
                 )
                 for source_id, source_data in loaded_data.items()
@@ -468,25 +478,25 @@ def assemble_log_archives(
                 total=len(verification_futures),
                 description="Verifying archived data integrity",
                 unit="entries",
-            ) as pbar:
+            ) as progress_bar:
                 for verify_future in as_completed(verification_futures):
                     verify_future.result()  # Propagates errors if comparison fails.
-                    pbar.update(1)
+                    progress_bar.update(1)
 
         # PHASE 4: Removes source files if requested.
         if remove_sources:
-            all_files = [f for files in source_files.values() for f in files]
-            removal_futures = [t_executor.submit(f.unlink) for f in all_files]
+            all_files = [file_path for files in source_files.values() for file_path in files]
+            removal_futures = [thread_executor.submit(file_path.unlink) for file_path in all_files]
 
             with console.progress(
                 total=len(all_files), description="Removing processed source files", unit="files"
-            ) as pbar:
+            ) as progress_bar:
                 for remove_future in as_completed(removal_futures):
                     remove_future.result()
-                    pbar.update(1)
+                    progress_bar.update(1)
 
     # Restores the console progress display to its previous state.
-    if _prev_progress:
+    if previous_progress:
         console.enable_progress()  # pragma: no cover
     else:
         console.disable_progress()
@@ -497,8 +507,7 @@ def _load_numpy_files(
 ) -> tuple[tuple[str, ...], tuple[NDArray[Any], ...]]:  # pragma: no cover
     """Loads multiple .npy files either into memory or as memory-mapped arrays.
 
-    This service function is used during log archive assembly to load all raw log files into memory in parallel for
-    faster processing.
+    Supports log archive assembly by loading raw log files into memory in parallel for faster processing.
 
     Args:
         file_paths: The paths to the .npy files to load.
@@ -516,8 +525,7 @@ def _load_numpy_files(
 def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:  # pragma: no cover
     """Loads a NumPy .npz archive containing multiple arrays as a dictionary.
 
-    This service function is used during log verification to load all entries from a .npz log archive into memory in
-    parallel.
+    Supports log verification by loading all entries from a .npz log archive into memory in parallel.
 
     Args:
         file_path: The path to the .npz log archive to load.
@@ -536,7 +544,7 @@ def _assemble_archive(
 ) -> tuple[int, Path]:  # pragma: no cover
     """Assembles all log entries for a single source (producer) into a single .npz archive.
 
-    This helper function is used during log archive generation to assemble multiple archives in parallel.
+    Supports log archive generation by assembling multiple archives in parallel.
 
     Args:
         output_directory: The path to the directory where to create the log archive.
@@ -560,7 +568,7 @@ def _assemble_archive(
 def _compare_arrays(source_id: int, stem: str, original_array: NDArray[Any], archived_array: NDArray[Any]) -> None:
     """Compares a pair of NumPy arrays for exact equality.
 
-    This service function is used during log verification to compare source and archived log entry data in parallel.
+    Supports log verification by comparing source and archived log entry data in parallel.
 
     Args:
         source_id: The ID-code of the source whose data is verified by this function.

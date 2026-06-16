@@ -480,6 +480,6 @@ class TestLogArchiveReaderIntegration:
         assert len(messages) == 5
 
         # Verifies payloads match (order may differ due to timing).
-        read_payloads = [m.payload for m in messages]
+        read_payloads = [message.payload for message in messages]
         for payload in test_payloads:
             assert any(np.array_equal(payload, read_payload) for read_payload in read_payloads)
