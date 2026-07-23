@@ -584,6 +584,27 @@ job_ids = tracker.initialize_jobs([
 print(f"Initialized {len(job_ids)} jobs")
 ```
 
+For pipelines that run a selectable subset of their jobs across invocations, `align_jobs()` reconciles an existing
+tracker with the jobs a given invocation intends to run. It additively registers any missing jobs, leaves
+already-tracked jobs untouched, and rebuilds the tracker when it holds entries outside the provided job universe.
+
+```python
+from pathlib import Path
+from ataraxis_data_structures import ProcessingTracker
+
+tracker = ProcessingTracker(file_path=Path("/path/to/tracker.yaml"))
+
+# The full set of jobs the pipeline can produce for its current definition
+universe = [
+    ("process_video", "session_001"),
+    ("process_video", "session_002"),
+    ("extract_frames", "session_001"),
+]
+
+# Aligns the tracker to run one job while preserving the recorded state of the other universe jobs
+job_ids = tracker.align_jobs(jobs=[("process_video", "session_001")], universe=universe)
+```
+
 #### Managing Job Lifecycle
 
 Jobs transition through states: SCHEDULED → RUNNING → SUCCEEDED or FAILED.
@@ -610,6 +631,11 @@ tracker.complete_job(job_id)
 # Or, if the job failed:
 # tracker.fail_job(job_id, error_message="Out of memory")
 ```
+
+***Note,*** when `start_job()` is called without an explicit `executor_id`, the identifier is resolved from the
+runtime environment. It records a recognized job scheduler's job ID (SLURM, PBS, LSF, SGE, OAR, HPC Pack, Azure
+Batch, or AWS Batch) when one is detected, otherwise the process ID, tagged with its scheme (for example
+`slurm:12345` or `pid:4242`). The scheme tag lets a downstream consumer select the matching liveness query.
 
 #### Querying Pipeline State
 
@@ -643,15 +669,23 @@ matches = tracker.find_jobs(job_name="process", specifier="session_001")
 for job_id, (name, spec) in matches.items():
     print(f"Found job: {name} ({spec})")
 
+# Called without arguments, find_jobs matches every tracked job
+all_matches = tracker.find_jobs()
+
 # Gets detailed job information
 job_info = tracker.get_job_info(job_id)
 print(f"Job: {job_info.job_name}, Status: {job_info.status}")
 print(f"Started at: {job_info.started_at}, Completed at: {job_info.completed_at}")
+
+# Reads the entire job registry at once as a consistent, detached snapshot
+registry = tracker.snapshot()
+for job_id, state in registry.items():
+    print(f"{state.job_name} ({state.specifier}): {state.status.name}")
 ```
 
-#### Retrying Failed Jobs
+#### Retrying and Resetting Jobs
 
-Failed jobs can be reset for retry:
+Failed jobs can be reset for retry, and a specific subset of jobs can be reset without disturbing the others:
 
 ```python
 from pathlib import Path
@@ -662,6 +696,10 @@ tracker = ProcessingTracker(file_path=Path("/path/to/tracker.yaml"))
 # Resets all failed jobs back to SCHEDULED status
 retried_ids = tracker.retry_failed_jobs()
 print(f"Reset {len(retried_ids)} failed jobs for retry")
+
+# Resets a specific subset of jobs back to SCHEDULED, preserving every other job's recorded state
+target_id = ProcessingTracker.generate_job_id("process_video", "session_001")
+reset_ids = tracker.reset_jobs(job_ids=[target_id])
 
 # Or reset the entire tracker
 tracker.reset()

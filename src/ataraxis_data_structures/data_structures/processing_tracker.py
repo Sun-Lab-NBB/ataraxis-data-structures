@@ -3,7 +3,7 @@
 import os
 from enum import IntEnum
 from pathlib import Path
-from dataclasses import field, dataclass
+from dataclasses import field, replace, dataclass
 
 import xxhash
 from filelock import FileLock
@@ -11,6 +11,34 @@ from ataraxis_time import TimestampFormats, TimestampPrecisions, get_timestamp
 from ataraxis_base_utilities import LogLevel, console
 
 from .yaml_config import YamlConfig
+
+_SCHEDULER_EXECUTOR_SOURCES: tuple[tuple[str, tuple[str, ...], str | None], ...] = (
+    # SLURM sets SLURM_JOB_ID on current versions and SLURM_JOBID on older ones, both naming the same allocation.
+    ("slurm", ("SLURM_JOB_ID", "SLURM_JOBID"), None),
+    # PBS, Torque, and OpenPBS expose the job ID under PBS_JOBID.
+    ("pbs", ("PBS_JOBID",), None),
+    # IBM Spectrum LSF.
+    ("lsf", ("LSB_JOBID",), None),
+    # OAR.
+    ("oar", ("OAR_JOB_ID",), None),
+    # Grid Engine (SGE and its Altair and Univa descendants) names the job ID with the generic JOB_ID variable, so
+    # it is accepted only when SGE_ROOT corroborates that the process runs under a Grid Engine allocation.
+    ("sge", ("JOB_ID",), "SGE_ROOT"),
+    # Microsoft HPC Pack, the on-premise Windows HPC scheduler.
+    ("hpcpack", ("CCP_JOBID",), None),
+    # Azure Batch, across Linux and Windows compute nodes.
+    ("azurebatch", ("AZ_BATCH_JOB_ID",), None),
+    # AWS Batch.
+    ("awsbatch", ("AWS_BATCH_JOB_ID",), None),
+)
+"""Ordered job-scheduler detection sources consulted when resolving an executor identifier from the environment.
+
+Each entry pairs a scheme label with the environment variables that carry the scheduler's job ID, in priority order,
+and an optional corroborating variable that must also be present for the source to apply. The scheme label is
+recorded alongside the ID so a downstream consumer can select the matching liveness query (``sacct`` for SLURM,
+``qstat`` for PBS, and so on). This module only records the identifier, the per-scheme reconciliation lives with the
+consumer that owns the scheduler binding.
+"""
 
 
 class ProcessingStatus(IntEnum):
@@ -97,18 +125,24 @@ class ProcessingTracker(YamlConfig):
     def _resolve_executor_id() -> str:
         """Resolves the identifier of the executor running a job from the runtime environment.
 
-        Prefers the SLURM job ID exposed through the ``SLURM_JOB_ID`` environment variable when the job runs under
-        the SLURM workload manager, so that tracker entries can be correlated with the scheduler's runtime logs.
-        Falls back to the current process ID when no SLURM allocation is detected, so that locally executed jobs
-        still record a meaningful executor identifier.
+        Consults the recognized job schedulers in ``_SCHEDULER_EXECUTOR_SOURCES`` in priority order and returns the
+        first scheduler job ID found, tagged with its scheme as ``"<scheme>:<id>"``. The tag lets a stale tracker
+        entry be correlated with the scheduler's own record of the job. Falls back to ``"pid:<process id>"`` when the
+        process runs under no recognized scheduler, so a locally executed job still records a meaningful executor
+        identifier. The scheme prefix lets a consumer select the liveness query that matches the executor.
 
         Returns:
-            The SLURM job ID when running under SLURM, otherwise the current process ID, as a string.
+            The scheme-tagged scheduler job ID when the process runs under a recognized scheduler, otherwise the
+            scheme-tagged process ID.
         """
-        slurm_job_id = os.environ.get("SLURM_JOB_ID")
-        if slurm_job_id:
-            return slurm_job_id
-        return str(os.getpid())
+        for scheme, id_variables, corroborating_variable in _SCHEDULER_EXECUTOR_SOURCES:
+            if corroborating_variable is not None and corroborating_variable not in os.environ:
+                continue
+            for id_variable in id_variables:
+                job_id = os.environ.get(id_variable)
+                if job_id:
+                    return f"{scheme}:{job_id}"
+        return f"pid:{os.getpid()}"
 
     def _load_state(self) -> None:
         """Reads the processing pipeline's runtime state from the cached .YAML file."""
@@ -174,6 +208,101 @@ class ProcessingTracker(YamlConfig):
             self._save_state()
             return job_ids
 
+    def align_jobs(self, jobs: list[tuple[str, str]], universe: list[tuple[str, str]] | None = None) -> list[str]:
+        """Aligns the tracker's job registry with the jobs requested for the current pipeline invocation.
+
+        Notes:
+            Foreign entries are detected against ``universe``, the full set of jobs the pipeline could produce,
+            rather than against the requested subset. That distinction lets an invocation run part of a pipeline
+            while its siblings keep their recorded state. A registry holding entries outside the universe means the
+            pipeline's own definition has changed since the tracker was written, so the registry is rebuilt and the
+            discarded IDs are reported through a warning.
+
+            Otherwise, the method additively registers any requested job the registry is missing, and is a no-op
+            when every requested job is already present.
+
+        Args:
+            jobs: The (job_name, specifier) tuples the current invocation intends to execute.
+            universe: The (job_name, specifier) tuples enumerating every job the pipeline could produce for its
+                current definition, used only to detect foreign entries. Defaults to ``jobs``, which is correct for
+                a pipeline whose requested set is always its full universe.
+
+        Returns:
+            A list of job IDs corresponding to the requested jobs.
+
+        Raises:
+            TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+        """
+        resolved_universe = jobs if universe is None else universe
+        universe_ids = {
+            self.generate_job_id(job_name=job_name, specifier=specifier) for job_name, specifier in resolved_universe
+        }
+        requested = [
+            (self.generate_job_id(job_name=job_name, specifier=specifier), job_name, specifier)
+            for job_name, specifier in jobs
+        ]
+
+        lock = FileLock(self.lock_path)
+        with lock.acquire(timeout=10.0):
+            self._load_state()
+
+            foreign_ids = sorted(set(self.jobs) - universe_ids)
+            if foreign_ids:
+                # Temporarily enables console output to ensure the warning is visible, then restores previous state.
+                was_enabled = console.enabled
+                if not was_enabled:
+                    console.enable()
+                console.echo(
+                    message=(
+                        f"The processing tracker at '{self.file_path}' contains {len(foreign_ids)} job entries that "
+                        f"are not part of the current job universe. Rebuilding the tracker to match the requested "
+                        f"jobs. Discarded job IDs: {foreign_ids}."
+                    ),
+                    level=LogLevel.WARNING,
+                )
+                if not was_enabled:
+                    console.disable()
+                self.jobs.clear()
+
+            # Registers the requested jobs that are absent, preserving the state of every job already tracked.
+            for job_id, job_name, specifier in requested:
+                if job_id not in self.jobs:
+                    self.jobs[job_id] = JobState(job_name=job_name, specifier=specifier)
+
+            self._save_state()
+            return [job_id for job_id, _, _ in requested]
+
+    def snapshot(self) -> dict[str, JobState]:
+        """Returns a point-in-time copy of the tracker's complete job registry.
+
+        Notes:
+            Reads the whole registry under a single lock acquisition, so the returned states are consistent with
+            each other. This is the method to use when reporting on every tracked job at once.
+
+            The returned states are copies, so mutating them does not affect the tracker. Use the dedicated
+            mutators to change job state.
+
+            A tracker file that does not exist yields an empty registry and is left uncreated, so probing a
+            pipeline that has never run leaves its output directory unchanged.
+
+        Returns:
+            A dictionary mapping every tracked job ID to a copy of its ``JobState``, or an empty dictionary when
+            the tracker file does not exist.
+
+        Raises:
+            TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+        """
+        if not self.file_path.is_file():
+            return {}
+
+        lock = FileLock(self.lock_path)
+        with lock.acquire(timeout=10.0):
+            self._load_state()
+
+            # Copies each state so the caller cannot mutate the instance's registry. Every JobState field is an
+            # immutable scalar, so a per-entry replace() is a complete copy and is cheaper than a deep copy.
+            return {job_id: replace(job_state) for job_id, job_state in self.jobs.items()}
+
     def find_jobs(self, job_name: str | None = None, specifier: str | None = None) -> dict[str, tuple[str, str]]:
         """Searches for jobs matching the given name and/or specifier patterns.
 
@@ -185,16 +314,12 @@ class ProcessingTracker(YamlConfig):
             specifier: A substring to match against specifiers. If None, matches any specifier.
 
         Returns:
-            A dictionary mapping matching job IDs to (job_name, specifier) tuples.
+            A dictionary mapping matching job IDs to (job_name, specifier) tuples. Calling the method without
+            arguments matches every tracked job.
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
-            ValueError: If both job_name and specifier are None.
         """
-        if job_name is None and specifier is None:
-            message = "At least one of 'job_name' or 'specifier' must be provided for searching."
-            console.error(message=message, error=ValueError)
-
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
             self._load_state()
@@ -214,8 +339,8 @@ class ProcessingTracker(YamlConfig):
         Args:
             job_id: The unique identifier of the job to mark as started.
             executor_id: An optional explicit identifier for the executor running the job. When None (default), the
-                identifier is resolved automatically from the runtime environment, preferring the SLURM job ID and
-                falling back to the current process ID.
+                identifier is resolved automatically from the runtime environment, preferring a recognized job
+                scheduler's job ID and falling back to the process ID, each tagged with its scheme.
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
@@ -422,6 +547,57 @@ class ProcessingTracker(YamlConfig):
                 console.error(message=message, error=ValueError)
 
             return self.jobs[job_id]
+
+    def reset_jobs(self, job_ids: list[str]) -> list[str]:
+        """Resets the specified jobs back to SCHEDULED status, leaving every other job's state untouched.
+
+        Clears the error_message, started_at, completed_at, and executor_id fields of each targeted job.
+
+        Notes:
+            Every job outside ``job_ids`` keeps its recorded status, executor, and timestamps, so this is the method
+            to use when re-running part of a pipeline.
+
+            A job ID the tracker does not know means the caller's view of the registry disagrees with the registry
+            itself, so the method rejects the whole request. Changing which jobs a tracker holds is the job of
+            ``align_jobs``. The membership check completes before any job is modified, so a rejected request leaves
+            the tracker untouched.
+
+        Args:
+            job_ids: The unique identifiers of the jobs to reset.
+
+        Returns:
+            A list of the reset job IDs, in registry order.
+
+        Raises:
+            TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+            ValueError: If any of the specified job IDs is not found in the managed tracker file.
+        """
+        targeted = set(job_ids)
+
+        lock = FileLock(self.lock_path)
+        with lock.acquire(timeout=10.0):
+            self._load_state()
+
+            unknown_ids = sorted(targeted - set(self.jobs))
+            if unknown_ids:
+                message = (
+                    f"The ProcessingTracker instance is not configured to track the state of the job(s) with ID(s): "
+                    f"{', '.join(unknown_ids)}. The instance is currently configured to track jobs with IDs: "
+                    f"{', '.join(self.jobs.keys())}."
+                )
+                console.error(message=message, error=ValueError)
+
+            reset_ids = [job_id for job_id in self.jobs if job_id in targeted]
+            for job_id in reset_ids:
+                job_state = self.jobs[job_id]
+                job_state.status = ProcessingStatus.SCHEDULED
+                job_state.error_message = None
+                job_state.started_at = None
+                job_state.completed_at = None
+                job_state.executor_id = None
+
+            self._save_state()
+            return reset_ids
 
     def retry_failed_jobs(self) -> list[str]:
         """Resets all failed jobs back to SCHEDULED status for retry.
