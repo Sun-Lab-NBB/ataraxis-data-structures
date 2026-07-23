@@ -153,19 +153,164 @@ def test_processing_tracker_find_jobs(tmp_path: Path) -> None:
     assert len(matches) == 0
 
 
-def test_processing_tracker_find_jobs_requires_argument(tmp_path: Path) -> None:
-    """Verifies that find_jobs raises ValueError when no arguments are provided."""
+def test_processing_tracker_find_jobs_without_arguments(tmp_path: Path) -> None:
+    """Verifies that find_jobs called without arguments matches every tracked job."""
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    with pytest.raises(ValueError, match="At least one"):
-        tracker.find_jobs()
+    jobs = [("process_plane", "plane_0"), ("process_plane", "plane_1"), ("extract_signals", "")]
+    tracker.initialize_jobs(jobs=jobs)
+
+    assert len(tracker.find_jobs()) == len(jobs)
+
+
+def test_processing_tracker_snapshot(tmp_path: Path) -> None:
+    """Verifies that snapshot returns the full job registry as detached copies."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    tracker.initialize_jobs(jobs=[("job_a", ""), ("job_b", "1")])
+
+    job_id = ProcessingTracker.generate_job_id(job_name="job_a", specifier="")
+    tracker.start_job(job_id=job_id, executor_id="executor-1")
+    tracker.complete_job(job_id=job_id)
+
+    snapshot = tracker.snapshot()
+    assert len(snapshot) == 2
+    assert snapshot[job_id].status == ProcessingStatus.SUCCEEDED
+    assert snapshot[job_id].executor_id == "executor-1"
+    assert snapshot[job_id].started_at is not None
+    assert snapshot[job_id].completed_at is not None
+
+    # Mutating a snapshot must not affect the tracker or leak into a later save.
+    snapshot[job_id].status = ProcessingStatus.FAILED
+    assert tracker.snapshot()[job_id].status == ProcessingStatus.SUCCEEDED
+
+
+def test_processing_tracker_reset_jobs_preserves_untargeted_state(tmp_path: Path) -> None:
+    """Verifies that reset_jobs clears only the targeted jobs and leaves sibling history byte-identical."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    jobs = [("phase_a", ""), ("phase_b", "1"), ("phase_b", "2")]
+    tracker.initialize_jobs(jobs=jobs)
+
+    for job_name, specifier in jobs:
+        job_id = ProcessingTracker.generate_job_id(job_name=job_name, specifier=specifier)
+        tracker.start_job(job_id=job_id, executor_id="executor-7")
+        tracker.complete_job(job_id=job_id)
+
+    before = tracker.snapshot()
+    target = ProcessingTracker.generate_job_id(job_name="phase_b", specifier="1")
+
+    assert tracker.reset_jobs(job_ids=[target]) == [target]
+
+    after = tracker.snapshot()
+    assert after[target].status == ProcessingStatus.SCHEDULED
+    assert after[target].executor_id is None
+    assert after[target].started_at is None
+    assert after[target].completed_at is None
+
+    # Every other job keeps its recorded outcome, executor, and timing.
+    for job_id in (identifier for identifier in before if identifier != target):
+        assert after[job_id] == before[job_id]
+
+
+def test_processing_tracker_reset_jobs_rejects_unknown_ids(tmp_path: Path) -> None:
+    """Verifies that reset_jobs rejects unknown job IDs and leaves the tracker untouched."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    tracker.initialize_jobs(jobs=[("job_a", "")])
+
+    job_id = ProcessingTracker.generate_job_id(job_name="job_a", specifier="")
+    tracker.start_job(job_id=job_id)
+    tracker.complete_job(job_id=job_id)
+
+    with pytest.raises(ValueError, match="0000000000000000"):
+        tracker.reset_jobs(job_ids=[job_id, "0000000000000000"])
+
+    # The recognized job must not have been reset by the rejected request.
+    assert tracker.snapshot()[job_id].status == ProcessingStatus.SUCCEEDED
+
+
+def test_processing_tracker_snapshot_does_not_create_missing_tracker(tmp_path: Path) -> None:
+    """Verifies that snapshotting an absent tracker yields an empty registry without creating the file."""
+    tracker_file = tmp_path / "absent_tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    assert tracker.snapshot() == {}
+    assert not tracker_file.exists()
+
+
+def test_processing_tracker_align_jobs(tmp_path: Path) -> None:
+    """Verifies that align_jobs initializes, additively registers, and stays idempotent."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    universe = [("job_a", ""), ("job_b", "1"), ("job_b", "2")]
+
+    # Initializes from scratch against a subset, then records an outcome on it.
+    assert len(tracker.align_jobs(jobs=[("job_a", "")], universe=universe)) == 1
+    job_id = ProcessingTracker.generate_job_id(job_name="job_a", specifier="")
+    tracker.start_job(job_id=job_id)
+    tracker.complete_job(job_id=job_id)
+
+    # Additively registers the missing universe members without disturbing the recorded outcome.
+    assert len(tracker.align_jobs(jobs=universe, universe=universe)) == len(universe)
+    snapshot = tracker.snapshot()
+    assert len(snapshot) == len(universe)
+    assert snapshot[job_id].status == ProcessingStatus.SUCCEEDED
+
+    # Re-aligning an already-aligned registry is a no-op.
+    tracker.align_jobs(jobs=universe, universe=universe)
+    assert tracker.snapshot()[job_id].status == ProcessingStatus.SUCCEEDED
+    assert len(tracker.snapshot()) == len(universe)
+
+
+def test_processing_tracker_align_jobs_discards_foreign_entries(tmp_path: Path) -> None:
+    """Verifies that align_jobs rebuilds the registry when it holds jobs outside the requested universe."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    tracker.align_jobs(jobs=[("legacy_job", "x")])
+    legacy_id = ProcessingTracker.generate_job_id(job_name="legacy_job", specifier="x")
+    assert legacy_id in tracker.snapshot()
+
+    universe = [("job_a", ""), ("job_b", "1")]
+    tracker.align_jobs(jobs=universe, universe=universe)
+
+    snapshot = tracker.snapshot()
+    assert legacy_id not in snapshot
+    assert len(snapshot) == len(universe)
+
+
+def test_processing_tracker_align_jobs_defaults_universe_to_jobs(tmp_path: Path) -> None:
+    """Verifies that omitting the universe treats the requested jobs as the full universe."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    jobs = [("job_a", ""), ("job_b", "1")]
+
+    assert len(tracker.align_jobs(jobs=jobs)) == len(jobs)
+    assert len(tracker.snapshot()) == len(jobs)
+
+
+def _clear_scheduler_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Removes every scheduler variable the executor resolver consults so a test observes the process-id fallback."""
+    for variable in (
+        "SLURM_JOB_ID",
+        "SLURM_JOBID",
+        "PBS_JOBID",
+        "LSB_JOBID",
+        "OAR_JOB_ID",
+        "JOB_ID",
+        "SGE_ROOT",
+        "CCP_JOBID",
+        "AZ_BATCH_JOB_ID",
+        "AWS_BATCH_JOB_ID",
+    ):
+        monkeypatch.delenv(variable, raising=False)
 
 
 def test_processing_tracker_start_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verifies that start_job marks a job as running and auto-resolves the executor ID to the process ID."""
-    # Ensures no SLURM allocation is detected so the resolver falls back to the process ID.
-    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    """Verifies that start_job marks a job as running and falls back to the scheme-tagged process ID."""
+    _clear_scheduler_environment(monkeypatch=monkeypatch)
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
@@ -176,11 +321,12 @@ def test_processing_tracker_start_job(tmp_path: Path, monkeypatch: pytest.Monkey
 
     tracker._load_state()
     assert tracker.jobs[job_id].status == ProcessingStatus.RUNNING
-    assert tracker.jobs[job_id].executor_id == str(os.getpid())
+    assert tracker.jobs[job_id].executor_id == f"pid:{os.getpid()}"
 
 
 def test_processing_tracker_start_job_resolves_slurm_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Verifies that start_job auto-resolves the executor ID to the SLURM job ID when running under SLURM."""
+    """Verifies that start_job auto-resolves the executor ID to the scheme-tagged SLURM job ID under SLURM."""
+    _clear_scheduler_environment(monkeypatch=monkeypatch)
     monkeypatch.setenv("SLURM_JOB_ID", "987654")
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
@@ -191,7 +337,36 @@ def test_processing_tracker_start_job_resolves_slurm_id(tmp_path: Path, monkeypa
     tracker.start_job(job_id=job_id)
 
     tracker._load_state()
-    assert tracker.jobs[job_id].executor_id == "987654"
+    assert tracker.jobs[job_id].executor_id == "slurm:987654"
+
+
+def test_processing_tracker_resolve_executor_id_reads_slurm_jobid_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that the resolver honors the older SLURM_JOBID variable when SLURM_JOB_ID is absent."""
+    _clear_scheduler_environment(monkeypatch=monkeypatch)
+    monkeypatch.setenv("SLURM_JOBID", "555")
+
+    assert ProcessingTracker._resolve_executor_id() == "slurm:555"
+
+
+def test_processing_tracker_resolve_executor_id_tags_non_slurm_scheduler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that the resolver tags a non-SLURM scheduler's job id with the matching scheme."""
+    _clear_scheduler_environment(monkeypatch=monkeypatch)
+    monkeypatch.setenv("PBS_JOBID", "42.headnode")
+
+    assert ProcessingTracker._resolve_executor_id() == "pbs:42.headnode"
+
+
+def test_processing_tracker_resolve_executor_id_requires_sge_corroboration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that the generic JOB_ID variable is accepted as Grid Engine only when SGE_ROOT corroborates it."""
+    _clear_scheduler_environment(monkeypatch=monkeypatch)
+
+    # A bare JOB_ID from an unrelated tool must not be mistaken for a Grid Engine allocation.
+    monkeypatch.setenv("JOB_ID", "not-a-scheduler")
+    assert ProcessingTracker._resolve_executor_id() == f"pid:{os.getpid()}"
+
+    # With SGE_ROOT present, the same JOB_ID is recognized as a Grid Engine job.
+    monkeypatch.setenv("SGE_ROOT", "/opt/sge")
+    assert ProcessingTracker._resolve_executor_id() == "sge:not-a-scheduler"
 
 
 def test_processing_tracker_start_job_with_executor_id(tmp_path: Path) -> None:
