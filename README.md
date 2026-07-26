@@ -460,9 +460,7 @@ if __name__ == "__main__":
     # as part of its runtime. While having advantages for real-time data logging, this format of storing the data
     # is not ideal for later data transfer and manipulation. Therefore, it is recommended to always use the
     # assemble_log_archives() function to aggregate the individual .npy files into one or more .npz archives.
-    assemble_log_archives(
-        log_directory=logger.output_directory, remove_sources=True, memory_mapping=True, verbose=True
-    )
+    assemble_log_archives(log_directory=logger.output_directory, remove_sources=True, memory_mapping=True, verbose=True)
 
     # The archive assembly creates a single .npz file named after the source_id (1_log.npz), using all available
     # .npy files. Generally, each unique data source is assembled into a separate .npz archive.
@@ -573,20 +571,23 @@ tracker = ProcessingTracker(file_path=Path("/path/to/tracker.yaml"))
 
 # Initializes jobs to be tracked (each job is a tuple of (job_name, specifier))
 # Specifiers differentiate instances of the same job (e.g., different data batches)
-job_ids = tracker.initialize_jobs([
-    ("process_video", "session_001"),
-    ("process_video", "session_002"),
-    ("extract_frames", "session_001"),
-    ("extract_frames", "session_002"),
-    ("generate_report", ""),  # Empty specifier for jobs without batches
-])
+job_ids = tracker.initialize_jobs(
+    [
+        ("process_video", "session_001"),
+        ("process_video", "session_002"),
+        ("extract_frames", "session_001"),
+        ("extract_frames", "session_002"),
+        ("generate_report", ""),  # Empty specifier for jobs without batches
+    ]
+)
 
 print(f"Initialized {len(job_ids)} jobs")
 ```
 
 For pipelines that run a selectable subset of their jobs across invocations, `align_jobs()` reconciles an existing
 tracker with the jobs a given invocation intends to run. It additively registers any missing jobs, leaves
-already-tracked jobs untouched, and rebuilds the tracker when it holds entries outside the provided job universe.
+already-tracked jobs untouched, and discards only those entries that fall outside the provided job universe.
+Requesting a job that is absent from the universe raises a `ValueError`.
 
 ```python
 from pathlib import Path
@@ -722,7 +723,7 @@ from ataraxis_data_structures import calculate_directory_checksum
 checksum = calculate_directory_checksum(
     directory=Path("/path/to/data"),
     num_processes=None,  # Uses all available CPU cores minus 2 reserved cores
-    progress=True,       # Shows progress bar
+    progress=True,  # Shows progress bar
     save_checksum=True,  # Saves to ax_checksum.txt in the directory
 )
 print(f"Directory checksum: {checksum}")
@@ -748,19 +749,19 @@ from ataraxis_data_structures import transfer_directory
 transfer_directory(
     source=Path("/path/to/source"),
     destination=Path("/path/to/destination"),
-    num_threads=4,           # Uses 4 threads for parallel copy
-    verify_integrity=True,   # Verifies checksum after transfer
-    remove_source=False,     # Keeps source after transfer
-    progress=True,           # Shows progress bar
+    num_threads=4,  # Uses 4 threads for parallel copy
+    verify_integrity=True,  # Verifies checksum after transfer
+    remove_source=False,  # Keeps source after transfer
+    progress=True,  # Shows progress bar
 )
 
 # Moves data (transfers and removes source)
 transfer_directory(
     source=Path("/path/to/source"),
     destination=Path("/path/to/destination"),
-    num_threads=0,           # Uses all available CPU cores minus a few reserved for the host
+    num_threads=0,  # Uses all available CPU cores minus a few reserved for the host
     verify_integrity=True,
-    remove_source=True,      # Removes source after successful transfer
+    remove_source=True,  # Removes source after successful transfer
 )
 ```
 
