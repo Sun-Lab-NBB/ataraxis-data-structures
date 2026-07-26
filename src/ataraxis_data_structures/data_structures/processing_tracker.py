@@ -215,8 +215,8 @@ class ProcessingTracker(YamlConfig):
             Foreign entries are detected against ``universe``, the full set of jobs the pipeline could produce,
             rather than against the requested subset. That distinction lets an invocation run part of a pipeline
             while its siblings keep their recorded state. A registry holding entries outside the universe means the
-            pipeline's own definition has changed since the tracker was written, so the registry is rebuilt and the
-            discarded IDs are reported through a warning.
+            pipeline's own definition has changed since the tracker was written, so those entries alone are
+            discarded and reported through a warning, and every in-universe job keeps its recorded state.
 
             Otherwise, the method additively registers any requested job the registry is missing, and is a no-op
             when every requested job is already present.
@@ -232,6 +232,7 @@ class ProcessingTracker(YamlConfig):
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+            ValueError: If any requested job is not part of the resolved universe.
         """
         resolved_universe = jobs if universe is None else universe
         universe_ids = {
@@ -241,6 +242,19 @@ class ProcessingTracker(YamlConfig):
             (self.generate_job_id(job_name=job_name, specifier=specifier), job_name, specifier)
             for job_name, specifier in jobs
         ]
+
+        out_of_universe = sorted(
+            f"{job_name} ({specifier})" if specifier else job_name
+            for job_id, job_name, specifier in requested
+            if job_id not in universe_ids
+        )
+        if out_of_universe:
+            message = (
+                f"Unable to align the processing tracker at '{self.file_path}' with the requested jobs. Every "
+                f"requested job must be part of the declared job universe, but the following are absent from it: "
+                f"{', '.join(out_of_universe)}."
+            )
+            console.error(message=message, error=ValueError)
 
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
@@ -255,14 +269,15 @@ class ProcessingTracker(YamlConfig):
                 console.echo(
                     message=(
                         f"The processing tracker at '{self.file_path}' contains {len(foreign_ids)} job entries that "
-                        f"are not part of the current job universe. Rebuilding the tracker to match the requested "
-                        f"jobs. Discarded job IDs: {foreign_ids}."
+                        f"are not part of the current job universe. Discarding them and preserving every in-universe "
+                        f"job. Discarded job IDs: {foreign_ids}."
                     ),
                     level=LogLevel.WARNING,
                 )
                 if not was_enabled:
                     console.disable()
-                self.jobs.clear()
+                for foreign_id in foreign_ids:
+                    del self.jobs[foreign_id]
 
             # Registers the requested jobs that are absent, preserving the state of every job already tracked.
             for job_id, job_name, specifier in requested:
@@ -336,6 +351,8 @@ class ProcessingTracker(YamlConfig):
     def start_job(self, job_id: str, executor_id: str | None = None) -> None:
         """Marks the target job as running and records the identifier of the executor running it.
 
+        Clears the error message and completion timestamp recorded by any previous attempt at the job.
+
         Args:
             job_id: The unique identifier of the job to mark as started.
             executor_id: An optional explicit identifier for the executor running the job. When None (default), the
@@ -362,6 +379,8 @@ class ProcessingTracker(YamlConfig):
             # process ID) when the caller does not provide one explicitly.
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.RUNNING
+            job_info.error_message = None
+            job_info.completed_at = None
             job_info.executor_id = executor_id if executor_id is not None else self._resolve_executor_id()
             job_info.started_at = int(
                 get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
@@ -371,6 +390,8 @@ class ProcessingTracker(YamlConfig):
 
     def complete_job(self, job_id: str) -> None:
         """Marks a target job as successfully completed.
+
+        Clears the error message recorded by any previous attempt at the job.
 
         Args:
             job_id: The unique identifier of the job to mark as complete.
@@ -393,6 +414,7 @@ class ProcessingTracker(YamlConfig):
 
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.SUCCEEDED
+            job_info.error_message = None
             job_info.completed_at = int(
                 get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
             )
@@ -524,11 +546,15 @@ class ProcessingTracker(YamlConfig):
     def get_job_info(self, job_id: str) -> JobState:
         """Returns the full JobState object for the specified job.
 
+        Notes:
+            The returned state is a copy, so mutating it does not affect the tracker. Use the dedicated mutators to
+            change job state.
+
         Args:
             job_id: The unique identifier of the job to query.
 
         Returns:
-            The JobState object containing all metadata for the job.
+            A copy of the JobState object containing all metadata for the job.
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
@@ -546,7 +572,8 @@ class ProcessingTracker(YamlConfig):
                 )
                 console.error(message=message, error=ValueError)
 
-            return self.jobs[job_id]
+            # Every JobState field is an immutable scalar, so replace() is a complete copy.
+            return replace(self.jobs[job_id])
 
     def reset_jobs(self, job_ids: list[str]) -> list[str]:
         """Resets the specified jobs back to SCHEDULED status, leaving every other job's state untouched.

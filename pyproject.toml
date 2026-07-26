@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 # Project metadata section. Provides the general ID information about the project.
 [project]
 name = "ataraxis-data-structures"
-version = "6.1.1"
+version = "6.1.2"
 description = "Provides classes and structures for storing, manipulating, and sharing data between Python processes."
 readme = "README.md"
 license = "Apache-2.0"
@@ -115,6 +115,7 @@ lint.ignore = [
     "PLW0603", # While global statement usage is not ideal, it streamlines certain development patterns
     "TID252",  # Conflicts with library import management strategy
     "ANN401",  # Interferes with intended library behavior
+    "CPY001",  # The license is declared in the LICENSE file and the project metadata
 ]
 
 # Additional formatting configurations

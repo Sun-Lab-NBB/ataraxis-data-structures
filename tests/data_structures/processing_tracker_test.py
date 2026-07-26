@@ -633,6 +633,97 @@ def test_processing_tracker_fail_job_with_error_message(tmp_path: Path) -> None:
     assert job_info.completed_at is not None
 
 
+def test_processing_tracker_start_job_clears_previous_attempt(tmp_path: Path) -> None:
+    """Verifies that start_job clears the error message and completion timestamp left by a previous attempt."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
+    tracker.initialize_jobs(jobs=[("test_job", "")])
+    tracker.start_job(job_id=job_id)
+    tracker.fail_job(job_id=job_id, error_message="CUDA out of memory")
+
+    tracker.start_job(job_id=job_id)
+
+    job_info = tracker.get_job_info(job_id=job_id)
+    assert job_info.status == ProcessingStatus.RUNNING
+    assert job_info.error_message is None
+    assert job_info.completed_at is None
+
+
+def test_processing_tracker_complete_job_clears_previous_error(tmp_path: Path) -> None:
+    """Verifies that complete_job clears the error message when a previously failed job succeeds."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
+    tracker.initialize_jobs(jobs=[("test_job", "")])
+    tracker.start_job(job_id=job_id)
+    tracker.fail_job(job_id=job_id, error_message="CUDA out of memory")
+
+    tracker.complete_job(job_id=job_id)
+
+    job_info = tracker.get_job_info(job_id=job_id)
+    assert job_info.status == ProcessingStatus.SUCCEEDED
+    assert job_info.error_message is None
+
+
+def test_processing_tracker_align_jobs_preserves_in_universe_siblings(tmp_path: Path) -> None:
+    """Verifies that discarding foreign entries leaves the recorded state of every in-universe job intact."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    universe = [("extract", "101"), ("extract", "152"), ("parse", "101-3-1")]
+    job_ids = tracker.align_jobs(jobs=universe, universe=universe)
+    for job_id in job_ids:
+        tracker.start_job(job_id=job_id)
+        tracker.complete_job(job_id=job_id)
+
+    # Simulates an entry left over from an earlier pipeline definition.
+    tracker.initialize_jobs(jobs=[("legacy_job", "")])
+    tracker.align_jobs(jobs=[("parse", "101-3-1")], universe=universe)
+
+    registry = tracker.snapshot()
+    assert set(registry) == set(job_ids)
+    assert registry[job_ids[0]].status == ProcessingStatus.SUCCEEDED
+    assert registry[job_ids[1]].status == ProcessingStatus.SUCCEEDED
+
+
+def test_processing_tracker_align_jobs_rejects_out_of_universe_request(tmp_path: Path) -> None:
+    """Verifies that requesting a job outside the declared universe raises and leaves the tracker untouched."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    universe = [("extract", "101"), ("parse", "101-3-1")]
+    job_ids = tracker.align_jobs(jobs=universe, universe=universe)
+    for job_id in job_ids:
+        tracker.start_job(job_id=job_id)
+        tracker.complete_job(job_id=job_id)
+
+    with pytest.raises(ValueError, match="absent from it"):
+        tracker.align_jobs(jobs=[("typo_job", "999")], universe=universe)
+
+    registry = tracker.snapshot()
+    assert set(registry) == set(job_ids)
+    assert all(job_state.status == ProcessingStatus.SUCCEEDED for job_state in registry.values())
+
+
+def test_processing_tracker_get_job_info_returns_a_copy(tmp_path: Path) -> None:
+    """Verifies that mutating the state returned by get_job_info leaves the tracker's registry unchanged."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
+    tracker.initialize_jobs(jobs=[("test_job", "")])
+
+    job_info = tracker.get_job_info(job_id=job_id)
+    job_info.status = ProcessingStatus.SUCCEEDED
+    job_info.error_message = "mutated by the caller"
+
+    assert tracker.get_job_info(job_id=job_id).status == ProcessingStatus.SCHEDULED
+    assert tracker.get_job_info(job_id=job_id).error_message is None
+
+
 def test_processing_tracker_get_jobs_by_status(tmp_path: Path) -> None:
     """Verifies that get_jobs_by_status returns correct job IDs."""
     tracker_file = tmp_path / "tracker.yaml"
