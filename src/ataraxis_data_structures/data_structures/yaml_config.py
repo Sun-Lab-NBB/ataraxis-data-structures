@@ -13,6 +13,12 @@ import yaml
 from dacite import Config, from_dict
 from ataraxis_base_utilities import console, ensure_directory_exists
 
+_LIBYAML_AVAILABLE: bool = hasattr(yaml, "CSafeLoader")
+"""Determines whether the PyYAML build provides the libyaml-backed parser and emitter. Reading and writing both
+select them wherever they are available, since they carry values through the same safe constructor and the same
+representer as the pure-Python implementations while running about an order of magnitude faster. Builds without
+libyaml fall back to the pure-Python implementations."""
+
 
 def _serialize_value(value: Any) -> Any:
     """Recursively converts a dataclass instance or any nested value into a YAML-safe dictionary tree.
@@ -244,7 +250,12 @@ class YamlConfig:
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
         # to the .yaml file.
         with file_path.open("w") as yaml_file:
-            yaml.dump(data=_serialize_value(self), stream=yaml_file, **yaml_formatting)  # type: ignore[call-overload]
+            yaml.dump(  # type: ignore[call-overload]
+                data=_serialize_value(self),
+                stream=yaml_file,
+                Dumper=yaml.CDumper if _LIBYAML_AVAILABLE else yaml.Dumper,
+                **yaml_formatting,
+            )
 
     @classmethod
     def from_yaml(cls, file_path: Path) -> Self:
@@ -281,9 +292,11 @@ class YamlConfig:
         type_hooks = _collect_type_hooks(cls=cls)
         class_config = Config(type_hooks=type_hooks, cast=[tuple], check_types=False)
 
-        # Loads the data from the .yaml file.
+        # Loads the data from the .yaml file. Both parsers build values through the same safe constructor, so they
+        # differ in speed alone. Each loader is named literally, since a loader resolved through a variable reads as
+        # an arbitrary-object deserialization risk to static analysis.
         with file_path.open() as yaml_file:
-            data = yaml.safe_load(yaml_file)
+            data = yaml.load(yaml_file, Loader=yaml.CSafeLoader) if _LIBYAML_AVAILABLE else yaml.safe_load(yaml_file)
 
         # Ensures the loaded data is a top-level mapping. An empty file yields None, and a scalar or sequence document
         # yields a non-mapping type that cannot seed a dataclass instance.
