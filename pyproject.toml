@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 # Project metadata section. Provides the general ID information about the project.
 [project]
 name = "ataraxis-data-structures"
-version = "6.1.2"
+version = "6.2.0rc1"
 description = "Provides classes and structures for storing, manipulating, and sharing data between Python processes."
 readme = "README.md"
 license = "Apache-2.0"
