@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
+from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import JobState, ProcessingStatus, ProcessingTracker
 
@@ -683,7 +684,12 @@ def test_processing_tracker_align_jobs_rejects_out_of_universe_request(tmp_path:
         tracker.start_job(job_id=job_id)
         tracker.complete_job(job_id=job_id)
 
-    with pytest.raises(ValueError, match="absent from it"):
+    error_message = (
+        f"Unable to align the processing tracker at '{tracker_file}' with the requested jobs. Every requested job "
+        f"must be part of the declared job universe, but the following are absent from it: typo_job (999)."
+    )
+
+    with pytest.raises(ValueError, match=error_format(error_message)):
         tracker.align_jobs(jobs=[("typo_job", "999")], universe=universe)
 
     registry = tracker.snapshot()

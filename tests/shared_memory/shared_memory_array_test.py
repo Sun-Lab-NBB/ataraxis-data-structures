@@ -2,6 +2,7 @@
 
 from typing import Any
 from multiprocessing import Process
+from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 import pytest
@@ -71,6 +72,45 @@ def test_create_array(int_array: NDArray[np.int32]) -> None:
     # Verifies that exist_ok flag works as expected by recreating an already existing buffer.
     shared_memory_array = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array, exists_ok=True)
     shared_memory_array.connect()
+
+    # Cleans up after the runtime.
+    shared_memory_array.disconnect()
+    shared_memory_array.destroy()
+
+
+def test_create_array_recreates_leftover_buffer(int_array: NDArray[np.int32], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that the SharedMemoryArray class create_array() method reclaims a leftover shared memory buffer when
+    it is called with the 'exists_ok' flag enabled.
+
+    A buffer survives its creating runtime only on Unix, so the leftover state is staged here through a patched
+    unlink() to exercise the recreation path on every supported platform.
+    """
+    buffer_name = "test_create_array_leftover"
+
+    # Occupies the buffer name for the duration of the test, reproducing a buffer left behind by an earlier runtime.
+    leftover_buffer = SharedMemory(name=buffer_name, create=True, size=int_array.nbytes)
+
+    class LeftoverReleasingSharedMemory(SharedMemory):
+        """Closes the leftover buffer handle held by this test whenever a shared memory buffer is unlinked."""
+
+        def unlink(self) -> None:
+            """Unlinks the shared memory buffer and releases the leftover handle opened by this test."""
+            super().unlink()
+            # Unix frees the buffer name through unlink() alone, while Windows ignores unlink() and frees the name
+            # once the last handle to the buffer is closed. Releasing the handle held by this test brings both
+            # platforms to the same post-unlink state, so the recreation path below runs identically on each.
+            leftover_buffer.close()
+
+    monkeypatch.setattr(
+        target="ataraxis_data_structures.shared_memory.shared_memory_array.SharedMemory",
+        name=LeftoverReleasingSharedMemory,
+    )
+
+    # Recreates the buffer over the leftover one and confirms that the prototype data reached the new buffer.
+    shared_memory_array = SharedMemoryArray.create_array(name=buffer_name, prototype=int_array, exists_ok=True)
+    shared_memory_array.connect()
+    with shared_memory_array.array(with_lock=False) as shared_array:
+        np.testing.assert_array_equal(actual=shared_array, desired=int_array)
 
     # Cleans up after the runtime.
     shared_memory_array.disconnect()
