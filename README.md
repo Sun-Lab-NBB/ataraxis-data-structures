@@ -17,10 +17,12 @@ ___
 
 This library aggregates the classes and methods used by other Ataraxis and Sollertia libraries for working with data.
 This includes classes to manipulate the data, share (move) the data between different Python processes, and store the
-data in non-volatile memory (on disk). Generally, these classes either implement novel functionality not available
-through other popular libraries or extend existing functionality to match specific needs of other project Ataraxis
-libraries. This library is part of the
+data in non-volatile memory (on disk). Generally, these classes either implement novel functionality or extend
+existing functionality to match the specific needs of other Ataraxis and Sollertia libraries. This library is part of
+the
 [Ataraxis](https://github.com/Sun-Lab-NBB/ataraxis) framework for AI-assisted scientific hardware control.
+
+___
 
 ## Features
 
@@ -33,6 +35,8 @@ libraries. This library is part of the
 - Includes a file-based processing pipeline tracker for coordinating multi-process and multi-host data processing jobs.
 - Provides utilities for data integrity verification, directory transfer, and time-series interpolation.
 - Apache 2.0 License.
+
+___
 
 ## Table of Contents
 
@@ -138,7 +142,7 @@ processes to read and write any element(s) of the array.
 #### SharedMemoryArray Creation
 
 The SharedMemoryArray only needs to be instantiated once by the main runtime process (thread) and provided to all
-children processes as an input. The initialization process uses the specified prototype NumPy array and unique buffer
+child processes as an input. The initialization process uses the specified prototype NumPy array and unique buffer
 name to generate a (new) NumPy array whose data is stored in a shared memory buffer accessible from any thread or
 process. ***Note,*** the array dimensions and datatype cannot be changed after initialization.
 
@@ -238,8 +242,9 @@ assert isinstance(sma[:4], np.ndarray)
 with sma.array(with_lock=True) as array:
     print(f"Before clipping: {array}")
 
-    # Clipping replaces the out-of-bounds value '123' with '10'.
-    array = np.clip(array, 0, 10)
+    # Clipping replaces the out-of-bounds value '123' with '10'. The slice assignment writes the clipped values
+    # back into the shared memory buffer. Rebinding the name instead would discard the result.
+    array[:] = np.clip(array, 0, 10)
 
     print(f"After clipping: {array}")
 
@@ -317,7 +322,7 @@ if __name__ == "__main__":
     timer.reset()
 
     # For each of the array indices, increments the value of the index if it is odd. Child processes increment
-    # even values and ignore odd ones, so the only way for this code to finish is if children and parent process
+    # even values and ignore odd ones, so the only way for this code to finish is if the child and parent processes
     # take turns incrementing shared values until they reach 200
     while np.any(sma[0:5] < 200):  # Runs as long as any value is below 200
         # Note, while it is possible to index the data from the SharedMemoryArray, it is also possible to retrieve
@@ -352,7 +357,7 @@ ataraxis-video-system and the ataraxis-transport-layer.
 
 #### Creating and Starting the DataLogger
 
-DataLogger is intended to only be initialized once in the main runtime thread (Process) and provided to all children
+DataLogger is intended to only be initialized once in the main runtime thread (Process) and provided to all child
 Processes as an input. ***Note,*** while a single DataLogger instance is typically enough for most use cases, it is
 possible to use more than a single DataLogger instance at the same time.
 
@@ -391,7 +396,7 @@ the DataLogger's input queue.
 from pathlib import Path
 import tempfile
 import numpy as np
-from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+from ataraxis_data_structures import DataLogger, LogPackage
 from ataraxis_time import get_timestamp, TimestampFormats
 
 if __name__ == "__main__":
@@ -624,7 +629,7 @@ tracker.start_job(job_id, executor_id="slurm_12345")
 
 # Queries the current status
 status = tracker.get_job_status(job_id)
-print(f"Job status: {status}")  # ProcessingStatus.RUNNING
+print(f"Job status: {status.name}")  # Job status: RUNNING
 
 # Marks the job as completed successfully
 tracker.complete_job(job_id)

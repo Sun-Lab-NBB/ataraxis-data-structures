@@ -57,7 +57,7 @@ def interpolate_data(
         # Processes within-boundary coordinates by finding the last known certain value to the left of each target
         # coordinate and setting each to that value.
         if np.any(within_bounds):
-            indices = np.searchsorted(source_coordinates, target_coordinates[within_bounds], side="right") - 1
+            indices = np.searchsorted(a=source_coordinates, v=target_coordinates[within_bounds], side="right") - 1
             interpolated_data[within_bounds] = source_values[indices]
 
         return interpolated_data

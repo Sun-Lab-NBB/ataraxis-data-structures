@@ -24,9 +24,7 @@ class LogMessage:
     """Stores a single message extracted from a log archive.
 
     Notes:
-        This class is yielded by the LogArchiveReader.iter_messages() method for each message in the archive; the same
-        data is available in array form from the read_all_messages() method. The structure of the payload is
-        domain-specific and must be parsed by the consumer.
+        The structure of the payload is domain-specific and must be parsed by the consumer.
     """
 
     timestamp_us: np.uint64
@@ -88,8 +86,8 @@ class LogArchiveReader:
 
     def __repr__(self) -> str:
         """Returns the string representation of the LogArchiveReader instance."""
-        onset_str = str(self._onset_us) if self._onset_us is not None else "not discovered"
-        return f"LogArchiveReader(archive_path={self._archive_path}, onset_us={onset_str})"
+        onset_string = str(self._onset_us) if self._onset_us is not None else "not discovered"
+        return f"LogArchiveReader(archive_path={self._archive_path}, onset_us={onset_string})"
 
     @cached_property
     def onset_timestamp_us(self) -> np.uint64:
@@ -102,7 +100,7 @@ class LogArchiveReader:
         if self._onset_us is not None:
             return self._onset_us
 
-        with np.load(self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
+        with np.load(file=self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
             file_list = list(archive.files)
 
             for number, file_key in enumerate(file_list):
@@ -121,44 +119,13 @@ class LogArchiveReader:
 
                     return onset
 
-        error_message = (
+        message = (
             f"Unable to discover onset timestamp in log archive. The archive must contain a message with timestamp "
             f"value 0 storing the UTC epoch reference, but none was found in: {self._archive_path}."
         )
-        console.error(message=error_message, error=ValueError)
-
-        # console.error() always raises, so this is unreachable; it only satisfies the return-type checker.
+        console.error(message=message, error=ValueError)
+        # Unreachable: console.error() is NoReturn, but ruff cannot trace NoReturn through method calls (RET503).
         return np.uint64(0)  # pragma: no cover
-
-    def _get_message_keys(self) -> list[str]:
-        """Returns the cached list of message keys, loading and filtering if necessary.
-
-        Notes:
-            When onset was pre-provided (skipping discovery), finds the onset key by its filename pattern (ends with
-            20 zeros for timestamp=0), then slices from that index. This avoids iterating over all keys.
-
-        Returns:
-            The data-message keys, excluding the onset message.
-        """
-        if self._message_keys is None:
-            # Triggers onset discovery which populates _message_keys via slicing.
-            _ = self.onset_timestamp_us
-
-            # If still None after onset discovery (e.g., onset was pre-provided), finds onset index and slices.
-            if self._message_keys is None:
-                with np.load(self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
-                    all_keys = list(archive.files)
-
-                    # Finds the onset key index by filename pattern and slices from there.
-                    for index, key in enumerate(all_keys):
-                        if key.endswith(self._ONSET_KEY_SUFFIX):
-                            self._message_keys = all_keys[index + 1 :]
-                            break
-                    else:
-                        # No onset key found by pattern - return all keys (edge case).
-                        self._message_keys = all_keys
-
-        return self._message_keys
 
     @property
     def message_count(self) -> int:
@@ -173,7 +140,7 @@ class LogArchiveReader:
             times vary. The batch_multiplier parameter controls the degree of over-batching.
 
             For archives with fewer messages than the parallel processing threshold (2000), returns a single batch
-            containing all message keys.
+            containing all message keys, or an empty list when the archive contains no data messages.
 
         Args:
             workers: The number of worker processes to optimize batching for. A value less than 1 uses all available
@@ -200,8 +167,8 @@ class LogArchiveReader:
         """Iterates through messages in the archive, yielding LogMessage instances.
 
         Notes:
-            Opens the archive with memory mapping for efficient access. The archive is kept open for the duration of
-            iteration.
+            Opens the archive once and keeps it open for the duration of iteration, decoding each requested entry on
+            access.
 
             If keys is provided, only iterates through the specified messages. This is useful for processing a batch
             of messages in a worker process.
@@ -216,7 +183,7 @@ class LogArchiveReader:
 
         target_keys = keys if keys is not None else self._get_message_keys()
 
-        with np.load(self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
+        with np.load(file=self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
             for key in target_keys:
                 message: NDArray[np.uint8] = archive[key]
 
@@ -247,3 +214,33 @@ class LogArchiveReader:
             payloads.append(message.payload)
 
         return np.array(timestamps, dtype=np.uint64), payloads
+
+    def _get_message_keys(self) -> list[str]:
+        """Returns the cached list of message keys, loading and filtering if necessary.
+
+        Notes:
+            When onset was pre-provided (skipping discovery), finds the onset key by its filename pattern (ends with
+            20 zeros for timestamp=0), then slices from that index.
+
+        Returns:
+            The data-message keys, excluding the onset message.
+        """
+        if self._message_keys is None:
+            # Triggers onset discovery which populates _message_keys via slicing.
+            _ = self.onset_timestamp_us
+
+            # If still None after onset discovery (e.g., onset was pre-provided), finds onset index and slices.
+            if self._message_keys is None:
+                with np.load(file=self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
+                    all_keys = list(archive.files)
+
+                    # Finds the onset key index by filename pattern and slices from there.
+                    for index, key in enumerate(all_keys):
+                        if key.endswith(self._ONSET_KEY_SUFFIX):
+                            self._message_keys = all_keys[index + 1 :]
+                            break
+                    else:
+                        # Returns all keys when no key matches the onset suffix pattern.
+                        self._message_keys = all_keys
+
+        return self._message_keys

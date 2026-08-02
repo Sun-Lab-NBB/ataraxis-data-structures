@@ -1,5 +1,5 @@
 """Provides the YamlConfig class, which extends the standard Python 'dataclass' class with methods to cache and retrieve
-its data from a .yml (YAML) file.
+its data from a .yaml (YAML) file.
 """
 
 from enum import Enum
@@ -45,17 +45,20 @@ def _serialize_value(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
 
-    # Recursively serializes dataclass instances into dicts.
     if is_dataclass(value) and not isinstance(value, type):
-        return {data_field.name: _serialize_value(getattr(value, data_field.name)) for data_field in fields(value)}
+        return {
+            data_field.name: _serialize_value(value=getattr(value, data_field.name)) for data_field in fields(value)
+        }
 
     if isinstance(value, dict):
-        return {_serialize_value(dict_key): _serialize_value(dict_value) for dict_key, dict_value in value.items()}
+        return {
+            _serialize_value(value=dict_key): _serialize_value(value=dict_value)
+            for dict_key, dict_value in value.items()
+        }
 
     if isinstance(value, (list, tuple)):
-        return [_serialize_value(item) for item in value]
+        return [_serialize_value(value=item) for item in value]
 
-    # Passes through str, int, float, bool, and other YAML-native scalars unchanged.
     return value
 
 
@@ -82,7 +85,7 @@ def _make_union_enum_hook(enum_types: list[type]) -> Callable[[Any], Any]:
     """
     targets = list(enum_types)
 
-    def hook(value: Any) -> Any:
+    def _hook(value: Any) -> Any:
         """Attempts to convert the value to one of the target Enum types, falling back to the raw value."""
         if value is None:
             return None
@@ -93,7 +96,7 @@ def _make_union_enum_hook(enum_types: list[type]) -> Callable[[Any], Any]:
                 continue
         return value
 
-    return hook
+    return _hook
 
 
 def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
@@ -211,7 +214,9 @@ class YamlConfig:
 
         Notes:
             Path fields are serialized as strings, Enum fields as their raw values, and tuples as lists. This keeps
-            YAML files human-readable while preserving full type fidelity on round-trip via ``from_yaml()``.
+            YAML files human-readable while preserving type fidelity on round-trip via ``from_yaml()`` for concretely
+            annotated fields. A field whose annotation unions ``Path`` with ``str`` cannot be discriminated on load
+            and is restored as a string.
 
         Args:
             file_path: The path to the .yaml file to write.
@@ -238,9 +243,8 @@ class YamlConfig:
         # Ensures that the output file path points to a .yaml (or .yml) file.
         if file_path.suffix not in {".yaml", ".yml"}:
             message: str = (
-                f"Invalid file path provided when attempting to write the dataclass instance to a .yaml file. "
-                f"Expected a path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but encountered "
-                f"{file_path}."
+                f"Unable to write the dataclass instance to a .yaml file using the provided file path. The "
+                f"'file_path' argument must end in the '.yaml' or '.yml' extension, but got {file_path}."
             )
             console.error(message=message, error=ValueError)
 
@@ -249,9 +253,9 @@ class YamlConfig:
 
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
         # to the .yaml file.
-        with file_path.open("w") as yaml_file:
+        with file_path.open(mode="w") as yaml_file:
             yaml.dump(  # type: ignore[call-overload]
-                data=_serialize_value(self),
+                data=_serialize_value(value=self),
                 stream=yaml_file,
                 Dumper=yaml.CDumper if _LIBYAML_AVAILABLE else yaml.Dumper,
                 **yaml_formatting,
@@ -280,15 +284,14 @@ class YamlConfig:
         # Ensures that file_path points to a .yaml / .yml file.
         if file_path.suffix not in {".yaml", ".yml"}:
             message: str = (
-                f"Invalid file path provided when attempting to create the dataclass instance using the data from a "
-                f".yaml file. Expected the path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but "
-                f"encountered {file_path}."
+                f"Unable to create the dataclass instance using the data from a .yaml file. The 'file_path' argument "
+                f"must end in the '.yaml' or '.yml' extension, but got {file_path}."
             )
             console.error(message=message, error=ValueError)
 
         # Builds type_hooks from the class hierarchy to auto-convert str -> Path, raw value -> Enum, etc. The cast
-        # list converts YAML lists back to tuples at the field level. check_types=False is preserved for backward
-        # compatibility with union annotations such as ``Enum | str``.
+        # list converts YAML lists back to tuples at the field level. check_types=False allows union annotations
+        # such as ``Enum | str`` to accept either member.
         type_hooks = _collect_type_hooks(cls=cls)
         class_config = Config(type_hooks=type_hooks, cast=[tuple], check_types=False)
 
@@ -296,20 +299,21 @@ class YamlConfig:
         # differ in speed alone. Each loader is named literally, since a loader resolved through a variable reads as
         # an arbitrary-object deserialization risk to static analysis.
         with file_path.open() as yaml_file:
-            data = yaml.load(yaml_file, Loader=yaml.CSafeLoader) if _LIBYAML_AVAILABLE else yaml.safe_load(yaml_file)
+            data = (
+                yaml.load(stream=yaml_file, Loader=yaml.CSafeLoader)
+                if _LIBYAML_AVAILABLE
+                else yaml.safe_load(stream=yaml_file)
+            )
 
         # Ensures the loaded data is a top-level mapping. An empty file yields None, and a scalar or sequence document
         # yields a non-mapping type that cannot seed a dataclass instance.
         if not isinstance(data, dict):
             message = (
-                f"Invalid data encountered when attempting to create the dataclass instance using the data from a "
-                f".yaml file. Expected the file {file_path} to contain a top-level mapping, but encountered "
-                f"{type(data).__name__}."
+                f"Unable to create the dataclass instance using the data from the {file_path} .yaml file. The file "
+                f"must contain a top-level mapping, but got {type(data).__name__}."
             )
             console.error(message=message, error=ValueError)
 
-        # Converts the imported data to a Python dictionary.
         data_dictionary: dict[Any, Any] = dict(data)
 
-        # Uses dacite to instantiate the class using the imported dictionary.
         return from_dict(data_class=cls, data=data_dictionary, config=class_config)

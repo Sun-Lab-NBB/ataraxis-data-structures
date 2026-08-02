@@ -7,4 +7,4 @@ platform, ensuring that Linux test runs exercise the same code paths as Windows 
 
 import multiprocessing
 
-multiprocessing.set_start_method("spawn", force=True)
+multiprocessing.set_start_method(method="spawn", force=True)

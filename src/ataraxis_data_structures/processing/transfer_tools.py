@@ -12,12 +12,18 @@ from .checksum_tools import calculate_directory_checksum
 _MAXIMUM_DELETION_ATTEMPTS: int = 5
 """The maximum number of times directory deletion is retried before giving up."""
 
-_DELETION_RETRY_DELAY_MS: int = 500
+_DELETION_RETRY_DELAY_MILLISECONDS: int = 500
 """The delay in milliseconds between failed directory-deletion attempts."""
 
 
 def delete_directory(directory_path: Path) -> None:
     """Deletes the target directory and all its subdirectories, unlinking the files within each directory in parallel.
+
+    Notes:
+        Removal of each emptied directory is attempted up to five times, with a 500 millisecond delay between
+        attempts, as some Operating Systems are slow to release file handles. If every attempt fails, the function
+        returns without raising an error and the directory is left in place. Check the path with Path.exists() when
+        the removal has to be guaranteed.
 
     Args:
         directory_path: The path to the directory to delete.
@@ -29,7 +35,7 @@ def delete_directory(directory_path: Path) -> None:
     subdirectories = [path for path in directory_path.iterdir() if path.is_dir()]
 
     with ThreadPoolExecutor() as executor:
-        list(executor.map(Path.unlink, files))  # Forces completion of all tasks
+        list(executor.map(Path.unlink, files))  # Forces completion of all tasks.
 
     for subdirectory in subdirectories:
         delete_directory(directory_path=subdirectory)
@@ -42,60 +48,8 @@ def delete_directory(directory_path: Path) -> None:
             directory_path.rmdir()
             break
         except Exception:  # pragma: no cover
-            delay_timer.delay(block=False, delay=_DELETION_RETRY_DELAY_MS, allow_sleep=True)
+            delay_timer.delay(block=False, delay=_DELETION_RETRY_DELAY_MILLISECONDS, allow_sleep=True)
             continue
-
-
-def _transfer_file(source_file: Path, source_directory: Path, destination_directory: Path) -> None:
-    """Copies the input file from the source directory to the destination directory while preserving the file metadata.
-
-    This worker function is used by the transfer_directory() function to move multiple files in parallel.
-
-    Notes:
-        If the file is found under a hierarchy of subdirectories inside the input source_directory, that hierarchy will
-        be preserved in the destination directory.
-
-    Args:
-        source_file: The file to be copied.
-        source_directory: The root directory where the file is located.
-        destination_directory: The destination directory where to move the file.
-    """
-    relative = source_file.relative_to(source_directory)
-    destination_file = destination_directory / relative
-    shutil.copy2(src=source_file, dst=destination_file)
-
-
-def _collect_source_items(source: Path) -> tuple[list[Path], list[Path]]:
-    """Discovers the contents of the source directory and separates them into subdirectories and files.
-
-    Notes:
-        Both lists are sorted by path depth so that parent directories precede their children and the file copy
-        order is deterministic. Any item that is not a directory is treated as a file.
-
-    Args:
-        source: The root directory whose contents are discovered.
-
-    Returns:
-        The subdirectories and files found anywhere under the source directory, each sorted by path depth.
-    """
-    all_items = sorted(source.rglob("*"), key=lambda path: len(path.relative_to(source).parts))
-    subdirectories = [item for item in all_items if item.is_dir()]
-    files = [item for item in all_items if not item.is_dir()]
-    return subdirectories, files
-
-
-def _plan_destination_directories(source: Path, destination: Path, subdirectories: list[Path]) -> list[Path]:
-    """Maps each source subdirectory to its corresponding path inside the destination directory.
-
-    Args:
-        source: The root source directory the subdirectories are relative to.
-        destination: The root destination directory the hierarchy is recreated under.
-        subdirectories: The source subdirectories to map to destination paths.
-
-    Returns:
-        The destination directory paths that recreate the source subdirectory hierarchy.
-    """
-    return [destination / subdirectory.relative_to(source) for subdirectory in subdirectories]
 
 
 def transfer_directory(
@@ -115,10 +69,13 @@ def transfer_directory(
         is done before copying the files.
 
         The function performs a multithreaded copy operation when 'num_threads' is greater than 1 and a sequential
-        copy otherwise. By default, it does not remove the source data after the copy is complete.
+        copy otherwise. The source data is removed after the copy only when 'remove_source' is enabled.
 
-        If the function is configured to verify the transferred data's integrity, it generates an xxHash3-128 checksum
-        of the data before and after the transfer and compares the two checksums to detect data corruption.
+        If the function is configured to verify the transferred data's integrity, it reuses the xxHash3-128 checksum
+        stored in the source directory's ax_checksum.txt file when that file exists. Otherwise, it generates the
+        checksum before the transfer and writes it to the source directory as the ax_checksum.txt file. After the
+        transfer, it recomputes the checksum for the destination directory and compares it against the source
+        checksum to detect data corruption.
 
     Args:
         source: The path to the directory to be transferred.
@@ -154,13 +111,14 @@ def transfer_directory(
     # copying any files.
     subdirectories, file_list = _collect_source_items(source=source)
     for destination_directory_path in _plan_destination_directories(
-        source=source, destination=destination, subdirectories=subdirectories
+        source=source,
+        destination=destination,
+        subdirectories=subdirectories,
     ):
         destination_directory_path.mkdir(parents=True, exist_ok=True)
 
-    # Copies the data to the destination. For parallel workflows, the method uses the ThreadPoolExecutor to move
-    # multiple files at the same time. Since I/O operations do not hold GIL, we do not need to parallelize with
-    # Processes here.
+    # Copies the data to the destination. For parallel workflows, uses the ThreadPoolExecutor to move multiple
+    # files at the same time. I/O operations release the GIL, so threads suffice and Processes are unnecessary.
     if num_threads > 1:
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = {
@@ -180,12 +138,16 @@ def transfer_directory(
                 ) as progress_bar:
                     for future in as_completed(futures):
                         future.result()  # Propagates any exceptions from the file transfer.
-                        progress_bar.update(1)
+                        progress_bar.update(n=1)
             else:
                 for future in as_completed(futures):
                     future.result()
     elif progress:
-        for file in console.track(file_list, description=f"Transferring files to {destination.name}", unit="file"):
+        for file in console.track(
+            iterable=file_list,
+            description=f"Transferring files to {destination.name}",
+            unit="file",
+        ):
             _transfer_file(source_file=file, source_directory=source, destination_directory=destination)
     else:
         for file in file_list:
@@ -210,3 +172,53 @@ def transfer_directory(
         )
         console.echo(message=message)
         delete_directory(directory_path=source)
+
+
+def _collect_source_items(source: Path) -> tuple[list[Path], list[Path]]:
+    """Discovers the contents of the source directory and separates them into subdirectories and files.
+
+    Notes:
+        Both lists are sorted by path depth so that parent directories precede their children and the file copy
+        order is deterministic. Any item that is not a directory is treated as a file.
+
+    Args:
+        source: The root directory whose contents are discovered.
+
+    Returns:
+        The subdirectories and files found anywhere under the source directory, each sorted by path depth.
+    """
+    all_items = sorted(source.rglob("*"), key=lambda path: len(path.relative_to(source).parts))
+    subdirectories = [item for item in all_items if item.is_dir()]
+    files = [item for item in all_items if not item.is_dir()]
+    return subdirectories, files
+
+
+def _plan_destination_directories(source: Path, destination: Path, subdirectories: list[Path]) -> list[Path]:
+    """Maps each source subdirectory to its corresponding path inside the destination directory.
+
+    Args:
+        source: The root source directory the subdirectories are relative to.
+        destination: The root destination directory the hierarchy is recreated under.
+        subdirectories: The source subdirectories to map to destination paths.
+
+    Returns:
+        The destination directory paths that recreate the source subdirectory hierarchy.
+    """
+    return [destination / subdirectory.relative_to(source) for subdirectory in subdirectories]
+
+
+def _transfer_file(source_file: Path, source_directory: Path, destination_directory: Path) -> None:
+    """Copies the input file from the source directory to the destination directory while preserving the file metadata.
+
+    Notes:
+        If the file is found under a hierarchy of subdirectories inside the input source_directory, that hierarchy will
+        be preserved in the destination directory.
+
+    Args:
+        source_file: The file to be copied.
+        source_directory: The root directory where the file is located.
+        destination_directory: The destination directory where to move the file.
+    """
+    relative = source_file.relative_to(source_directory)
+    destination_file = destination_directory / relative
+    shutil.copy2(src=source_file, dst=destination_file)

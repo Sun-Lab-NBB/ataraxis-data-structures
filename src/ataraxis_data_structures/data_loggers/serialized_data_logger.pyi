@@ -2,7 +2,7 @@ from typing import Any
 from pathlib import Path
 from threading import Thread
 from dataclasses import dataclass
-from multiprocessing import Queue as MPQueue
+from multiprocessing import Queue as MultiprocessingQueue
 from multiprocessing.context import SpawnContext
 from multiprocessing.process import BaseProcess
 from multiprocessing.managers import SyncManager
@@ -24,13 +24,13 @@ class LogPackage:
 
 class DataLogger:
     _started: bool
-    _mp_context: SpawnContext
-    _mp_manager: SyncManager
+    _multiprocessing_context: SpawnContext
+    _multiprocessing_manager: SyncManager
     _thread_count: int
     _poll_interval: int
     _name: str
     _output_directory: Path
-    _input_queue: MPQueue
+    _input_queue: MultiprocessingQueue
     _terminator_array: SharedMemoryArray | None
     _logger_process: BaseProcess | None
     _watchdog_thread: Thread | None
@@ -41,25 +41,25 @@ class DataLogger:
     def __del__(self) -> None: ...
     def start(self) -> None: ...
     def stop(self) -> None: ...
-    def _watchdog(self) -> None: ...
-    @staticmethod
-    def _save_data(filename: Path, data: NDArray[np.uint8]) -> None: ...
-    @staticmethod
-    def _log_cycle(
-        input_queue: MPQueue,
-        terminator_array: SharedMemoryArray,
-        output_directory: Path,
-        thread_count: int,
-        poll_interval: int,
-    ) -> None: ...
     @property
-    def input_queue(self) -> MPQueue: ...
+    def input_queue(self) -> MultiprocessingQueue: ...
     @property
     def name(self) -> str: ...
     @property
     def alive(self) -> bool: ...
     @property
     def output_directory(self) -> Path: ...
+    def _watchdog(self) -> None: ...
+    @staticmethod
+    def _save_data(filename: Path, data: NDArray[np.uint8]) -> None: ...
+    @staticmethod
+    def _log_cycle(
+        input_queue: MultiprocessingQueue,
+        terminator_array: SharedMemoryArray,
+        output_directory: Path,
+        thread_count: int,
+        poll_interval: int,
+    ) -> None: ...
 
 def assemble_log_archives(
     log_directory: Path,

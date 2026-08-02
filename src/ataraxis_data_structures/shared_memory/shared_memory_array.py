@@ -63,7 +63,7 @@ class SharedMemoryArray:
 
     def __init__(self, name: str, shape: tuple[int, ...], datatype: np.dtype[Any], buffer: SharedMemory) -> None:
         """Initializes the SharedMemoryArray instance from data prepared by the create_array() method."""
-        # The create_array() class method is the actual constructor; __init__ only stores the precomputed values.
+        # The create_array() class method is the actual constructor. __init__ only stores the precomputed values.
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
@@ -97,10 +97,8 @@ class SharedMemoryArray:
         its own connection regardless of the originating instance's connection state.
         """
         state = self.__dict__.copy()
-        # The SharedMemory handle and the NumPy view into it are bound to the originating process and are rebuilt in
-        # each process via connect(). Excluding the view also avoids copying the entire array payload during transfer.
-        # Resetting the connection flags lets each process connect regardless of the source instance's connection
-        # state, preventing an already-connected source from suppressing the receiving process's connect() call.
+        # The NumPy view into the buffer is bound to the originating process. Excluding it also avoids copying the
+        # entire array payload during transfer.
         state["_buffer"] = None
         state["_array"] = None
         state["_connected"] = False
@@ -284,6 +282,10 @@ class SharedMemoryArray:
             Each process, including the main process, must call this method before accessing the array data. The main
             process may connect either before or after starting the child processes, as each process establishes an
             independent connection to the shared memory buffer.
+
+        Raises:
+            FileNotFoundError: If the shared memory buffer with the instance's name does not exist. This typically
+                indicates that the buffer has already been destroyed via the destroy() method.
         """
         if not self._connected:
             self._buffer = SharedMemory(name=self._name, create=False)
@@ -314,8 +316,10 @@ class SharedMemoryArray:
         SharedMemoryArray instances connected to the buffer leads to undefined behavior.
 
         Notes:
-            This method does not do anything on Windows. Windows automatically garbage-collects the buffers as long as
-            they are no longer connected to by any SharedMemoryArray instances.
+            On Windows, the underlying unlink() call has no effect, as the Operating System destroys the buffer only
+            after every handle to it is closed. The method still disconnects this instance from the buffer and
+            releases its local handle on all platforms, so the instance cannot access the array data until connect()
+            is called again.
         """
         if self._buffer is not None:
             # If the instance is connected to the buffer, first disconnects it from the buffer.

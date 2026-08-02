@@ -1,4 +1,4 @@
-"""Contains tests for the interpolate_data function provided by the processing module."""
+"""Contains tests for the interpolation module provided by the processing package."""
 
 import numpy as np
 
@@ -21,9 +21,9 @@ class TestInterpolateData:
             is_discrete=True,
         )
 
-        # Each target coordinate should get the value of the last source coordinate to its left.
+        # Assigns each target coordinate the value of the last source coordinate to its left.
         expected = np.array([10, 20, 30, 40])
-        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(actual=result, desired=expected)
 
     def test_discrete_interpolation_below_minimum(self) -> None:
         """Verifies discrete interpolation clamps coordinates below minimum to first value."""
@@ -38,9 +38,9 @@ class TestInterpolateData:
             is_discrete=True,
         )
 
-        # All target coordinates below the first source coordinate should get the first value.
+        # Assigns the first value to every target coordinate below the first source coordinate.
         expected = np.array([100, 100, 100])
-        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(actual=result, desired=expected)
 
     def test_discrete_interpolation_above_maximum(self) -> None:
         """Verifies discrete interpolation clamps coordinates above maximum to last value."""
@@ -55,9 +55,9 @@ class TestInterpolateData:
             is_discrete=True,
         )
 
-        # All target coordinates above the last source coordinate should get the last value.
+        # Assigns the last value to every target coordinate above the last source coordinate.
         expected = np.array([300, 300, 300])
-        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(actual=result, desired=expected)
 
     def test_discrete_interpolation_exact_match(self) -> None:
         """Verifies discrete interpolation handles exact coordinate matches correctly."""
@@ -72,7 +72,7 @@ class TestInterpolateData:
             is_discrete=True,
         )
 
-        np.testing.assert_array_equal(result, source_values)
+        np.testing.assert_array_equal(actual=result, desired=source_values)
 
     def test_discrete_interpolation_preserves_dtype(self) -> None:
         """Verifies discrete interpolation preserves the source values dtype."""
@@ -102,9 +102,10 @@ class TestInterpolateData:
             is_discrete=True,
         )
 
-        # 0.0 -> below min (10), 1.5 -> last known is 1.0 (10), 2.5 -> last known is 2.0 (20), 5.0 -> above max (40)
+        # 0.0 falls below the minimum (10), 1.5 resolves to the last known value at 1.0 (10),
+        # 2.5 resolves to the last known value at 2.0 (20), and 5.0 exceeds the maximum (40).
         expected = np.array([10, 10, 20, 40])
-        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(actual=result, desired=expected)
 
     def test_continuous_interpolation_linear(self) -> None:
         """Verifies continuous interpolation performs linear interpolation."""
@@ -120,7 +121,7 @@ class TestInterpolateData:
         )
 
         expected = np.array([5.0, 15.0])
-        np.testing.assert_array_almost_equal(result, expected)
+        np.testing.assert_array_almost_equal(actual=result, desired=expected)
 
     def test_continuous_interpolation_returns_float64(self) -> None:
         """Verifies continuous interpolation always returns float64 dtype."""
@@ -152,7 +153,7 @@ class TestInterpolateData:
 
         # np.interp clamps to boundary values.
         expected = np.array([10.0, 30.0])
-        np.testing.assert_array_almost_equal(result, expected)
+        np.testing.assert_array_almost_equal(actual=result, desired=expected)
 
     def test_continuous_interpolation_exact_match(self) -> None:
         """Verifies continuous interpolation handles exact coordinate matches correctly."""
@@ -167,7 +168,7 @@ class TestInterpolateData:
             is_discrete=False,
         )
 
-        np.testing.assert_array_almost_equal(result, source_values)
+        np.testing.assert_array_almost_equal(actual=result, desired=source_values)
 
     def test_single_source_value_discrete(self) -> None:
         """Verifies discrete interpolation handles single source value."""
@@ -182,9 +183,9 @@ class TestInterpolateData:
             is_discrete=True,
         )
 
-        # All targets should map to the single source value.
+        # Maps all targets to the single source value.
         expected = np.array([42, 42, 42])
-        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(actual=result, desired=expected)
 
     def test_single_source_value_continuous(self) -> None:
         """Verifies continuous interpolation handles single source value."""
@@ -199,9 +200,9 @@ class TestInterpolateData:
             is_discrete=False,
         )
 
-        # All targets should map to the single source value.
+        # Maps all targets to the single source value.
         expected = np.array([42.0, 42.0, 42.0])
-        np.testing.assert_array_almost_equal(result, expected)
+        np.testing.assert_array_almost_equal(actual=result, desired=expected)
 
     def test_empty_target_coordinates(self) -> None:
         """Verifies interpolation handles empty target coordinates array."""
@@ -241,4 +242,4 @@ class TestInterpolateData:
 
         assert result.dtype == np.uint8
         expected = np.array([0, 127, 200], dtype=np.uint8)
-        np.testing.assert_array_equal(result, expected)
+        np.testing.assert_array_equal(actual=result, desired=expected)
