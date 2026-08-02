@@ -1,13 +1,19 @@
 """Contains tests for classes and functions provided by the serialized_data_logger.py module."""
 
-from pathlib import Path
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
-from numpy.typing import NDArray
 
 from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from numpy.typing import NDArray
 
 
 @pytest.fixture
@@ -79,7 +85,7 @@ def test_data_logger_start_stop(tmp_path: Path) -> None:
 @pytest.mark.xdist_group(name="group1")
 @pytest.mark.parametrize(
     "thread_count",
-    [5, 3, 10],  # Different thread configurations
+    [5, 3, 10],  # Different thread configurations.
 )
 def test_data_logger_multithreading(
     tmp_path: Path, thread_count: int, sample_data: tuple[int, int, NDArray[np.uint8]]
@@ -123,7 +129,7 @@ def test_data_logger_data_integrity(tmp_path: Path, sample_data: tuple[int, int,
     assert len(saved_files) == 1
 
     # Loads and verifies the saved data.
-    saved_data = np.load(saved_files[0])
+    saved_data = np.load(file=saved_files[0])
 
     # Extracts components from saved data.
     saved_source_id = int.from_bytes(saved_data[:1].tobytes(), byteorder="little")
@@ -158,7 +164,7 @@ def test_data_logger_assembly(tmp_path: Path, sample_data: tuple[int, int, NDArr
 
     # Verifies log archives.
     compressed_files = list(logger.output_directory.glob("*.npz"))
-    assert len(compressed_files) == 2  # One for each unique source_id
+    assert len(compressed_files) == 2  # One for each unique source_id.
 
     # Verifies original files were removed.
     original_files = list(logger.output_directory.glob("*.npy"))
@@ -234,7 +240,7 @@ def test_data_logger_poll_interval(
 
 @pytest.mark.xdist_group(name="group1")
 def test_data_logger_start_stop_cycling(tmp_path: Path) -> None:
-    """Verifies that cycling start and stop method of DataLogger does not produce errors."""
+    """Verifies that cycling the start and stop methods of the DataLogger does not produce errors."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
     logger.start()

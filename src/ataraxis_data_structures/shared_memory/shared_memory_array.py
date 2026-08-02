@@ -63,7 +63,7 @@ class SharedMemoryArray:
 
     def __init__(self, name: str, shape: tuple[int, ...], datatype: np.dtype[Any], buffer: SharedMemory) -> None:
         """Initializes the SharedMemoryArray instance from data prepared by the create_array() method."""
-        # The create_array() class method is the actual constructor; __init__ only stores the precomputed values.
+        # The create_array() class method is the actual constructor. __init__ only stores the precomputed values.
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
@@ -97,10 +97,8 @@ class SharedMemoryArray:
         its own connection regardless of the originating instance's connection state.
         """
         state = self.__dict__.copy()
-        # The SharedMemory handle and the NumPy view into it are bound to the originating process and are rebuilt in
-        # each process via connect(). Excluding the view also avoids copying the entire array payload during transfer.
-        # Resetting the connection flags lets each process connect regardless of the source instance's connection
-        # state, preventing an already-connected source from suppressing the receiving process's connect() call.
+        # The NumPy view into the buffer is bound to the originating process. Excluding it also avoids copying the
+        # entire array payload during transfer.
         state["_buffer"] = None
         state["_array"] = None
         state["_connected"] = False

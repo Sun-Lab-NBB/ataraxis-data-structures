@@ -39,7 +39,7 @@ def test_calculate_directory_checksum_basic(sample_directory_structure: Path) ->
 
     # Verifies checksum is a valid hex string.
     assert isinstance(checksum, str)
-    assert len(checksum) == 32  # xxHash3-128 produces 128-bit = 32 hex chars.
+    assert len(checksum) == 32  # xxHash3-128 produces 128-bit = 32 hex characters.
     assert all(character in "0123456789abcdef" for character in checksum)
 
 
@@ -172,16 +172,16 @@ def test_calculate_directory_checksum_empty_excluded_files(tmp_path: Path) -> No
         directory=directory_without_checksum_file, save_checksum=False, excluded_files=set()
     )
 
-    # They should differ since ax_checksum.txt is now included.
+    # Differs because ax_checksum.txt now contributes to the checksum.
     assert checksum_all != checksum_without
 
 
 def test_calculate_directory_checksum_empty_directory(tmp_path: Path) -> None:
     """Verifies checksum calculation for an empty directory."""
-    empty_dir = tmp_path / "empty"
-    empty_dir.mkdir()
+    empty_directory = tmp_path / "empty"
+    empty_directory.mkdir()
 
-    checksum = calculate_directory_checksum(directory=empty_dir, save_checksum=False)
+    checksum = calculate_directory_checksum(directory=empty_directory, save_checksum=False)
 
     # Verifies a valid checksum is still generated.
     assert isinstance(checksum, str)
@@ -190,15 +190,15 @@ def test_calculate_directory_checksum_empty_directory(tmp_path: Path) -> None:
 
 def test_calculate_directory_checksum_content_sensitivity(tmp_path: Path) -> None:
     """Verifies that checksum changes when file content changes."""
-    test_dir = tmp_path / "content_test"
-    test_dir.mkdir()
+    test_directory = tmp_path / "content_test"
+    test_directory.mkdir()
 
-    (test_dir / "file.txt").write_text("original content")
-    original_checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    (test_directory / "file.txt").write_text("original content")
+    original_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
     # Modifies content.
-    (test_dir / "file.txt").write_text("modified content")
-    modified_checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    (test_directory / "file.txt").write_text("modified content")
+    modified_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
     # Verifies checksums differ.
     assert original_checksum != modified_checksum
@@ -206,22 +206,22 @@ def test_calculate_directory_checksum_content_sensitivity(tmp_path: Path) -> Non
 
 def test_calculate_directory_checksum_structure_sensitivity(tmp_path: Path) -> None:
     """Verifies that checksum changes when the directory structure changes."""
-    test_dir = tmp_path / "structure_test"
-    test_dir.mkdir()
+    test_directory = tmp_path / "structure_test"
+    test_directory.mkdir()
 
-    (test_dir / "file.txt").write_text("content")
-    original_checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    (test_directory / "file.txt").write_text("content")
+    original_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
     # Adds a new file.
-    (test_dir / "file2.txt").write_text("content")
-    expanded_checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    (test_directory / "file2.txt").write_text("content")
+    expanded_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
     # Verifies checksums differ.
     assert original_checksum != expanded_checksum
 
 
 def test_calculate_directory_checksum_path_sensitivity(tmp_path: Path) -> None:
-    """Verifies that checksum reflects file paths (not just content)."""
+    """Verifies that the checksum reflects file paths in addition to file content."""
     # Creates two directories with the same content but different paths.
     first_directory = tmp_path / "dir1"
     first_directory.mkdir()
@@ -242,34 +242,34 @@ def test_calculate_directory_checksum_path_sensitivity(tmp_path: Path) -> None:
 
 def test_calculate_directory_checksum_large_files(tmp_path: Path) -> None:
     """Verifies checksum calculation with large files (tests chunked reading)."""
-    test_dir = tmp_path / "large_files"
-    test_dir.mkdir()
+    test_directory = tmp_path / "large_files"
+    test_directory.mkdir()
 
     # Creates a file larger than the chunk size (8 MB chunks in implementation).
     large_content = b"x" * (10 * 1024 * 1024)  # 10 MB.
-    (test_dir / "large_file.bin").write_bytes(large_content)
+    (test_directory / "large_file.bin").write_bytes(large_content)
 
-    initial_checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    initial_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
     # Verifies checksum is generated.
     assert isinstance(initial_checksum, str)
     assert len(initial_checksum) == 32
 
     # Verifies consistency.
-    repeated_checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    repeated_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
     assert initial_checksum == repeated_checksum
 
 
 def test_calculate_directory_checksum_nested_structure(tmp_path: Path) -> None:
     """Verifies checksum calculation with deeply nested directory structures."""
-    test_dir = tmp_path / "nested"
-    current = test_dir
+    test_directory = tmp_path / "nested"
+    current = test_directory
     for level_index in range(5):
         current /= f"level_{level_index}"
         current.mkdir(parents=True, exist_ok=True)
         (current / f"file_{level_index}.txt").write_text(f"content_{level_index}")
 
-    checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
     # Verifies checksum is valid.
     assert isinstance(checksum, str)
@@ -278,18 +278,18 @@ def test_calculate_directory_checksum_nested_structure(tmp_path: Path) -> None:
 
 def test_calculate_directory_checksum_with_existing_checksum_file(tmp_path: Path) -> None:
     """Verifies behavior when the checksum file already exists."""
-    test_dir = tmp_path / "existing_checksum"
-    test_dir.mkdir()
-    (test_dir / "file.txt").write_text("content")
+    test_directory = tmp_path / "existing_checksum"
+    test_directory.mkdir()
+    (test_directory / "file.txt").write_text("content")
 
     # Pre-creates a checksum file with wrong content.
-    (test_dir / "ax_checksum.txt").write_text("old_checksum_value")
+    (test_directory / "ax_checksum.txt").write_text("old_checksum_value")
 
     # Calculates new checksum with save enabled.
-    new_checksum = calculate_directory_checksum(directory=test_dir, save_checksum=True)
+    new_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=True)
 
     # Verifies a file is overwritten with correct checksum.
-    saved_checksum = (test_dir / "ax_checksum.txt").read_text().strip()
+    saved_checksum = (test_directory / "ax_checksum.txt").read_text().strip()
     assert saved_checksum == new_checksum
     assert saved_checksum != "old_checksum_value"
 
@@ -318,19 +318,19 @@ def test_calculate_directory_checksum_different_structures(tmp_path: Path) -> No
 
 def test_calculate_directory_checksum_binary_files(tmp_path: Path) -> None:
     """Verifies checksum calculation with binary files."""
-    test_dir = tmp_path / "binary_test"
-    test_dir.mkdir()
+    test_directory = tmp_path / "binary_test"
+    test_directory.mkdir()
 
-    (test_dir / "data.bin").write_bytes(bytes(range(256)))
-    (test_dir / "zeros.bin").write_bytes(b"\x00" * 1000)
-    (test_dir / "random.bin").write_bytes(os.urandom(500))
+    (test_directory / "data.bin").write_bytes(bytes(range(256)))
+    (test_directory / "zeros.bin").write_bytes(b"\x00" * 1000)
+    (test_directory / "random.bin").write_bytes(os.urandom(500))
 
-    checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
     # Verifies checksum is valid.
     assert isinstance(checksum, str)
     assert len(checksum) == 32
 
     # Verifies consistency.
-    repeated_checksum = calculate_directory_checksum(directory=test_dir, save_checksum=False)
+    repeated_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
     assert checksum == repeated_checksum

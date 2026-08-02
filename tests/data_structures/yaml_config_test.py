@@ -60,7 +60,7 @@ def test_yaml_config_to_yaml(tmp_path: Path, config_path: Path, expected_content
     # Generates and dumps the config as a .yaml file.
     config = TestConfig(**expected_content)
     full_path = tmp_path.joinpath(config_path)
-    config.to_yaml(full_path)
+    config.to_yaml(file_path=full_path)
 
     # Verifies that the file was created and contains data.
     assert full_path.exists()
@@ -83,13 +83,12 @@ def test_yaml_config_to_yaml_errors(tmp_path: Path) -> None:
     invalid_path = tmp_path / "invalid.txt"
 
     error_message: str = (
-        f"Invalid file path provided when attempting to write the dataclass instance to a .yaml file. "
-        f"Expected a path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but encountered "
-        f"{invalid_path}."
+        f"Unable to write the dataclass instance to a .yaml file using the provided file path. The "
+        f"'file_path' argument must end in the '.yaml' or '.yml' extension, but got {invalid_path}."
     )
 
     with pytest.raises(ValueError, match=error_format(error_message)):
-        config.to_yaml(invalid_path)
+        config.to_yaml(file_path=invalid_path)
 
 
 @pytest.mark.parametrize(
@@ -110,14 +109,14 @@ def test_yaml_config_from_yaml(tmp_path: Path, config_path: Path, content: dict[
     class TestConfig(YamlConfig):
         string_value: str = ""
         integer_value: int = 0
-        nested: Optional[dict] = None  # noqa: UP045 - field name shadows builtin, X | None fails
+        nested: dict | None = None
         list: Optional[list] = None  # noqa: UP045 - field name shadows builtin, X | None fails
 
     full_path = tmp_path / config_path
     with full_path.open("w") as yaml_file:
-        yaml.dump(content, yaml_file)
+        yaml.dump(data=content, stream=yaml_file)
 
-    config = TestConfig.from_yaml(full_path)
+    config = TestConfig.from_yaml(file_path=full_path)
 
     for key, value in content.items():
         assert getattr(config, key) == value
@@ -133,13 +132,12 @@ def test_yaml_config_from_yaml_errors(tmp_path: Path) -> None:
     invalid_path = tmp_path / "invalid.txt"
 
     error_message: str = (
-        f"Invalid file path provided when attempting to create the dataclass instance using the data from a "
-        f".yaml file. Expected the path ending in the '.yaml' or '.yml' extension as 'file_path' argument, but "
-        f"encountered {invalid_path}."
+        f"Unable to create the dataclass instance using the data from a .yaml file. The 'file_path' argument "
+        f"must end in the '.yaml' or '.yml' extension, but got {invalid_path}."
     )
 
     with pytest.raises(ValueError, match=error_format(error_message)):
-        TestConfig.from_yaml(invalid_path)
+        TestConfig.from_yaml(file_path=invalid_path)
 
 
 @pytest.mark.parametrize(
@@ -165,13 +163,12 @@ def test_yaml_config_from_yaml_non_mapping_errors(tmp_path: Path, file_contents:
     yaml_path.write_text(file_contents)
 
     error_message: str = (
-        f"Invalid data encountered when attempting to create the dataclass instance using the data from a "
-        f".yaml file. Expected the file {yaml_path} to contain a top-level mapping, but encountered "
-        f"{expected_type_name}."
+        f"Unable to create the dataclass instance using the data from the {yaml_path} .yaml file. The file "
+        f"must contain a top-level mapping, but got {expected_type_name}."
     )
 
     with pytest.raises(ValueError, match=error_format(error_message)):
-        TestConfig.from_yaml(yaml_path)
+        TestConfig.from_yaml(file_path=yaml_path)
 
 
 def test_yaml_config_initialization() -> None:
@@ -222,7 +219,7 @@ def test_path_round_trip(tmp_path: Path) -> None:
         path_list=[Path("/a/b"), Path("/c/d")],
     )
     yaml_path = tmp_path / "paths.yaml"
-    config.to_yaml(yaml_path)
+    config.to_yaml(file_path=yaml_path)
 
     # Verifies that raw YAML contains strings, not Path objects.
     with yaml_path.open() as yaml_file:
@@ -232,7 +229,7 @@ def test_path_round_trip(tmp_path: Path) -> None:
     assert raw["path_list"] == ["/a/b", "/c/d"]
 
     # Verifies round-trip back to Python produces correct types.
-    loaded = PathConfig.from_yaml(yaml_path)
+    loaded = PathConfig.from_yaml(file_path=yaml_path)
     assert loaded.single_path == Path("/home/user/data")
     assert isinstance(loaded.single_path, Path)
     assert loaded.nullable_path == Path("/opt/output")
@@ -250,9 +247,9 @@ def test_path_none_round_trip(tmp_path: Path) -> None:
 
     config = NullablePathConfig(maybe_path=None)
     yaml_path = tmp_path / "null_path.yaml"
-    config.to_yaml(yaml_path)
+    config.to_yaml(file_path=yaml_path)
 
-    loaded = NullablePathConfig.from_yaml(yaml_path)
+    loaded = NullablePathConfig.from_yaml(file_path=yaml_path)
     assert loaded.maybe_path is None
 
 
@@ -266,7 +263,7 @@ def test_str_enum_round_trip(tmp_path: Path) -> None:
 
     config = EnumConfig(color=Color.GREEN, nullable_color=Color.BLUE)
     yaml_path = tmp_path / "enum.yaml"
-    config.to_yaml(yaml_path)
+    config.to_yaml(file_path=yaml_path)
 
     # Verifies that raw YAML contains string values.
     with yaml_path.open() as yaml_file:
@@ -275,7 +272,7 @@ def test_str_enum_round_trip(tmp_path: Path) -> None:
     assert raw["nullable_color"] == "blue"
 
     # Verifies round-trip deserialization.
-    loaded = EnumConfig.from_yaml(yaml_path)
+    loaded = EnumConfig.from_yaml(file_path=yaml_path)
     assert loaded.color is Color.GREEN
     assert isinstance(loaded.color, Color)
     assert loaded.nullable_color is Color.BLUE
@@ -290,7 +287,7 @@ def test_int_enum_round_trip(tmp_path: Path) -> None:
 
     config = PriorityConfig(level=Priority.HIGH)
     yaml_path = tmp_path / "priority.yaml"
-    config.to_yaml(yaml_path)
+    config.to_yaml(file_path=yaml_path)
 
     # Verifies that raw YAML contains an int.
     with yaml_path.open() as yaml_file:
@@ -299,7 +296,7 @@ def test_int_enum_round_trip(tmp_path: Path) -> None:
     assert isinstance(raw["level"], int)
 
     # Verifies round-trip deserialization.
-    loaded = PriorityConfig.from_yaml(yaml_path)
+    loaded = PriorityConfig.from_yaml(file_path=yaml_path)
     assert loaded.level is Priority.HIGH
     assert isinstance(loaded.level, Priority)
 
@@ -319,7 +316,7 @@ def test_tuple_round_trip(tmp_path: Path) -> None:
         empty_tuple=(),
     )
     yaml_path = tmp_path / "tuples.yaml"
-    config.to_yaml(yaml_path)
+    config.to_yaml(file_path=yaml_path)
 
     # Verifies that raw YAML contains lists.
     with yaml_path.open() as yaml_file:
@@ -329,7 +326,7 @@ def test_tuple_round_trip(tmp_path: Path) -> None:
     assert raw["empty_tuple"] == []
 
     # Verifies round-trip deserialization.
-    loaded = TupleConfig.from_yaml(yaml_path)
+    loaded = TupleConfig.from_yaml(file_path=yaml_path)
     assert loaded.int_tuple == (1, 2, 3)
     assert isinstance(loaded.int_tuple, tuple)
     assert loaded.path_tuple == (Path("/a"), Path("/b"))
@@ -354,7 +351,7 @@ def test_nested_dataclass_round_trip(tmp_path: Path) -> None:
 
     config = OuterConfig(name="test", inner=InnerConfig(path=Path("/nested/path"), color=Color.BLUE))
     yaml_path = tmp_path / "nested.yaml"
-    config.to_yaml(yaml_path)
+    config.to_yaml(file_path=yaml_path)
 
     # Verifies raw YAML structure.
     with yaml_path.open() as yaml_file:
@@ -363,7 +360,7 @@ def test_nested_dataclass_round_trip(tmp_path: Path) -> None:
     assert raw["inner"]["color"] == "blue"
 
     # Verifies round-trip deserialization.
-    loaded = OuterConfig.from_yaml(yaml_path)
+    loaded = OuterConfig.from_yaml(file_path=yaml_path)
     assert loaded.inner.path == Path("/nested/path")
     assert isinstance(loaded.inner.path, Path)
     assert loaded.inner.color is Color.BLUE
@@ -381,15 +378,15 @@ def test_union_enum_str_round_trip(tmp_path: Path) -> None:
     # Tests with a valid enum value.
     config_enum = UnionConfig(method=Color.RED)
     yaml_path = tmp_path / "union_enum.yaml"
-    config_enum.to_yaml(yaml_path)
-    loaded_enum = UnionConfig.from_yaml(yaml_path)
+    config_enum.to_yaml(file_path=yaml_path)
+    loaded_enum = UnionConfig.from_yaml(file_path=yaml_path)
     assert loaded_enum.method is Color.RED
 
     # Tests with a non-enum string value.
     config_string = UnionConfig(method="custom_method")
     yaml_path_string = tmp_path / "union_str.yaml"
-    config_string.to_yaml(yaml_path_string)
-    loaded_string = UnionConfig.from_yaml(yaml_path_string)
+    config_string.to_yaml(file_path=yaml_path_string)
+    loaded_string = UnionConfig.from_yaml(file_path=yaml_path_string)
     assert loaded_string.method == "custom_method"
     assert isinstance(loaded_string.method, str)
 
@@ -409,9 +406,9 @@ def test_primitive_first_union_enum_round_trip(tmp_path: Path) -> None:
 
     config = PrimFirstConfig(color=Color.GREEN, level=Priority.HIGH)
     yaml_path = tmp_path / "prim_first.yaml"
-    config.to_yaml(yaml_path)
+    config.to_yaml(file_path=yaml_path)
 
-    loaded = PrimFirstConfig.from_yaml(yaml_path)
+    loaded = PrimFirstConfig.from_yaml(file_path=yaml_path)
     assert loaded.color is Color.GREEN
     assert isinstance(loaded.color, Color)
     assert loaded.level is Priority.HIGH
@@ -424,8 +421,8 @@ def test_primitive_first_union_enum_round_trip(tmp_path: Path) -> None:
 
     config_fallback = PrimFirstFallback(color="not_a_color")
     yaml_path_fallback = tmp_path / "prim_first_fallback.yaml"
-    config_fallback.to_yaml(yaml_path_fallback)
-    loaded_fallback = PrimFirstFallback.from_yaml(yaml_path_fallback)
+    config_fallback.to_yaml(file_path=yaml_path_fallback)
+    loaded_fallback = PrimFirstFallback.from_yaml(file_path=yaml_path_fallback)
     assert loaded_fallback.color == "not_a_color"
     assert isinstance(loaded_fallback.color, str)
 
@@ -445,9 +442,9 @@ def test_frozen_nested_dataclass_round_trip(tmp_path: Path) -> None:
 
     config = OuterConfig(name="frozen_test", inner=FrozenInner(path=Path("/frozen/path"), color=Color.GREEN))
     yaml_path = tmp_path / "frozen.yaml"
-    config.to_yaml(yaml_path)
+    config.to_yaml(file_path=yaml_path)
 
-    loaded = OuterConfig.from_yaml(yaml_path)
+    loaded = OuterConfig.from_yaml(file_path=yaml_path)
     assert loaded.name == "frozen_test"
     assert loaded.inner.path == Path("/frozen/path")
     assert isinstance(loaded.inner.path, Path)
@@ -456,16 +453,16 @@ def test_frozen_nested_dataclass_round_trip(tmp_path: Path) -> None:
 
 def test_serialize_value_primitives() -> None:
     """Verifies that _serialize_value passes through primitive types unchanged."""
-    assert _serialize_value(None) is None
-    assert _serialize_value("hello") == "hello"
-    assert _serialize_value(42) == 42
-    assert _serialize_value(3.14) == 3.14
+    assert _serialize_value(value=None) is None
+    assert _serialize_value(value="hello") == "hello"
+    assert _serialize_value(value=42) == 42
+    assert _serialize_value(value=3.14) == 3.14
     assert _serialize_value(value=True) is True
 
 
 def test_serialize_value_path_dict_keys() -> None:
     """Verifies that _serialize_value converts Path keys in dicts to strings."""
-    result = _serialize_value({Path("/a"): 1, Path("/b"): 2})
+    result = _serialize_value(value={Path("/a"): 1, Path("/b"): 2})
     assert result == {"/a": 1, "/b": 2}
     assert all(isinstance(key, str) for key in result)
 
@@ -479,7 +476,7 @@ def test_collect_type_hooks_simple() -> None:
         color: Color = Color.RED
         name: str = ""
 
-    hooks = _collect_type_hooks(SimpleConfig)
+    hooks = _collect_type_hooks(cls=SimpleConfig)
     assert Path in hooks
     assert Color in hooks
     assert str not in hooks
@@ -497,7 +494,7 @@ def test_collect_type_hooks_nested() -> None:
         path: Path = Path("/data")
         inner: Inner = field(default_factory=Inner)
 
-    hooks = _collect_type_hooks(Outer)
+    hooks = _collect_type_hooks(cls=Outer)
     assert Path in hooks
     assert Priority in hooks
 
@@ -510,7 +507,7 @@ def test_collect_type_hooks_union_enum() -> None:
         color: str | Color = Color.RED
         level: int | Priority = Priority.LOW
 
-    hooks = _collect_type_hooks(UnionConfig)
+    hooks = _collect_type_hooks(cls=UnionConfig)
 
     # Concrete enum hooks should still be registered.
     assert Color in hooks

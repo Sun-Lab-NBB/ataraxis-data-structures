@@ -145,7 +145,7 @@ component-specific steps.
 
 1. Understand the multiprocessing.Lock integration for process-safety
 2. Maintain the `connect()`/`disconnect()`/`destroy()` lifecycle contract
-3. Test with actual multiprocessing scenarios (not just single-process)
+3. Test with scenarios that spawn real worker processes and exercise the array from each of them
 
 **Modifying YamlConfig** (`src/ataraxis_data_structures/data_structures/yaml_config.py`):
 
@@ -177,7 +177,7 @@ component-specific steps.
 
 **Important considerations:**
 
-- This library is a dependency for other Ataraxis framework projects; maintain backwards compatibility
+- This library is a dependency for other Ataraxis framework projects, so maintain backwards compatibility
 - Use `console.error()` from ataraxis-base-utilities for all error handling
 - Use `ataraxis-time` for precision timestamps in logging contexts
 - SharedMemoryArray and the DataLogger process use an explicit spawn context (`get_context("spawn")`) for identical

@@ -17,10 +17,12 @@ ___
 
 This library aggregates the classes and methods used by other Ataraxis and Sollertia libraries for working with data.
 This includes classes to manipulate the data, share (move) the data between different Python processes, and store the
-data in non-volatile memory (on disk). Generally, these classes either implement novel functionality not available
-through other popular libraries or extend existing functionality to match specific needs of other project Ataraxis
-libraries. This library is part of the
+data in non-volatile memory (on disk). Generally, these classes either implement novel functionality or extend
+existing functionality to match the specific needs of other Ataraxis and Sollertia libraries. This library is part of
+the
 [Ataraxis](https://github.com/Sun-Lab-NBB/ataraxis) framework for AI-assisted scientific hardware control.
+
+___
 
 ## Features
 
@@ -33,6 +35,8 @@ libraries. This library is part of the
 - Includes a file-based processing pipeline tracker for coordinating multi-process and multi-host data processing jobs.
 - Provides utilities for data integrity verification, directory transfer, and time-series interpolation.
 - Apache 2.0 License.
+
+___
 
 ## Table of Contents
 
@@ -138,7 +142,7 @@ processes to read and write any element(s) of the array.
 #### SharedMemoryArray Creation
 
 The SharedMemoryArray only needs to be instantiated once by the main runtime process (thread) and provided to all
-children processes as an input. The initialization process uses the specified prototype NumPy array and unique buffer
+child processes as an input. The initialization process uses the specified prototype NumPy array and unique buffer
 name to generate a (new) NumPy array whose data is stored in a shared memory buffer accessible from any thread or
 process. ***Note,*** the array dimensions and datatype cannot be changed after initialization.
 
@@ -318,7 +322,7 @@ if __name__ == "__main__":
     timer.reset()
 
     # For each of the array indices, increments the value of the index if it is odd. Child processes increment
-    # even values and ignore odd ones, so the only way for this code to finish is if children and parent process
+    # even values and ignore odd ones, so the only way for this code to finish is if the child and parent processes
     # take turns incrementing shared values until they reach 200
     while np.any(sma[0:5] < 200):  # Runs as long as any value is below 200
         # Note, while it is possible to index the data from the SharedMemoryArray, it is also possible to retrieve
@@ -353,7 +357,7 @@ ataraxis-video-system and the ataraxis-transport-layer.
 
 #### Creating and Starting the DataLogger
 
-DataLogger is intended to only be initialized once in the main runtime thread (Process) and provided to all children
+DataLogger is intended to only be initialized once in the main runtime thread (Process) and provided to all child
 Processes as an input. ***Note,*** while a single DataLogger instance is typically enough for most use cases, it is
 possible to use more than a single DataLogger instance at the same time.
 

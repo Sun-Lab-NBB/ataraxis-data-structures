@@ -63,16 +63,16 @@ def large_directory_structure(tmp_path: Path) -> Path:
 def test_delete_directory_basic(tmp_path: Path) -> None:
     """Verifies basic directory deletion functionality."""
     # Creates a simple directory structure.
-    test_dir = tmp_path / "to_delete"
-    test_dir.mkdir()
-    (test_dir / "file1.txt").write_text("content")
-    (test_dir / "file2.txt").write_text("content")
+    test_directory = tmp_path / "to_delete"
+    test_directory.mkdir()
+    (test_directory / "file1.txt").write_text("content")
+    (test_directory / "file2.txt").write_text("content")
 
-    assert test_dir.exists()
+    assert test_directory.exists()
 
-    delete_directory(directory_path=test_dir)
+    delete_directory(directory_path=test_directory)
 
-    assert not test_dir.exists()
+    assert not test_directory.exists()
 
 
 def test_delete_directory_nested(tmp_path: Path) -> None:
@@ -102,18 +102,18 @@ def test_delete_directory_nested(tmp_path: Path) -> None:
 def test_delete_directory_nonexistent(tmp_path: Path) -> None:
     """Verifies that deleting a non-existent directory does not raise errors."""
     nonexistent = tmp_path / "does_not_exist"
-    # Should not raise any exception.
+    # Completes without raising an exception.
     delete_directory(directory_path=nonexistent)
 
 
 def test_delete_directory_empty(tmp_path: Path) -> None:
     """Verifies deletion of empty directories."""
-    empty_dir = tmp_path / "empty"
-    empty_dir.mkdir()
+    empty_directory = tmp_path / "empty"
+    empty_directory.mkdir()
 
-    assert empty_dir.exists()
-    delete_directory(directory_path=empty_dir)
-    assert not empty_dir.exists()
+    assert empty_directory.exists()
+    delete_directory(directory_path=empty_directory)
+    assert not empty_directory.exists()
 
 
 def test_transfer_directory_basic(sample_directory_structure: Path, tmp_path: Path) -> None:
@@ -300,26 +300,26 @@ def test_transfer_directory_with_integrity_and_removal(sample_directory_structur
 def test_delete_directory_parallel_performance(tmp_path: Path) -> None:
     """Verifies that parallel deletion works with many files."""
     # Creates a directory with many files.
-    test_dir = tmp_path / "many_files"
-    test_dir.mkdir()
+    test_directory = tmp_path / "many_files"
+    test_directory.mkdir()
 
     for file_index in range(100):
-        (test_dir / f"file_{file_index}.txt").write_text(f"content_{file_index}")
+        (test_directory / f"file_{file_index}.txt").write_text(f"content_{file_index}")
 
     # Creates subdirectories.
     for subdirectory_index in range(10):
-        subdirectory = test_dir / f"subdir_{subdirectory_index}"
+        subdirectory = test_directory / f"subdir_{subdirectory_index}"
         subdirectory.mkdir()
         for file_index in range(10):
             (subdirectory / f"file_{file_index}.txt").write_text(f"content_{subdirectory_index}_{file_index}")
 
-    assert test_dir.exists()
-    file_count = len(list(test_dir.rglob("*.txt")))
+    assert test_directory.exists()
+    file_count = len(list(test_directory.rglob("*.txt")))
     assert file_count == 200
 
-    delete_directory(directory_path=test_dir)
+    delete_directory(directory_path=test_directory)
 
-    assert not test_dir.exists()
+    assert not test_directory.exists()
 
 
 def test_transfer_directory_metadata_preservation(sample_directory_structure: Path, tmp_path: Path) -> None:
@@ -339,7 +339,7 @@ def test_transfer_directory_metadata_preservation(sample_directory_structure: Pa
 
     # Verifies metadata (shutil.copy2 should preserve modification time).
     assert transferred_stat.st_size == original_stat.st_size
-    # Depending on the filesystem, the modification time might not be exactly preserved, but it should be very close.
+    # Filesystems preserve the modification time only approximately, so the comparison allows a one second delta.
     assert abs(transferred_stat.st_mtime - original_stat.st_mtime) < 1
 
 
@@ -413,11 +413,12 @@ def test_transfer_directory_integrity_check_detects_corruption(
         return result
 
     monkeypatch.setattr(
-        "ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum", mock_calculate_checksum
+        target="ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum",
+        name=mock_calculate_checksum,
     )
 
     # Attempts transfer with integrity verification.
-    with pytest.raises(RuntimeError) as exc_info:
+    with pytest.raises(RuntimeError) as exception_info:
         transfer_directory(
             source=source,
             destination=destination,
@@ -426,7 +427,7 @@ def test_transfer_directory_integrity_check_detects_corruption(
 
     # Verifies the error message contains expected information.
     # Normalizes whitespace since the error message may contain line breaks.
-    error_message = str(exc_info.value).replace("\n", " ")
+    error_message = str(exception_info.value).replace("\n", " ")
     assert "Checksum mismatch detected" in error_message
     assert "corrupted in transmission" in error_message
 
@@ -451,7 +452,7 @@ def test_transfer_directory_checksum_path_truncation(tmp_path: Path, monkeypatch
     original_calculate_checksum = calculate_directory_checksum
 
     # Mocks calculate_directory_checksum to return a corrupted hash for destination.
-    def mock_calculate(directory: Path, **kwargs: Any) -> str:
+    def mock_calculate_checksum(directory: Path, **kwargs: Any) -> str:
         """Mocks calculate_directory_checksum to return a corrupted checksum for the destination directory."""
         result = original_calculate_checksum(directory=directory, **kwargs)
         if directory == destination:
@@ -459,18 +460,19 @@ def test_transfer_directory_checksum_path_truncation(tmp_path: Path, monkeypatch
         return result
 
     monkeypatch.setattr(
-        "ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum", mock_calculate
+        target="ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum",
+        name=mock_calculate_checksum,
     )
 
-    with pytest.raises(RuntimeError) as exc_info:
+    with pytest.raises(RuntimeError) as exception_info:
         transfer_directory(
             source=source,
             destination=destination,
             verify_integrity=True,
         )
 
-    # Verifies the error message contains truncated paths (not full paths).
-    error_message = str(exc_info.value)
+    # Verifies the error message contains truncated paths.
+    error_message = str(exception_info.value)
     assert "Checksum mismatch detected" in error_message
 
     # Verifies the paths show the last 6 parts (e/f/source and v/u/dest).
@@ -496,7 +498,8 @@ def test_transfer_directory_integrity_check_corruption_prevents_removal(
         return result
 
     monkeypatch.setattr(
-        "ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum", mock_calculate_checksum
+        target="ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum",
+        name=mock_calculate_checksum,
     )
 
     # Attempts transfer with both verification and removal enabled.

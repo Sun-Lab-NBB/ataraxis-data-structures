@@ -3,6 +3,7 @@
 
 Shared Memory
 =============
+
 .. automodule:: ataraxis_data_structures.shared_memory
    :members:
    :undoc-members:
@@ -10,6 +11,7 @@ Shared Memory
 
 Data Structures
 ===============
+
 .. automodule:: ataraxis_data_structures.data_structures
    :members:
    :undoc-members:
@@ -17,6 +19,7 @@ Data Structures
 
 Data Loggers
 ============
+
 .. automodule:: ataraxis_data_structures.data_loggers
    :members:
    :undoc-members:
@@ -24,6 +27,7 @@ Data Loggers
 
 Processing
 ==========
+
 .. automodule:: ataraxis_data_structures.processing
    :members:
    :undoc-members:

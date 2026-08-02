@@ -20,8 +20,15 @@ maintainers = [
 ]
 
 keywords = [
-    "data structures", "data manipulation", "data logging", "shared memory", "ataraxis",
-    "processing", "checksum", "data transfer", "interpolation",
+    "data structures",
+    "data manipulation",
+    "data logging",
+    "shared memory",
+    "ataraxis",
+    "processing",
+    "checksum",
+    "data transfer",
+    "interpolation",
 ]
 
 classifiers = [
@@ -39,7 +46,7 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
     # Typing
-    "Typing :: Typed"
+    "Typing :: Typed",
 ]
 
 # Runtime project dependencies.
@@ -155,6 +162,7 @@ convention = "google"
     "ANN",     # Test functions and mock helpers do not need annotations
 ]
 
+# Import sorting and grouping configurations
 [tool.ruff.lint.isort]
 case-sensitive = true              # Takes case into account when sorting imports
 combine-as-imports = true          # Combines multiple "as" imports for the same package
@@ -186,15 +194,26 @@ extra_checks = true
 pretty = true
 
 exclude = [
-    "ataraxis[-_]data[-_]structures-\\d+", # Ignores the temporary folder created while building the sdist
-    "venv.*/",                       # Ignores virtual environments
-    "build/",                        # Ignores the temporary build scratch directory
-    "dist/",                         # Ignores the built distribution (sdist and wheel) directory
-    "docs/",                         # Ignores the sphinx / doxygen directory
-    "stubs/",                        # Ignores stubs directory (stubgen output target)
-    "recipe/",                       # Ignores recipe directory (grayskull output target)
-    "tests/",                        # Ignores the test directory.
+    "ataraxis[-_]data[-_]structures-\\d+",  # Ignores the temporary folder created while building the sdist
+    "venv.*/",                              # Ignores virtual environments
+    "build/",                               # Ignores the temporary build scratch directory
+    "dist/",                                # Ignores the built distribution (sdist and wheel) directory
+    "docs/",                                # Ignores the sphinx / doxygen directory
+    "stubs/",                               # Ignores stubs directory (stubgen output target)
+    "recipe/",                              # Ignores recipe directory (grayskull output target)
+    "tests/",                               # Ignores the test directory
 ]
+
+# Configures coverage measurement. The library runs its logger inside a spawned process and distributes checksum and
+# archive assembly work across process pools, so measurement covers subprocesses and threads in addition to the main
+# process. The 'parallel' key gives each of those workers its own data file for the 'coverage' task to combine.
+[tool.coverage.run]
+parallel = true
+concurrency = ["multiprocessing", "thread"]
+
+# Subprocesses read this file rather than the 'pytest --cov' argument, so the measured package is named here to keep
+# worker processes from measuring the test modules they import.
+source_pkgs = ["ataraxis_data_structures"]
 
 # This is used by the 'test' tox tasks to aggregate coverage data produced during pytest runtimes.
 [tool.coverage.paths]
