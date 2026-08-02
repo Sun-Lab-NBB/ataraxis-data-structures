@@ -41,7 +41,7 @@ def delete_directory(directory_path: Path) -> None:
         try:
             directory_path.rmdir()
             break
-        except Exception:  # noqa: BLE001  # pragma: no cover
+        except Exception:  # pragma: no cover
             delay_timer.delay(block=False, delay=_DELETION_RETRY_DELAY_MS, allow_sleep=True)
             continue
 
