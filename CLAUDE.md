@@ -97,8 +97,8 @@ dependency for other Ataraxis framework projects.
 
 - **SharedMemoryArray**: Wraps NumPy arrays in shared memory buffers for IPC with multiprocessing.Lock for
   process-safety. Requires explicit `connect()`, `disconnect()`, and `destroy()` lifecycle management.
-- **YamlConfig**: Base dataclass with YAML serialization via `to_yaml()` and `from_yaml()` class methods. Uses dacite
-  for deserialization with type-aware conversions for Path and Enum types.
+- **YamlConfig**: Base dataclass with YAML serialization via the `to_yaml()` instance method and the `from_yaml()`
+  class method. Uses dacite for deserialization with type-aware conversions for Path and Enum types.
 - **DataLogger**: Runs a logger process with an input Queue for buffering serialized LogPackage data. Uses a watchdog
   thread for monitoring. Saves individual `.npy` files that can be assembled into `.npz` archives.
 - **LogArchiveReader**: Reads `.npz` log archives with onset timestamp discovery. Supports batch generation for
@@ -169,12 +169,17 @@ component-specific steps.
 
 1. Review existing utilities for the patterns to follow
 2. Follow the same conventions for type hints, docstrings, and error handling
-3. Export new functions in `src/ataraxis_data_structures/__init__.py`
-4. Add corresponding tests in `tests/processing/`
+3. Export new functions from `src/ataraxis_data_structures/processing/__init__.py` (add to both the imports and
+   `__all__`)
+4. Re-export them from `src/ataraxis_data_structures/__init__.py` by importing through the `.processing` package
+   namespace
+5. Add corresponding tests in `tests/processing/`
 
 **Important considerations:**
 
 - This library is a dependency for other Ataraxis framework projects; maintain backwards compatibility
 - Use `console.error()` from ataraxis-base-utilities for all error handling
 - Use `ataraxis-time` for precision timestamps in logging contexts
-- All multiprocessing code uses an explicit spawn context (`get_context("spawn")`) for identical cross-platform behavior
+- SharedMemoryArray and the DataLogger process use an explicit spawn context (`get_context("spawn")`) for identical
+  cross-platform behavior. The `ProcessPoolExecutor` pools in `calculate_directory_checksum` and
+  `assemble_log_archives` rely on the interpreter's default start method

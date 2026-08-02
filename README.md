@@ -238,8 +238,9 @@ assert isinstance(sma[:4], np.ndarray)
 with sma.array(with_lock=True) as array:
     print(f"Before clipping: {array}")
 
-    # Clipping replaces the out-of-bounds value '123' with '10'.
-    array = np.clip(array, 0, 10)
+    # Clipping replaces the out-of-bounds value '123' with '10'. The slice assignment writes the clipped values
+    # back into the shared memory buffer. Rebinding the name instead would discard the result.
+    array[:] = np.clip(array, 0, 10)
 
     print(f"After clipping: {array}")
 
@@ -391,7 +392,7 @@ the DataLogger's input queue.
 from pathlib import Path
 import tempfile
 import numpy as np
-from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+from ataraxis_data_structures import DataLogger, LogPackage
 from ataraxis_time import get_timestamp, TimestampFormats
 
 if __name__ == "__main__":
@@ -624,7 +625,7 @@ tracker.start_job(job_id, executor_id="slurm_12345")
 
 # Queries the current status
 status = tracker.get_job_status(job_id)
-print(f"Job status: {status}")  # ProcessingStatus.RUNNING
+print(f"Job status: {status.name}")  # Job status: RUNNING
 
 # Marks the job as completed successfully
 tracker.complete_job(job_id)

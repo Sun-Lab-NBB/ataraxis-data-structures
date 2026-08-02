@@ -19,6 +19,12 @@ _DELETION_RETRY_DELAY_MS: int = 500
 def delete_directory(directory_path: Path) -> None:
     """Deletes the target directory and all its subdirectories, unlinking the files within each directory in parallel.
 
+    Notes:
+        Removal of each emptied directory is attempted up to five times, with a 500 millisecond delay between
+        attempts, as some Operating Systems are slow to release file handles. If every attempt fails, the function
+        returns without raising an error and the directory is left in place. Check the path with Path.exists() when
+        the removal has to be guaranteed.
+
     Args:
         directory_path: The path to the directory to delete.
     """
@@ -117,8 +123,11 @@ def transfer_directory(
         The function performs a multithreaded copy operation when 'num_threads' is greater than 1 and a sequential
         copy otherwise. By default, it does not remove the source data after the copy is complete.
 
-        If the function is configured to verify the transferred data's integrity, it generates an xxHash3-128 checksum
-        of the data before and after the transfer and compares the two checksums to detect data corruption.
+        If the function is configured to verify the transferred data's integrity, it reuses the xxHash3-128 checksum
+        stored in the source directory's ax_checksum.txt file when that file exists. Otherwise, it generates the
+        checksum before the transfer and writes it to the source directory as the ax_checksum.txt file. After the
+        transfer, it recomputes the checksum for the destination directory and compares it against the source
+        checksum to detect data corruption.
 
     Args:
         source: The path to the directory to be transferred.

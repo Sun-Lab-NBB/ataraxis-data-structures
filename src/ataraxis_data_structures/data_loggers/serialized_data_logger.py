@@ -1,5 +1,6 @@
 """Provides the DataLogger class to efficiently save (log) serialized data collected from different processes to
-disk.
+disk, the LogPackage class used to submit data for logging, and the assemble_log_archives() function that
+consolidates the logged .npy entries into per-source .npz archives.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ if TYPE_CHECKING:
 
 
 _BATCH_OVERSCALE_FACTOR: int = 4
-"""The multiplier applied when over-batching log entries across workers to improve load balancing."""
+"""The multiplier applied to the per-worker share of log entries when sizing the batches used for parallel loading."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,9 +103,11 @@ class DataLogger:
         instance_name: The name of the logger instance. This name has to be unique across all concurrently active
             DataLogger instances.
         thread_count: The number of threads to use for saving the data to disk. It is recommended to use multiple
-            threads to parallelize the I/O operations associated with writing the logged data to disk.
+            threads to parallelize the I/O operations associated with writing the logged data to disk. Values below 1
+            are clamped to 1.
         poll_interval: The interval, in milliseconds, between polling the input queue. Primarily, this is designed to
             optimize the CPU usage during light workloads. Setting this to 0 disables the polling delay mechanism.
+            Negative values are clamped to 0.
 
     Attributes:
         _started: Tracks whether the logger process is running.
@@ -362,8 +365,9 @@ def assemble_log_archives(
 
     Args:
         log_directory: The path to the directory that stores the log entries as .npy files.
-        max_workers: Determines the number of worker processes and threads used to process the data in parallel. If
-            set to None, the function uses the number of CPU cores minus 2.
+        max_workers: Determines the number of worker processes and threads used to process the data in parallel. A
+            positive value is honored exactly, capped at the physical core count. If set to None, 0, or a negative
+            value, the function uses the number of CPU cores minus 2, clamped to at least 1.
         remove_sources: Determines whether to remove the .npy files after consolidating their data into .npz archives.
         memory_mapping: Determines whether to memory-map or load the processed data into RAM during processing. Due to
             Windows not releasing memory-mapped file handles, this function always loads the data into RAM when running
@@ -408,7 +412,7 @@ def assemble_log_archives(
         total_files = sum(len(files) for files in source_files.values())
         loaded_data: dict[int, dict[str, NDArray[Any]]] = {source_id: {} for source_id in source_files}
 
-        # Over-batches the data by the over-scale factor to improve load balancing across workers.
+        # Sizes each batch at the over-scale factor multiple of the per-worker share of the log entries.
         load_numpy = partial(_load_numpy_files, memory_map=memory_mapping)
         batch_size = int(np.ceil(total_files / max_workers * _BATCH_OVERSCALE_FACTOR))
 

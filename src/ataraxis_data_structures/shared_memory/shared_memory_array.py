@@ -284,6 +284,10 @@ class SharedMemoryArray:
             Each process, including the main process, must call this method before accessing the array data. The main
             process may connect either before or after starting the child processes, as each process establishes an
             independent connection to the shared memory buffer.
+
+        Raises:
+            FileNotFoundError: If the shared memory buffer with the instance's name does not exist. This typically
+                indicates that the buffer has already been destroyed via the destroy() method.
         """
         if not self._connected:
             self._buffer = SharedMemory(name=self._name, create=False)
@@ -314,8 +318,10 @@ class SharedMemoryArray:
         SharedMemoryArray instances connected to the buffer leads to undefined behavior.
 
         Notes:
-            This method does not do anything on Windows. Windows automatically garbage-collects the buffers as long as
-            they are no longer connected to by any SharedMemoryArray instances.
+            On Windows, the underlying unlink() call has no effect, as the Operating System destroys the buffer only
+            after every handle to it is closed. The method still disconnects this instance from the buffer and
+            releases its local handle on all platforms, so the instance cannot access the array data until connect()
+            is called again.
         """
         if self._buffer is not None:
             # If the instance is connected to the buffer, first disconnects it from the buffer.

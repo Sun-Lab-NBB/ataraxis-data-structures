@@ -145,7 +145,9 @@ class ProcessingTracker(YamlConfig):
         return f"pid:{os.getpid()}"
 
     def _load_state(self) -> None:
-        """Reads the processing pipeline's runtime state from the cached .YAML file."""
+        """Reads the processing pipeline's runtime state from the cached .YAML file, creating the file with the
+        instance's current state when it does not yet exist.
+        """
         if self.file_path.exists():
             loaded = ProcessingTracker.from_yaml(self.file_path)
             self.jobs = loaded.jobs
@@ -375,8 +377,8 @@ class ProcessingTracker(YamlConfig):
                 )
                 console.error(message=message, error=ValueError)
 
-            # Resolves the executor identifier from the runtime environment (SLURM job ID, falling back to the
-            # process ID) when the caller does not provide one explicitly.
+            # Resolves the executor identifier from the runtime environment (a recognized scheduler's job ID, falling
+            # back to the process ID) when the caller does not provide one explicitly.
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.RUNNING
             job_info.error_message = None
@@ -481,7 +483,11 @@ class ProcessingTracker(YamlConfig):
             return self.jobs[job_id].status
 
     def reset(self) -> None:
-        """Resets the tracker file to the default state."""
+        """Resets the tracker file to the default state.
+
+        Raises:
+            TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+        """
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
             self._load_state()
@@ -491,7 +497,11 @@ class ProcessingTracker(YamlConfig):
 
     @property
     def complete(self) -> bool:
-        """Returns True when the tracked pipeline has jobs and all of them have been marked as succeeded."""
+        """Returns True when the tracked pipeline has jobs and all of them have been marked as succeeded.
+
+        Raises:
+            TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+        """
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
             self._load_state()
@@ -501,7 +511,11 @@ class ProcessingTracker(YamlConfig):
 
     @property
     def encountered_error(self) -> bool:
-        """Returns True when any of the tracked pipeline's jobs has been marked as failed."""
+        """Returns True when any of the tracked pipeline's jobs has been marked as failed.
+
+        Raises:
+            TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+        """
         lock = FileLock(self.lock_path)
         with lock.acquire(timeout=10.0):
             self._load_state()

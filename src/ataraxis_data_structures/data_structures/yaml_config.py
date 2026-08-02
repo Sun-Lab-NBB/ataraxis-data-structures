@@ -211,7 +211,9 @@ class YamlConfig:
 
         Notes:
             Path fields are serialized as strings, Enum fields as their raw values, and tuples as lists. This keeps
-            YAML files human-readable while preserving full type fidelity on round-trip via ``from_yaml()``.
+            YAML files human-readable while preserving type fidelity on round-trip via ``from_yaml()`` for concretely
+            annotated fields. A field whose annotation unions ``Path`` with ``str`` cannot be discriminated on load
+            and is restored as a string.
 
         Args:
             file_path: The path to the .yaml file to write.

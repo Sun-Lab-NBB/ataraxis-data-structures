@@ -173,7 +173,7 @@ class LogArchiveReader:
             times vary. The batch_multiplier parameter controls the degree of over-batching.
 
             For archives with fewer messages than the parallel processing threshold (2000), returns a single batch
-            containing all message keys.
+            containing all message keys, or an empty list when the archive contains no data messages.
 
         Args:
             workers: The number of worker processes to optimize batching for. A value less than 1 uses all available
@@ -200,8 +200,8 @@ class LogArchiveReader:
         """Iterates through messages in the archive, yielding LogMessage instances.
 
         Notes:
-            Opens the archive with memory mapping for efficient access. The archive is kept open for the duration of
-            iteration.
+            Opens the archive once and keeps it open for the duration of iteration, decoding each requested entry on
+            access.
 
             If keys is provided, only iterates through the specified messages. This is useful for processing a batch
             of messages in a worker process.
