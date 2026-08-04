@@ -1,11 +1,23 @@
 """Provides assets for computing data integrity checksums."""
 
-from pathlib import Path
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from functools import partial
+from multiprocessing import get_context
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import xxhash
 from ataraxis_base_utilities import console, resolve_worker_count
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from multiprocessing.context import SpawnContext
+
+
+_MULTIPROCESSING_CONTEXT: SpawnContext = get_context("spawn")
+"""The spawn-based multiprocessing context used to create the process pool that calculates file checksums, ensuring
+identical cross-platform behavior on all supported platforms."""
 
 
 def calculate_directory_checksum(
@@ -50,7 +62,7 @@ def calculate_directory_checksum(
 
     checksum = xxhash.xxh3_128()
 
-    with ProcessPoolExecutor(max_workers=num_processes) as executor:
+    with ProcessPoolExecutor(max_workers=num_processes, mp_context=_MULTIPROCESSING_CONTEXT) as executor:
         # Binds base_directory so each submitted task only needs to supply the per-file path.
         process_file = partial(_calculate_file_checksum, base_directory=directory)
 

@@ -33,6 +33,10 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 
+_MULTIPROCESSING_CONTEXT: SpawnContext = get_context("spawn")
+"""The spawn-based multiprocessing context used to create the process pool that assembles log archives, ensuring
+identical cross-platform behavior on all supported platforms."""
+
 _BATCH_OVERSCALE_FACTOR: int = 4
 """The multiplier applied to the per-worker share of log entries when sizing the batches used for parallel loading."""
 
@@ -393,7 +397,7 @@ def assemble_log_archives(
     # and others via multiprocessing, uses both process and thread pool executors to efficiently process the data.
     with (
         console.temporarily_enabled(),
-        ProcessPoolExecutor(max_workers=max_workers) as process_executor,
+        ProcessPoolExecutor(max_workers=max_workers, mp_context=_MULTIPROCESSING_CONTEXT) as process_executor,
         ThreadPoolExecutor(max_workers=max_workers) as thread_executor,
     ):
         # PHASE 1: Loads source files in parallel batches.

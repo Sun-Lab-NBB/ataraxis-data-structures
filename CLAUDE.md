@@ -180,6 +180,6 @@ component-specific steps.
 - This library is a dependency for other Ataraxis framework projects, so maintain backwards compatibility
 - Use `console.error()` from ataraxis-base-utilities for all error handling
 - Use `ataraxis-time` for precision timestamps in logging contexts
-- SharedMemoryArray and the DataLogger process use an explicit spawn context (`get_context("spawn")`) for identical
-  cross-platform behavior. The `ProcessPoolExecutor` pools in `calculate_directory_checksum` and
-  `assemble_log_archives` rely on the interpreter's default start method
+- Every multiprocessing primitive uses an explicit spawn context (`get_context("spawn")`) for identical cross-platform
+  behavior, covering SharedMemoryArray, the DataLogger process, and the `ProcessPoolExecutor` pools in
+  `calculate_directory_checksum` and `assemble_log_archives`. Pass `mp_context` whenever adding a pool
