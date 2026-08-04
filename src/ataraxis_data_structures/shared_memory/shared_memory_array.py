@@ -141,10 +141,13 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-        with self.array(with_lock=True) as shared_array:
+        # Takes the lock directly rather than through the array() context manager, whose generator, wrapper object,
+        # and repeated connection guard dominate the cost of a single element access. The lock acquisition, the
+        # returned values, and the guard above are the same either way.
+        with self._lock:
             # Returns a copy to prevent external modifications to the returned data from affecting the shared array
             # without going through __setitem__.
-            result = shared_array[index]
+            result = self._array[index]
             if isinstance(result, np.ndarray):
                 return result.copy()
             return result
@@ -180,8 +183,9 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-        with self.array(with_lock=True) as shared_array:
-            shared_array[index] = value
+        # Takes the lock directly, for the reason given in __getitem__.
+        with self._lock:
+            self._array[index] = value
 
     def enable_buffer_destruction(self) -> None:
         """Configures the instance to destroy the shared memory buffer when it is garbage-collected.
