@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
+from ataraxis_base_utilities import console, error_format
 
 from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+from ataraxis_data_structures.data_loggers.serialized_data_logger import _compare_arrays, _progress_display
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -314,3 +316,88 @@ def test_log_package_data_large_timestamp() -> None:
     expected = bytes([255]) + (2**63 + 5).to_bytes(length=8, byteorder="little") + bytes([1])
     assert data.tobytes() == expected
     assert int(data[1:9].view(np.uint64)[0]) == 2**63 + 5
+
+
+def test_compare_arrays_raises_on_mismatched_entry() -> None:
+    """Verifies that the archive integrity gate raises when an archived entry differs from its source entry."""
+    message = (
+        "Unable to verify the integrity of the assembled log archive for source 1. The archived data for entry "
+        "001_00000000000000001000 must exactly match the data of the original .npy log entry, but the two differ."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        _compare_arrays(
+            source_id=1,
+            stem="001_00000000000000001000",
+            original_array=np.array([1, 2, 3], dtype=np.uint8),
+            archived_array=np.array([1, 2, 4], dtype=np.uint8),
+        )
+
+
+def test_compare_arrays_accepts_a_matching_entry() -> None:
+    """Verifies that the archive integrity gate stays silent when the archived entry matches its source entry."""
+    payload = np.array([1, 2, 3], dtype=np.uint8)
+    _compare_arrays(source_id=1, stem="001_00000000000000001000", original_array=payload, archived_array=payload)
+
+
+@pytest.mark.xdist_group(name="group1")
+def test_assemble_log_archives_keeps_sources_when_verification_fails(
+    tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that a failed integrity check aborts before the source .npy entries are removed."""
+    logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
+    logger.start()
+    for index in range(3):
+        source_id, timestamp, data = sample_data
+        logger.input_queue.put(
+            LogPackage(
+                source_id=np.uint8(source_id), acquisition_time=np.uint64(timestamp + index), serialized_data=data
+            )
+        )
+    logger.stop()
+
+    # Fault-injects a verification failure. PHASE 2 rewrites every archive from the in-memory arrays it just loaded,
+    # so a hand-corrupted .npz cannot survive long enough to reach PHASE 3.
+    def failing_compare(**_kwargs: Any) -> None:
+        message = "simulated integrity mismatch"
+        raise ValueError(message)
+
+    monkeypatch.setattr(
+        target="ataraxis_data_structures.data_loggers.serialized_data_logger._compare_arrays", name=failing_compare
+    )
+
+    with pytest.raises(ValueError, match="simulated integrity mismatch"):
+        assemble_log_archives(
+            log_directory=logger.output_directory, remove_sources=True, verify_integrity=True, verbose=False
+        )
+
+    # PHASE 4 never runs, so the only intact copy of the data is still on disk.
+    assert len(list(logger.output_directory.glob("*.npy"))) == 3
+
+
+def test_progress_display_restores_a_disabled_console() -> None:
+    """Verifies that the progress-display context restores a previously disabled display."""
+    console.disable_progress()
+    with _progress_display(enabled=True):
+        assert console.progress_enabled
+    assert not console.progress_enabled
+
+
+def test_progress_display_restores_an_enabled_console() -> None:
+    """Verifies that the progress-display context restores a previously enabled display, including when it raises."""
+    console.enable_progress()
+    try:
+        with _progress_display(enabled=False):
+            assert not console.progress_enabled
+        assert console.progress_enabled
+
+        with pytest.raises(RuntimeError, match="simulated failure"), _progress_display(enabled=False):
+            _raise_probe_error()
+        assert console.progress_enabled
+    finally:
+        console.disable_progress()
+
+
+def _raise_probe_error() -> None:
+    """Raises an error so a test can observe how the surrounding context manager handles an exceptional exit."""
+    message = "simulated failure"
+    raise RuntimeError(message)

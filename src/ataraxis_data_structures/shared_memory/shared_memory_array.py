@@ -69,7 +69,10 @@ class SharedMemoryArray:
         self._datatype: np.dtype[Any] = datatype
         self._buffer: SharedMemory | None = buffer
         self._lock: synchronize.Lock = _MULTIPROCESSING_CONTEXT.Lock()
-        self._array: NDArray[Any] | None = np.zeros(shape=shape, dtype=datatype)
+        # Stays None until connect() binds the view to the shared buffer. Every reader gates on _connected, which
+        # connect() sets only after rebinding this attribute, so allocating a private array here would be discarded
+        # unread while transiently doubling the memory the buffer already occupies.
+        self._array: NDArray[Any] | None = None
         self._connected: bool = False
         self._destroy_buffer: bool = False
 
@@ -260,9 +263,15 @@ class SharedMemoryArray:
                 console.error(message=message, error=FileExistsError)
 
         # Instantiates a NumPy array using the shared memory buffer and copies the prototype array data into the shared
-        # array instance.
-        shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
-        shared_array[:] = prototype[:]
+        # array instance. Releases the buffer if either step fails, since no instance exists yet to release it through
+        # destroy() and the name would otherwise stay claimed for the rest of the runtime.
+        try:
+            shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
+            shared_array[:] = prototype[:]
+        except BaseException:
+            buffer.close()
+            buffer.unlink()
+            raise
 
         # Packages the data necessary to connect to the shared array into the class instance and returns it to caller.
         return cls(

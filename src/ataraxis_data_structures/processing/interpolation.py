@@ -62,9 +62,10 @@ def interpolate_data(
 
         return interpolated_data
 
-    # Casts all inputs to float64 because linear interpolation always produces float64 outputs.
+    # Casts all inputs to float64 because linear interpolation always produces float64 outputs. np.asarray returns the
+    # input object itself when it already carries that dtype, so a float64 caller pays no copy.
     return np.interp(
-        x=target_coordinates.astype(np.float64),
-        xp=source_coordinates.astype(np.float64),
-        fp=source_values.astype(np.float64),
+        x=np.asarray(a=target_coordinates, dtype=np.float64),
+        xp=np.asarray(a=source_coordinates, dtype=np.float64),
+        fp=np.asarray(a=source_values, dtype=np.float64),
     )

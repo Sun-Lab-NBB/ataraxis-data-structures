@@ -526,3 +526,43 @@ def test_collect_type_hooks_union_enum() -> None:
     int_priority_hook = hooks[int | Priority]
     assert int_priority_hook(1) is Priority.LOW
     assert int_priority_hook(99) == 99
+
+
+def test_to_yaml_leaves_previous_file_intact_when_the_dump_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that a failed dump removes its temporary file and leaves the previously saved document in place."""
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        value: str = ""
+
+    yaml_path = tmp_path / "atomic.yaml"
+    TestConfig(value="original").to_yaml(file_path=yaml_path)
+    original_bytes = yaml_path.read_bytes()
+
+    def failing_dump(**_kwargs: Any) -> None:
+        message = "simulated dump failure"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(target="yaml.dump", name=failing_dump)
+
+    with pytest.raises(RuntimeError, match="simulated dump failure"):
+        TestConfig(value="replacement").to_yaml(file_path=yaml_path)
+
+    # The previous document survives untouched, and the temporary file the failed write created is gone.
+    assert yaml_path.read_bytes() == original_bytes
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["atomic.yaml"]
+
+
+def test_yaml_round_trip_uses_utf8_regardless_of_locale(tmp_path: Path) -> None:
+    """Verifies that non-ASCII content authored as UTF-8 survives a load, rather than decoding through the locale."""
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        name: str = ""
+
+    yaml_path = tmp_path / "unicode.yaml"
+    yaml_path.write_bytes("---\nname: caf\u00e9 na\u00efve\n...\n".encode())
+
+    assert TestConfig.from_yaml(file_path=yaml_path).name == "caf\u00e9 na\u00efve"

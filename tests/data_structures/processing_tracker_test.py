@@ -869,6 +869,16 @@ def test_processing_tracker_complete_property_empty_jobs(tmp_path: Path) -> None
     assert not tracker.complete
 
 
+def test_processing_tracker_generate_job_id_golden_values() -> None:
+    """Verifies that generate_job_id produces the exact digests every tracker file on disk is keyed by."""
+    # These are golden values. Job IDs are the persisted keys inside every tracker YAML and the cross-process handle
+    # for a job, so any change to the delimiter, the encoding, the hash function, or its seed orphans existing
+    # trackers. Deriving the expectation by calling the function would make the implementation its own oracle.
+    assert ProcessingTracker.generate_job_id(job_name="suite2p_processing", specifier="plane_0") == "cd0547cf71e4ea30"
+    assert ProcessingTracker.generate_job_id(job_name="suite2p_processing", specifier="") == "ced6b6029ca878f9"
+    assert ProcessingTracker.generate_job_id(job_name="process_data", specifier="batch_101") == "e30d3e55fffe8b95"
+
+
 def _clear_scheduler_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Removes every scheduler variable the executor resolver consults so a test observes the process-id fallback."""
     for variable in (

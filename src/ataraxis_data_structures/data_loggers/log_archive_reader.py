@@ -183,16 +183,19 @@ class LogArchiveReader:
 
         target_keys = keys if keys is not None else self._get_message_keys()
 
+        # The header width is the same for every message, so it is resolved once rather than per message.
+        header_size = 1 + self._TIMESTAMP_BYTE_SIZE
+
         with np.load(file=self._archive_path, allow_pickle=False, mmap_mode="r") as archive:
             for key in target_keys:
                 message: NDArray[np.uint8] = archive[key]
 
                 # Extracts the elapsed microseconds from the message header.
-                elapsed_us = message[1 : 1 + self._TIMESTAMP_BYTE_SIZE].view(np.uint64).item()
+                elapsed_us = message[1:header_size].view(np.uint64).item()
 
                 absolute_timestamp = onset + elapsed_us
 
-                payload = message[1 + self._TIMESTAMP_BYTE_SIZE :].copy()
+                payload = message[header_size:].copy()
 
                 yield LogMessage(timestamp_us=np.uint64(absolute_timestamp), payload=payload)
 
@@ -206,14 +209,16 @@ class LogArchiveReader:
         Returns:
             The absolute message timestamps in microseconds, paired with a list of the per-message payload arrays.
         """
-        timestamps: list[np.uint64] = []
+        # Preallocates the timestamp array and fills it by index, so the timestamps never exist as a list of boxed
+        # NumPy scalars. The count is free, since message_count reuses the memoized key list iter_messages also reads.
+        timestamps: NDArray[np.uint64] = np.empty(shape=self.message_count, dtype=np.uint64)
         payloads: list[NDArray[np.uint8]] = []
 
-        for message in self.iter_messages():
-            timestamps.append(message.timestamp_us)
+        for index, message in enumerate(self.iter_messages()):
+            timestamps[index] = message.timestamp_us
             payloads.append(message.payload)
 
-        return np.array(timestamps, dtype=np.uint64), payloads
+        return timestamps, payloads
 
     def _get_message_keys(self) -> list[str]:
         """Returns the cached list of message keys, loading and filtering if necessary.

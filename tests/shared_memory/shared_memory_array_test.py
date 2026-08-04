@@ -569,3 +569,19 @@ def test_cross_process_concurrent_access() -> None:
 
     # Cleans up.
     shared_memory_array.destroy()
+
+
+def test_create_array_releases_buffer_when_initialization_fails() -> None:
+    """Verifies that a prototype the buffer cannot be initialized from leaves no shared memory segment behind."""
+    buffer_name = "test_create_array_failed_init"
+
+    # A zero-dimensional array passes the ndarray type guard, then fails the slice assignment that fills the buffer.
+    with pytest.raises(IndexError):
+        SharedMemoryArray.create_array(name=buffer_name, prototype=np.array(5, dtype=np.uint8))
+
+    # No instance exists to call destroy(), so the segment must have been released by create_array itself. Recreating
+    # under the same name without the 'exists_ok' escape hatch proves the name was freed.
+    recreated = SharedMemoryArray.create_array(name=buffer_name, prototype=np.array([1, 2, 3], dtype=np.uint8))
+    recreated.connect()
+    recreated.disconnect()
+    recreated.destroy()

@@ -2,10 +2,12 @@
 its data from a .yaml (YAML) file.
 """
 
+import os
 from enum import Enum
 from types import UnionType
 from typing import Any, Self, Union, get_args, get_origin, get_type_hints
 from pathlib import Path
+from tempfile import mkstemp
 from dataclasses import fields, dataclass, is_dataclass
 from collections.abc import Callable
 
@@ -218,6 +220,9 @@ class YamlConfig:
             annotated fields. A field whose annotation unions ``Path`` with ``str`` cannot be discriminated on load
             and is restored as a string.
 
+            The file is written through a temporary file and renamed into place, so a process killed mid-write leaves
+            the previously saved file intact. Both reading and writing use UTF-8 regardless of the host locale.
+
         Args:
             file_path: The path to the .yaml file to write.
 
@@ -252,14 +257,25 @@ class YamlConfig:
         ensure_directory_exists(path=file_path)
 
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
-        # to the .yaml file.
-        with file_path.open(mode="w") as yaml_file:
-            yaml.dump(  # type: ignore[call-overload]
-                data=_serialize_value(value=self),
-                stream=yaml_file,
-                Dumper=yaml.CDumper if _LIBYAML_AVAILABLE else yaml.Dumper,
-                **yaml_formatting,
-            )
+        # through a temporary file created in the destination's own directory, so the rename below stays inside one
+        # filesystem and is therefore atomic. A writer killed mid-dump leaves the previous complete document in place,
+        # rather than the empty file that truncating the destination first would leave.
+        descriptor, temporary_path = mkstemp(dir=file_path.parent, prefix=f".{file_path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd=descriptor, mode="w", encoding="utf-8") as yaml_file:
+                yaml.dump(  # type: ignore[call-overload]
+                    data=_serialize_value(value=self),
+                    stream=yaml_file,
+                    Dumper=yaml.CDumper if _LIBYAML_AVAILABLE else yaml.Dumper,
+                    **yaml_formatting,
+                )
+                # Forces the data out of the userspace and kernel buffers before the rename publishes the file.
+                yaml_file.flush()
+                os.fsync(yaml_file.fileno())
+            Path(temporary_path).replace(target=file_path)
+        except BaseException:
+            Path(temporary_path).unlink(missing_ok=True)
+            raise
 
     @classmethod
     def from_yaml(cls, file_path: Path) -> Self:
@@ -298,7 +314,7 @@ class YamlConfig:
         # Loads the data from the .yaml file. Both parsers build values through the same safe constructor, so they
         # differ in speed alone. Each loader is named literally, since a loader resolved through a variable reads as
         # an arbitrary-object deserialization risk to static analysis.
-        with file_path.open() as yaml_file:
+        with file_path.open(encoding="utf-8") as yaml_file:
             data = (
                 yaml.load(stream=yaml_file, Loader=yaml.CSafeLoader)
                 if _LIBYAML_AVAILABLE

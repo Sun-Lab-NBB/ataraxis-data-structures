@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from queue import Empty
 from typing import TYPE_CHECKING, Any, Literal
+from operator import itemgetter
 import platform
 from functools import partial
 from threading import Thread
+from contextlib import contextmanager
 from collections import defaultdict
 from dataclasses import dataclass
 from multiprocessing import (
@@ -22,10 +24,12 @@ import numpy as np
 from ataraxis_time import PrecisionTimer, TimerPrecisions
 from ataraxis_base_utilities import console, resolve_worker_count, convert_scalar_to_bytes, ensure_directory_exists
 
+from ..processing import limit_worker_threads
 from ..shared_memory import SharedMemoryArray
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from collections.abc import Generator
     from multiprocessing.context import SpawnContext
     from multiprocessing.process import BaseProcess
     from multiprocessing.managers import SyncManager
@@ -70,11 +74,12 @@ class LogPackage:
         serialized_source = convert_scalar_to_bytes(value=self.source_id, dtype=np.dtype(np.uint8))
 
         # Assumes that each source produces the data sequentially and that timestamps are acquired with high enough
-        # resolution to resolve the order of data acquisition.
+        # resolution to resolve the order of data acquisition. np.concatenate allocates a fresh array that owns its
+        # buffer and aliases none of its inputs, so the result needs no defensive copy.
         data = np.concatenate(
             [serialized_source, serialized_acquisition_time, self.serialized_data],
             dtype=np.uint8,
-        ).copy()
+        )
 
         # Zero-pads ID and timestamp. Uses the correct number of zeroes to represent the number of digits that
         # fit into each datatype (uint8 and uint64).
@@ -179,19 +184,21 @@ class DataLogger:
             exists_ok=True,
         )
 
-        # Creates and starts the logger process.
-        self._logger_process = self._multiprocessing_context.Process(
-            target=self._log_cycle,
-            args=(
-                self._input_queue,
-                self._terminator_array,
-                self._output_directory,
-                self._thread_count,
-                self._poll_interval,
-            ),
-            daemon=True,
-        )
-        self._logger_process.start()
+        # Creates and starts the logger process. The logger writes .npy files rather than performing numeric work, so
+        # its process is spawned under the thread limit to keep the numeric backends from opening a pool it never uses.
+        with limit_worker_threads():
+            self._logger_process = self._multiprocessing_context.Process(
+                target=self._log_cycle,
+                args=(
+                    self._input_queue,
+                    self._terminator_array,
+                    self._output_directory,
+                    self._thread_count,
+                    self._poll_interval,
+                ),
+                daemon=True,
+            )
+            self._logger_process.start()
 
         # Finishes setting up the terminator array in the main runtime thread. Specifically, connects to the shared
         # memory buffer and enables destroying the buffer when the instance is garbage-collected.
@@ -260,13 +267,16 @@ class DataLogger:
 
             # Only checks that the process is alive if it is started.
             if self._logger_process is not None and not self._logger_process.is_alive():  # pragma: no cover
+                # Retires the instance in the same order stop() uses, clearing the started flag before releasing the
+                # terminator array. stop() reads that flag first and returns early once it is False, so a concurrent
+                # shutdown cannot reach the array after this thread has destroyed it.
+                self._started = False
+
                 # Cleans up all resources, similar to the stop() method.
                 self._terminator_array[0] = 1
                 self._logger_process.join()
                 self._terminator_array.disconnect()
                 self._terminator_array.destroy()
-                # Prevents stop() from running again via __del__.
-                self._started = False
 
                 # Raises the error.
                 message = (
@@ -375,27 +385,24 @@ def assemble_log_archives(
     # Windows. Callers cap RAM usage on Windows through the max_workers argument.
     memory_mapping = memory_mapping and platform.system() != "Windows"
 
-    # Configures console progress display based on the verbose flag and saves the prior progress state to allow
-    # restoring it once the function runtime completes.
-    previous_progress = console.progress_enabled
-    if verbose:
-        console.enable_progress()
-    else:
-        console.disable_progress()
-
-    # Collects all .npy files and groups them by source_id.
-    source_files: dict[int, list[Path]] = defaultdict(list)
+    # Collects all .npy files and groups them by source_id, parsing each stem once into its source and timestamp
+    # fields so the sort below reads the parsed timestamp rather than splitting every stem a second time.
+    source_entries: dict[int, list[tuple[int, Path]]] = defaultdict(list)
     for file_path in log_directory.rglob("*.npy"):
-        source_id = int(file_path.stem.split("_")[0])
-        source_files[source_id].append(file_path)
+        source_field, timestamp_field = file_path.stem.split("_")[:2]
+        source_entries[int(source_field)].append((int(timestamp_field), file_path))
 
-    # Sorts files within each source_id group by their integer-convertible timestamp.
-    for files in source_files.values():
-        files.sort(key=lambda file_path: int(file_path.stem.split("_")[1]))
+    # Sorts entries within each source_id group by their acquisition timestamp and drops the parsed sort keys.
+    source_files: dict[int, list[Path]] = {
+        source_id: [file_path for _, file_path in sorted(entries, key=itemgetter(0))]
+        for source_id, entries in source_entries.items()
+    }
 
     # Initiates log processing. Since some steps of log processing are more efficiently executed via multithreading
     # and others via multiprocessing, uses both process and thread pool executors to efficiently process the data.
     with (
+        _progress_display(enabled=verbose),
+        limit_worker_threads(),
         console.temporarily_enabled(),
         ProcessPoolExecutor(max_workers=max_workers, mp_context=_MULTIPROCESSING_CONTEXT) as process_executor,
         ThreadPoolExecutor(max_workers=max_workers) as thread_executor,
@@ -466,7 +473,8 @@ def assemble_log_archives(
             # Verifies the integrity of each archive data against the original data.
             verification_futures = [
                 thread_executor.submit(
-                    partial(_compare_arrays, source_id=source_id),
+                    _compare_arrays,
+                    source_id=source_id,
                     stem=stem,
                     original_array=original_array,
                     archived_array=archive_data[source_id][stem],
@@ -499,11 +507,34 @@ def assemble_log_archives(
                     remove_future.result()
                     progress_bar.update(1)
 
-    # Restores the console progress display to its previous state.
-    if previous_progress:
-        console.enable_progress()  # pragma: no cover
+
+@contextmanager
+def _progress_display(*, enabled: bool) -> Generator[None, None, None]:
+    """Sets the console progress display for the duration of the context and restores the previous state on exit.
+
+    Notes:
+        The console tracks the progress display separately from its enabled state, so ``temporarily_enabled()`` does
+        not restore it. The restore runs on the exception path as well, which keeps a failed archive assembly from
+        leaving the process-global display flag inverted for every later caller.
+
+    Args:
+        enabled: Determines whether the progress display is active inside the context.
+
+    Yields:
+        None.
+    """
+    previous_progress = console.progress_enabled
+    if enabled:
+        console.enable_progress()
     else:
         console.disable_progress()
+    try:
+        yield
+    finally:
+        if previous_progress:
+            console.enable_progress()
+        else:
+            console.disable_progress()
 
 
 def _load_numpy_files(
