@@ -498,7 +498,7 @@ def test_transfer_directory_integrity_check_detects_corruption(
     # Verifies the error message contains expected information.
     # Normalizes whitespace since the error message may contain line breaks.
     error_message = str(exception_info.value).replace("\n", " ")
-    assert "Checksum mismatch detected" in error_message
+    assert "Unable to verify the integrity of the directory transferred" in error_message
     assert "corrupted in transmission" in error_message
 
     # Verifies both source and destination were checksummed.
@@ -543,7 +543,7 @@ def test_transfer_directory_checksum_path_truncation(tmp_path: Path, monkeypatch
 
     # Verifies the error message contains truncated paths.
     error_message = str(exception_info.value)
-    assert "Checksum mismatch detected" in error_message
+    assert "Unable to verify the integrity of the directory transferred" in error_message
 
     # Verifies the paths show the last 6 parts (e/f/source and v/u/dest).
     assert "e/f/source" in error_message or "e\\f\\source" in error_message  # Unix or Windows path separator.

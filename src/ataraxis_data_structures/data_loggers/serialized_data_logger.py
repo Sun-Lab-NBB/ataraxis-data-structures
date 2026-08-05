@@ -105,7 +105,7 @@ class DataLogger:
     Notes:
         The start() method starts the logger process. It must complete before any data is submitted for logging.
 
-        Use the multiprocessing Queue exposed via the 'input_queue' property to send the data to the logger. The data
+        Use the multiprocessing Queue exposed via the ``input_queue`` property to send the data to the logger. The data
         must be packaged into the LogPackage class instance before it is submitted to the queue.
 
         Submitting data to the input queue does not confirm that the data reached the disk, since the logger process
@@ -441,7 +441,7 @@ def assemble_log_archives(
 
     Args:
         log_directory: The path to the directory that stores the log entries of one DataLogger instance as .npy
-            files, which is the directory the instance exposes through its output_directory property.
+            files, which is the directory the instance exposes through its ``output_directory`` property.
         max_workers: Determines the number of worker processes and threads used to process the data in parallel. A
             positive value is honored exactly, capped at the logical core count. If set to None, 0, or a negative
             value, the function uses the number of CPU cores minus 2, clamped to at least 1.
@@ -456,8 +456,8 @@ def assemble_log_archives(
     # Resolves the number of threads and processes to use during runtime.
     max_workers = resolve_worker_count(requested_workers=max_workers or 0)
 
-    # Due to erratic interaction between memory mapping and Windows (as always), disables memory mapping on
-    # Windows. Callers cap RAM usage on Windows through the max_workers argument.
+    # Windows does not release memory-mapped file handles reliably, so memory mapping is disabled on that platform.
+    # Callers cap RAM usage on Windows through the max_workers argument.
     memory_mapping = memory_mapping and platform.system() != "Windows"
 
     # Collects all .npy files and groups them by source_id, parsing each stem once into its source and timestamp
@@ -506,7 +506,7 @@ def assemble_log_archives(
                 stems, arrays = load_future.result()
                 for stem, array in zip(stems, arrays, strict=False):
                     loaded_data[source_id][stem] = array
-                    progress_bar.update(1)
+                    progress_bar.update(n=1)
 
         # PHASE 2: Assembles archives. Here, each archive is processed in parallel, but all archive log entries for
         # each archive are processed sequentially.
@@ -525,7 +525,7 @@ def assemble_log_archives(
             for archive_future in as_completed(archive_futures):
                 archive_id, archive_path = archive_future.result()
                 archives[archive_id] = archive_path
-                progress_bar.update(1)
+                progress_bar.update(n=1)
 
         # PHASE 3: Verifies archived data integrity against the original data if this is requested.
         if verify_integrity:
@@ -543,7 +543,7 @@ def assemble_log_archives(
             ) as progress_bar:
                 for source_id, integrity_future in archived_futures.items():
                     archive_data[source_id] = integrity_future.result()
-                    progress_bar.update(1)
+                    progress_bar.update(n=1)
 
             # Verifies the integrity of each archive data against the original data.
             verification_futures = [
@@ -566,7 +566,7 @@ def assemble_log_archives(
             ) as progress_bar:
                 for verify_future in as_completed(verification_futures):
                     verify_future.result()  # Propagates errors if comparison fails.
-                    progress_bar.update(1)
+                    progress_bar.update(n=1)
 
         # PHASE 4: Removes source files if requested.
         if remove_sources:
@@ -580,7 +580,7 @@ def assemble_log_archives(
             ) as progress_bar:
                 for remove_future in as_completed(removal_futures):
                     remove_future.result()
-                    progress_bar.update(1)
+                    progress_bar.update(n=1)
 
 
 @contextmanager
@@ -624,8 +624,8 @@ def _load_numpy_files(
         memory_map: Determines whether to memory-map the files or load them into memory (RAM).
 
     Returns:
-        A tuple of two elements. The first element is a tuple of loaded file names (without extension). The second
-        element is a tuple of loaded or memory-mapped data arrays.
+        The first element is the tuple of loaded file names, without their extension. The second is the tuple of
+        loaded or memory-mapped data arrays.
     """
     mmap_mode: Literal["r"] | None = "r" if memory_map else None
     results = [(file_path.stem, np.load(file=file_path, mmap_mode=mmap_mode)) for file_path in file_paths]
@@ -659,8 +659,7 @@ def _assemble_archive(
             array values.
 
     Returns:
-        A tuple of two elements. The first element is the source ID code. The second element is the path to the
-        uncompressed .npz log archive.
+        The first element is the source ID code. The second is the path to the uncompressed .npz log archive.
     """
     output_path = output_directory.joinpath(f"{source_id}_log.npz")
 

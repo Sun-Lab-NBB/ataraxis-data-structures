@@ -189,17 +189,12 @@ class ProcessingTracker(YamlConfig):
                 if job_id not in self.jobs:
                     self.jobs[job_id] = JobState(job_name=job_name, specifier=specifier)
                 else:
-                    # Temporarily enables console output to ensure the warning is visible, then restores previous state.
-                    was_enabled = console.enabled
-                    if not was_enabled:
-                        console.enable()
-                    console.echo(
-                        message=f"Job '{job_name}' with specifier '{specifier}' (ID: {job_id}) already exists in the "
-                        f"tracker. Skipping duplicate entry.",
-                        level=LogLevel.WARNING,
+                    message = (
+                        f"Job '{job_name}' with specifier '{specifier}' (ID: {job_id}) already exists in the tracker. "
+                        f"Skipping duplicate entry."
                     )
-                    if not was_enabled:
-                        console.disable()
+                    with console.temporarily_enabled():
+                        console.echo(message=message, level=LogLevel.WARNING)
                 job_ids.append(job_id)
 
             self._save_state()
@@ -269,20 +264,13 @@ class ProcessingTracker(YamlConfig):
 
             foreign_ids = sorted(set(self.jobs) - universe_ids)
             if foreign_ids:
-                # Temporarily enables console output to ensure the warning is visible, then restores previous state.
-                was_enabled = console.enabled
-                if not was_enabled:
-                    console.enable()
-                console.echo(
-                    message=(
-                        f"The processing tracker at '{self.file_path}' contains {len(foreign_ids)} job entries that "
-                        f"are not part of the current job universe. Discarding them and preserving every in-universe "
-                        f"job. Discarded job IDs: {foreign_ids}."
-                    ),
-                    level=LogLevel.WARNING,
+                message = (
+                    f"The processing tracker at '{self.file_path}' contains {len(foreign_ids)} job entries that are "
+                    f"not part of the current job universe. Discarding them and preserving every in-universe job. "
+                    f"Discarded job IDs: {foreign_ids}."
                 )
-                if not was_enabled:
-                    console.disable()
+                with console.temporarily_enabled():
+                    console.echo(message=message, level=LogLevel.WARNING)
                 for foreign_id in foreign_ids:
                     del self.jobs[foreign_id]
 
@@ -469,6 +457,9 @@ class ProcessingTracker(YamlConfig):
         Args:
             job_id: The unique identifier of the job for which to query the runtime status.
 
+        Returns:
+            The status the tracker currently records for the target job.
+
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
             ValueError: If the specified job ID is not found in the managed tracker file.
@@ -538,7 +529,7 @@ class ProcessingTracker(YamlConfig):
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
-            KeyError: If status is a string that does not name a valid ProcessingStatus member.
+            KeyError: If ``status`` is a string that does not name a valid ProcessingStatus member.
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
@@ -600,7 +591,8 @@ class ProcessingTracker(YamlConfig):
     def reset_jobs(self, job_ids: list[str]) -> list[str]:
         """Resets the specified jobs back to SCHEDULED status, leaving every other job's state untouched.
 
-        Clears the error_message, started_at, completed_at, and executor_id fields of each targeted job.
+        Clears the ``error_message``, ``started_at``, ``completed_at``, and ``executor_id`` fields of each
+        targeted job.
 
         Notes:
             Every job outside ``job_ids`` keeps its recorded status, executor, and timestamps.
@@ -651,7 +643,8 @@ class ProcessingTracker(YamlConfig):
     def retry_failed_jobs(self) -> list[str]:
         """Resets all failed jobs back to SCHEDULED status for retry.
 
-        Clears the error_message, started_at, completed_at, and executor_id fields for each failed job.
+        Clears the ``error_message``, ``started_at``, ``completed_at``, and ``executor_id`` fields for each
+        failed job.
 
         Returns:
             A list of job IDs that were reset for retry.

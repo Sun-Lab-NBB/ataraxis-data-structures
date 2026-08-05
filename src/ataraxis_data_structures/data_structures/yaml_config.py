@@ -283,7 +283,7 @@ class YamlConfig:
             file_path: The path to the .yaml file to write.
 
         Raises:
-            ValueError: If the file_path does not point to a file with a '.yaml' or '.yml' extension.
+            ValueError: If ``file_path`` does not point to a file with a '.yaml' or '.yml' extension.
         """
         # Defines YAML formatting options that keep YAML blocks readable when edited by the user.
         yaml_formatting = {

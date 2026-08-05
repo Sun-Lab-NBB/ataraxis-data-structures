@@ -77,8 +77,8 @@ def transfer_directory(
         This function recreates the moved directory hierarchy on the destination if the hierarchy does not exist. This
         is done before copying the files.
 
-        The function performs a multithreaded copy operation when 'num_threads' is greater than 1 and a sequential
-        copy otherwise. The source data is removed after the copy only when 'remove_source' is enabled.
+        The function performs a multithreaded copy operation when ``num_threads`` is greater than 1 and a sequential
+        copy otherwise. The source data is removed after the copy only when ``remove_source`` is enabled.
 
         If the function is configured to verify the transferred data's integrity, it reuses the xxHash3-128 checksum
         stored in the source directory's ax_checksum.txt file when that file exists. Otherwise, it generates the
@@ -215,8 +215,9 @@ def transfer_directory(
         with source.joinpath(CHECKSUM_FILENAME).open("r") as local_checksum:
             if destination_checksum != local_checksum.readline().strip():
                 message = (
-                    f"Checksum mismatch detected when transferring {Path(*source.parts[-6:])} to "
-                    f"{Path(*destination.parts[-6:])}! The data was likely corrupted in transmission."
+                    f"Unable to verify the integrity of the directory transferred from {Path(*source.parts[-6:])} to "
+                    f"{Path(*destination.parts[-6:])}. The destination checksum must match the source checksum, but "
+                    f"the two differ, which indicates that the data was corrupted in transmission."
                 )
                 console.error(message=message, error=RuntimeError)
 
@@ -294,8 +295,8 @@ def _transfer_file(source_file: Path, source_directory: Path, destination_direct
     """Copies the input file from the source directory to the destination directory while preserving the file metadata.
 
     Notes:
-        If the file is found under a hierarchy of subdirectories inside the input source_directory, that hierarchy will
-        be preserved in the destination directory.
+        If the file is found under a hierarchy of subdirectories inside the input ``source_directory``, that hierarchy
+        is preserved in the destination directory.
 
     Args:
         source_file: The file to be copied.
