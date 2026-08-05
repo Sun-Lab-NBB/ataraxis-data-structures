@@ -21,6 +21,14 @@ _MULTIPROCESSING_CONTEXT: SpawnContext = get_context("spawn")
 """The spawn-based multiprocessing context used to create the process pool that calculates file checksums, ensuring
 identical cross-platform behavior on all supported platforms."""
 
+CHECKSUM_FILENAME: str = "ax_checksum.txt"
+"""The name of the file a directory checksum is written to, at the top level of the checksummed directory.
+
+Notes:
+    The name is shared with the transfer utilities, which both exclude it from the digest and treat it as an expected
+    destination entry, so both sides have to agree on the spelling.
+"""
+
 _CHECKSUM_CHUNK_SIZE: int = 1024 * 1024 * 8
 """The size, in bytes, of the buffer each worker reads file data into. Bounds the resident memory one worker needs to
 checksum a file of any size."""
@@ -59,7 +67,7 @@ def calculate_directory_checksum(
         The xxHash3-128 checksum for the input directory as a hexadecimal string.
     """
     if excluded_files is None:
-        excluded_files = {"ax_checksum.txt"}
+        excluded_files = {CHECKSUM_FILENAME}
 
     if num_processes is None:
         num_processes = resolve_worker_count()
@@ -160,6 +168,6 @@ def _write_checksum_file(directory: Path, checksum: str) -> None:
         directory: The directory whose top level receives the ax_checksum.txt file.
         checksum: The hexadecimal checksum string to write.
     """
-    checksum_path = directory.joinpath("ax_checksum.txt")
+    checksum_path = directory.joinpath(CHECKSUM_FILENAME)
     with checksum_path.open("w") as file:
         file.write(checksum)

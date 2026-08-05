@@ -344,20 +344,69 @@ def test_transfer_directory_metadata_preservation(sample_directory_structure: Pa
 
 
 def test_transfer_directory_to_existing_destination(sample_directory_structure: Path, tmp_path: Path) -> None:
-    """Verifies transfer when the destination directory already exists."""
+    """Verifies transfer into a destination that already exists and holds nothing the source does not account for."""
     source = sample_directory_structure
     destination = tmp_path / "existing_dest"
 
-    # Pre-creates destination.
+    # Pre-creates the destination, along with a subdirectory the source also provides.
     destination.mkdir()
-    (destination / "existing_file.txt").write_text("existing")
+    (destination / "subdir1").mkdir()
 
     transfer_directory(source=source, destination=destination)
 
-    # Verifies both old and new files exist.
-    assert (destination / "existing_file.txt").exists()
     assert (destination / "file1.txt").exists()
     assert (destination / "subdir1" / "file3.txt").exists()
+
+
+def test_transfer_directory_rejects_a_dirty_destination(sample_directory_structure: Path, tmp_path: Path) -> None:
+    """Verifies that a destination holding unaccounted files is rejected rather than failing the integrity check."""
+    source = sample_directory_structure
+    destination = tmp_path / "dirty_dest"
+    destination.mkdir()
+    (destination / "stray.txt").write_text("left over from an earlier transfer")
+
+    with pytest.raises(RuntimeError, match="does not account for"):
+        transfer_directory(source=source, destination=destination)
+
+    # The rejected transfer left the destination exactly as it found it.
+    assert (destination / "stray.txt").exists()
+    assert not (destination / "file1.txt").exists()
+
+
+def test_transfer_directory_resets_a_dirty_destination(sample_directory_structure: Path, tmp_path: Path) -> None:
+    """Verifies that the reset flag deletes the unaccounted files and lets the verified transfer proceed."""
+    source = sample_directory_structure
+    destination = tmp_path / "reset_dest"
+    (destination / "subdir1").mkdir(parents=True)
+    (destination / "stray.txt").write_text("left over from an earlier transfer")
+    (destination / "subdir1" / "nested_stray.txt").write_text("also left over")
+
+    transfer_directory(source=source, destination=destination, verify_integrity=True, reset_dirty_destination=True)
+
+    # Only the unaccounted files were removed, and the transfer verified cleanly against the cleaned destination.
+    assert not (destination / "stray.txt").exists()
+    assert not (destination / "subdir1" / "nested_stray.txt").exists()
+    assert (destination / "file1.txt").read_text() == "content1"
+    assert (destination / "subdir1" / "file3.txt").read_text() == "content3"
+
+
+def test_transfer_directory_rejects_a_source_holding_symlinks(sample_directory_structure: Path, tmp_path: Path) -> None:
+    """Verifies that a source tree containing a symlink is refused before anything is written."""
+    source = sample_directory_structure
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "payload.txt").write_text("data the link stands for")
+    (source / "linked").symlink_to(outside, target_is_directory=True)
+
+    destination = tmp_path / "symlink_dest"
+
+    with pytest.raises(RuntimeError, match="Resolve the following link"):
+        transfer_directory(source=source, destination=destination, verify_integrity=True)
+
+    # The refusal precedes every side effect, so no checksum was written and no destination entry was created.
+    assert not (source / "ax_checksum.txt").exists()
+    assert not destination.exists()
+    assert (outside / "payload.txt").exists()
 
 
 def test_transfer_directory_single_vs_multi_thread_consistency(
