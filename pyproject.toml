@@ -204,9 +204,12 @@ exclude = [
 ]
 
 # Pytest configuration. The import mode is declared here so that a bare 'pytest' invocation resolves test modules the
-# same way the '{py}-test' tox task does.
+# same way the '{py}-test' tox task does. Since that mode keeps the project root off 'sys.path', the 'pythonpath' entry
+# puts it back, which is what lets the processes the SharedMemoryArray tests spawn import the test module that defines
+# their target callables. A spawned process inherits the parent's 'sys.path' and unpickles its target from that module.
 [tool.pytest.ini_options]
 addopts = "--import-mode=importlib"
+pythonpath = ["."]
 
 # Configures coverage measurement. The library runs its logger inside a spawned process and distributes checksum and
 # archive assembly work across process pools, so measurement covers subprocesses and threads in addition to the main

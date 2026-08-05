@@ -686,6 +686,8 @@ def test_cross_process_read_write() -> None:
     process.start()
     process.join()
 
+    assert process.exitcode == 0
+
     # Finishes setting up the array in the local process, which is connected to the buffer since its creation.
 
     # Verifies that the data written by the other process is accessible from the main process.
@@ -752,6 +754,11 @@ def test_cross_process_concurrent_access() -> None:
         process.start()
     for process in processes:
         process.join()
+
+    # Joins every process before reading the exit codes, so that a worker that fails does not leave its siblings
+    # unjoined.
+    for process in processes:
+        assert process.exitcode == 0
 
     # Finishes setting up the array in the local process, which is connected to the buffer since its creation.
 
