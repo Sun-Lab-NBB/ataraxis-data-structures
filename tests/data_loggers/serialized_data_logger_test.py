@@ -57,6 +57,20 @@ def test_data_logger_directory_creation(tmp_path: Path) -> None:
 
 
 @pytest.mark.xdist_group(name="group1")
+def test_data_logger_directory_creation_for_a_dotted_instance_name(tmp_path: Path) -> None:
+    """Verifies that an instance name carrying a dot still produces a real output directory.
+
+    The trailing path component reads as a file suffix, so the directory has to be declared as a directory explicitly.
+    Left to the suffix heuristic, only the parent is created and every log entry is written into a path that does not
+    exist.
+    """
+    logger = DataLogger(output_directory=tmp_path, instance_name="camera.1")
+
+    assert logger.output_directory == tmp_path / "camera.1_data_log"
+    assert logger.output_directory.is_dir()
+
+
+@pytest.mark.xdist_group(name="group1")
 def test_data_logger_start_stop(tmp_path: Path) -> None:
     """Verifies the start and stop functionality of the DataLogger."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")

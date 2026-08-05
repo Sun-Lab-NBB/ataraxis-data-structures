@@ -1,4 +1,6 @@
-"""Provides utilities for data integrity verification, directory transfer, and data interpolation."""
+"""Provides utilities for data integrity verification, directory transfer, data interpolation, and worker thread
+limiting.
+"""
 
 from .interpolation import interpolate_data
 from .checksum_tools import calculate_directory_checksum

@@ -306,8 +306,9 @@ class YamlConfig:
             )
             console.error(message=message, error=ValueError)
 
-        # If necessary, creates the missing directory components of the file_path.
-        ensure_directory_exists(path=file_path)
+        # If necessary, creates the missing directory components of the file_path. The guard above accepts a .yaml or
+        # .yml path alone, so the path is always a file path and the directory to create is its parent.
+        ensure_directory_exists(path=file_path, is_file=True)
 
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
         # through a temporary file created in the destination's own directory, so the rename below stays inside one
@@ -374,6 +375,7 @@ class YamlConfig:
         Raises:
             ValueError: If the provided file path does not point to a .yaml or .yml file, or if the file does not
                 contain a top-level mapping.
+            FileNotFoundError: If no file exists at the provided file path.
         """
         # Ensures that file_path points to a .yaml / .yml file.
         if file_path.suffix not in {".yaml", ".yml"}:

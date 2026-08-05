@@ -52,8 +52,8 @@ classifiers = [
 # Runtime project dependencies.
 dependencies = [
     # Ataraxis
-    "ataraxis-base-utilities>=6,<7",
-    "ataraxis-time>=6,<7",
+    "ataraxis-base-utilities>=7,<8",
+    "ataraxis-time>=7,<8",
 
     # Data Processing
     "dacite>=1,<2",

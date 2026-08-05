@@ -33,7 +33,8 @@ ___
   non-volatile memory.
 - Offers efficient batch processing of log archives with support for parallel workflows.
 - Includes a file-based processing pipeline tracker for coordinating multi-process and multi-host data processing jobs.
-- Provides utilities for data integrity verification, directory transfer, and time-series interpolation.
+- Provides utilities for data integrity verification, directory transfer, time-series interpolation, and worker thread
+  limiting.
 - Apache 2.0 License.
 
 ___
@@ -131,6 +132,49 @@ loaded_config = MyConfig.from_yaml(file_path=out_path)
 # Ensures that the loaded data matches the original MyConfig instance data.
 assert loaded_config.integer == config.integer
 assert loaded_config.string == config.string
+```
+
+#### Excluding Fields from the Document
+
+A dataclass field marked with the `YAML_EXCLUDE_METADATA_KEY` metadata key is skipped when the instance is written,
+which suits a field that records where the instance lives rather than what it holds. The written document carries no
+entry for such a field, so a class whose constructor requires it overrides the `restore_excluded_fields()` class method
+to supply the value back. The `from_yaml()` method calls that override between reading the document and building the
+instance, so it belongs to the deserialization machinery rather than to the API a caller invokes.
+
+```python
+from ataraxis_data_structures import YAML_EXCLUDE_METADATA_KEY, YamlConfig
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+import tempfile
+import yaml
+
+
+@dataclass
+class LocatedConfig(YamlConfig):
+    value: int = 0
+    # The path records where the instance lives, so it is kept out of the document the instance writes.
+    source_path: Path = field(default=Path("/unset"), metadata={YAML_EXCLUDE_METADATA_KEY: True})
+
+    @classmethod
+    def restore_excluded_fields(cls, data: dict[Any, Any], file_path: Path) -> dict[Any, Any]:
+        """Reattaches the reconstructed instance to the file it was read from."""
+        return {**data, "source_path": file_path}
+
+
+tempdir = tempfile.TemporaryDirectory()  # Creates a temporary directory for illustration purposes.
+out_path = Path(tempdir.name).joinpath("located.yaml")
+LocatedConfig(value=7, source_path=Path("/the/writing/host/path")).to_yaml(file_path=out_path)
+
+# The writing host's path stays out of the document entirely.
+with out_path.open() as yaml_file:
+    assert yaml.safe_load(yaml_file) == {"value": 7}
+
+# The reader supplies the path from where it found the file, rather than from what the writer recorded.
+loaded = LocatedConfig.from_yaml(file_path=out_path)
+assert loaded.value == 7
+assert loaded.source_path == out_path
 ```
 
 ### SharedMemoryArray
@@ -816,6 +860,40 @@ interpolated_discrete = interpolate_data(
     is_discrete=True,
 )
 print(f"Discrete: {interpolated_discrete}")  # [1, 2, 3, 4]
+```
+
+#### Worker Thread Limiting
+
+The `limit_worker_threads()` context manager constrains the thread pools that NumPy's numeric backends open inside
+worker processes. Each backend reads its threading environment variable once, while it is being imported, so the value
+a spawned worker inherits from its parent is the only value that reaches it. Without the limit, a pool running one
+worker per core holds the square of the core count in threads while using one of them.
+
+The context has to enclose the pool's entire lifetime rather than its construction alone, because a pool creates each
+worker when work is first submitted to it. The previous values are restored on exit, including when the wrapped block
+raises, which keeps the limit from leaking into whatever the calling process does next.
+
+```python
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import get_context
+from ataraxis_data_structures import limit_worker_threads
+
+
+def double_value(value: int) -> int:
+    """Stands in for the numeric work a real worker process performs."""
+    return value * 2
+
+
+if __name__ == "__main__":
+    # The limit reaches each worker through the environment a spawned child inherits, so the context wraps the pool's
+    # whole lifetime rather than only its construction.
+    with (
+        limit_worker_threads(thread_count=1),
+        ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn")) as executor,
+    ):
+        results = list(executor.map(double_value, range(4)))
+
+    assert results == [0, 2, 4, 6]
 ```
 
 ___

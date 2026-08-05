@@ -156,9 +156,11 @@ class DataLogger:
         self._poll_interval: int = max(0, poll_interval)
         self._name: str = str(instance_name)
 
-        # If necessary, ensures that the output directory tree exists.
+        # If necessary, ensures that the output directory tree exists. The path is declared as a directory, since an
+        # instance name carrying a dot would otherwise leave the final component reading as a file suffix, which would
+        # create the parent alone and leave the logger writing into a directory that does not exist.
         self._output_directory: Path = output_directory.joinpath(f"{self._name}_data_log")
-        ensure_directory_exists(path=self._output_directory)
+        ensure_directory_exists(path=self._output_directory, is_file=False)
 
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
         self._input_queue: MultiprocessingQueue = (  # type: ignore[type-arg]
@@ -441,7 +443,7 @@ def assemble_log_archives(
         log_directory: The path to the directory that stores the log entries of one DataLogger instance as .npy
             files, which is the directory the instance exposes through its output_directory property.
         max_workers: Determines the number of worker processes and threads used to process the data in parallel. A
-            positive value is honored exactly, capped at the physical core count. If set to None, 0, or a negative
+            positive value is honored exactly, capped at the logical core count. If set to None, 0, or a negative
             value, the function uses the number of CPU cores minus 2, clamped to at least 1.
         remove_sources: Determines whether to remove the .npy files after consolidating their data into .npz archives.
         memory_mapping: Determines whether to memory-map or load the processed data into RAM during processing. Due to

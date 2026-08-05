@@ -296,6 +296,9 @@ class SharedMemoryArray:
             TypeError: If the input prototype is not a NumPy array.
             FileExistsError: If a shared memory object with the same name as the input 'name' argument value already
                 exists and the 'exists_ok' flag is False.
+            IndexError: If the input prototype is a zero-dimensional NumPy array, which passes the type check above
+                and then fails the slice assignment that fills the buffer. The buffer is released before the error
+                propagates, so the buffer name is left free for a later call to claim.
         """
         # Ensures prototype is a NumPy ndarray.
         if not isinstance(prototype, np.ndarray):

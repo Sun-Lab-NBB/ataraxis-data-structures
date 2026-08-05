@@ -358,6 +358,27 @@ def test_transfer_directory_to_existing_destination(sample_directory_structure: 
     assert (destination / "subdir1" / "file3.txt").exists()
 
 
+def test_transfer_directory_creates_a_dotted_destination(tmp_path: Path) -> None:
+    """Verifies that a destination whose own name carries a dot is created as a directory rather than skipped.
+
+    The source deliberately holds no subdirectory. Recreating the source hierarchy calls mkdir() with 'parents' set,
+    so a source that carries even one subdirectory creates the destination as a side effect and hides the defect. With
+    a flat source, the directory check is the only step that can create the destination, and leaving it to the suffix
+    heuristic creates the parent alone and fails the copy against a destination that does not exist.
+    """
+    source = tmp_path / "flat_source"
+    source.mkdir()
+    (source / "file1.txt").write_text("content1")
+    (source / "file2.txt").write_text("content2")
+    destination = tmp_path / "session_2026.08.05"
+
+    transfer_directory(source=source, destination=destination)
+
+    assert destination.is_dir()
+    assert (destination / "file1.txt").read_text() == "content1"
+    assert (destination / "file2.txt").read_text() == "content2"
+
+
 def test_transfer_directory_rejects_a_dirty_destination(sample_directory_structure: Path, tmp_path: Path) -> None:
     """Verifies that a destination holding unaccounted files is rejected rather than failing the integrity check."""
     source = sample_directory_structure

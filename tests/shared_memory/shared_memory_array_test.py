@@ -718,7 +718,7 @@ def test_cross_process_auto_connect() -> None:
 
 
 @pytest.mark.xdist_group("cross_process")
-def test_cross_process_manual_connect_by_default() -> None:
+def test_cross_process_manual_connect_when_disabled() -> None:
     """Verifies that a child process receives a disconnected instance when 'auto_connect' is disabled."""
     prototype = np.zeros(shape=3, dtype=np.int32)
     shared_memory_array = SharedMemoryArray.create_array(

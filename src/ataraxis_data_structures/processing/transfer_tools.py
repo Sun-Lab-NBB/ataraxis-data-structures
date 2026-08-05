@@ -135,7 +135,9 @@ def transfer_directory(
         )
         console.error(message=message, error=RuntimeError)
 
-    ensure_directory_exists(path=destination)
+    # Declares the destination as a directory, since a destination whose own name carries a dot would otherwise read
+    # as a file path and leave only its parent created.
+    ensure_directory_exists(path=destination, is_file=False)
 
     # Reconciles the destination against the source before writing to it. The integrity check hashes the whole
     # destination tree, so a file the source does not account for fails verification even when every transferred byte
