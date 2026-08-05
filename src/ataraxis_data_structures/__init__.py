@@ -17,7 +17,7 @@ from .processing import (
 from .data_loggers import DataLogger, LogMessage, LogPackage, LogArchiveReader, assemble_log_archives
 from .shared_memory import SharedMemoryArray
 from .data_structures import (
-    YAML_EXCLUDE_METADATA_KEY,
+    YAML_EXCLUDE_METADATA,
     JobState,
     YamlConfig,
     ProcessingStatus,
@@ -25,7 +25,7 @@ from .data_structures import (
 )
 
 __all__ = [
-    "YAML_EXCLUDE_METADATA_KEY",
+    "YAML_EXCLUDE_METADATA",
     "DataLogger",
     "JobState",
     "LogArchiveReader",

@@ -4,7 +4,7 @@ its data from a .yaml (YAML) file.
 
 import os
 from enum import Enum
-from types import UnionType
+from types import UnionType, MappingProxyType
 from typing import Any, Self, Union, get_args, get_origin, get_type_hints
 from pathlib import Path
 from tempfile import mkstemp
@@ -15,13 +15,16 @@ import yaml
 from dacite import Config, from_dict
 from ataraxis_base_utilities import console, ensure_directory_exists
 
-YAML_EXCLUDE_METADATA_KEY: str = "yaml_exclude"
-"""The dataclass field metadata key that keeps a field out of the serialized document.
+_YAML_EXCLUDE_METADATA_KEY: str = "yaml_exclude"
+"""The dataclass field metadata key that keeps a field out of the serialized document."""
+
+YAML_EXCLUDE_METADATA: MappingProxyType[str, bool] = MappingProxyType({_YAML_EXCLUDE_METADATA_KEY: True})
+"""The dataclass field metadata that keeps a field out of the serialized document.
 
 Notes:
-    A field declared as ``field(metadata={YAML_EXCLUDE_METADATA_KEY: True})`` is skipped when the instance is written,
-    which suits a field describing where the instance lives rather than what it holds. A class excluding a field that
-    its constructor requires supplies the value back through ``restore_excluded_fields()``.
+    A field declared as ``field(metadata=YAML_EXCLUDE_METADATA)`` is skipped when the instance is written, which suits
+    a field describing where the instance lives rather than what it holds. A class excluding a field that its
+    constructor requires supplies the value back through ``restore_excluded_fields()``.
 """
 
 _MAPPING_ARGUMENT_COUNT: int = 2
@@ -63,7 +66,7 @@ def _serialize_value(value: Any) -> Any:
         return {
             data_field.name: _serialize_value(value=getattr(value, data_field.name))
             for data_field in fields(value)
-            if not data_field.metadata.get(YAML_EXCLUDE_METADATA_KEY, False)
+            if not data_field.metadata.get(_YAML_EXCLUDE_METADATA_KEY, False)
         }
 
     if isinstance(value, dict):
@@ -339,7 +342,7 @@ class YamlConfig:
             This method exists to be replaced by subclasses. The implementation here excludes no field and returns
             the mapping untouched, which is correct for every class that serializes all of its fields.
 
-            A subclass marking a constructor-required field with ``YAML_EXCLUDE_METADATA_KEY`` overrides this method
+            A subclass marking a constructor-required field with ``YAML_EXCLUDE_METADATA`` overrides this method
             to supply that field's value. The written document carries no entry for such a field, so deserialization
             cannot build the instance without one. The path the document was read from is passed in, because a field
             excluded this way usually records where the instance lives.

@@ -136,14 +136,14 @@ assert loaded_config.string == config.string
 
 #### Excluding Fields from the Document
 
-A dataclass field marked with the `YAML_EXCLUDE_METADATA_KEY` metadata key is skipped when the instance is written,
+A dataclass field marked with the `YAML_EXCLUDE_METADATA` metadata is skipped when the instance is written,
 which suits a field that records where the instance lives rather than what it holds. The written document carries no
 entry for such a field, so a class whose constructor requires it overrides the `restore_excluded_fields()` class method
 to supply the value back. The `from_yaml()` method calls that override between reading the document and building the
 instance, so it belongs to the deserialization machinery rather than to the API a caller invokes.
 
 ```python
-from ataraxis_data_structures import YAML_EXCLUDE_METADATA_KEY, YamlConfig
+from ataraxis_data_structures import YAML_EXCLUDE_METADATA, YamlConfig
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -155,7 +155,7 @@ import yaml
 class LocatedConfig(YamlConfig):
     value: int = 0
     # The path records where the instance lives, so it is kept out of the document the instance writes.
-    source_path: Path = field(default=Path("/unset"), metadata={YAML_EXCLUDE_METADATA_KEY: True})
+    source_path: Path = field(default=Path("/unset"), metadata=YAML_EXCLUDE_METADATA)
 
     @classmethod
     def restore_excluded_fields(cls, data: dict[Any, Any], file_path: Path) -> dict[Any, Any]:

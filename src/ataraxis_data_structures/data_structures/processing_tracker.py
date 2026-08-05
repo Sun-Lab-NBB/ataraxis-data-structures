@@ -11,7 +11,7 @@ from filelock import FileLock
 from ataraxis_time import TimestampFormats, TimestampPrecisions, get_timestamp
 from ataraxis_base_utilities import LogLevel, console
 
-from .yaml_config import YAML_EXCLUDE_METADATA_KEY, YamlConfig
+from .yaml_config import YAML_EXCLUDE_METADATA, YamlConfig
 
 _SCHEDULER_EXECUTOR_SOURCES: tuple[tuple[str, tuple[str, ...], str | None], ...] = (
     # SLURM sets SLURM_JOB_ID on current versions and SLURM_JOBID on older ones, both naming the same allocation.
@@ -93,13 +93,13 @@ class ProcessingTracker(YamlConfig):
         tracker file.
     """
 
-    file_path: Path = field(metadata={YAML_EXCLUDE_METADATA_KEY: True})
+    file_path: Path = field(metadata=YAML_EXCLUDE_METADATA)
     """The path to the .YAML file used to cache the tracker's data on disk. Excluded from the serialized document,
     since it records where the tracker lives rather than the pipeline state the tracker holds."""
     jobs: dict[str, JobState] = field(default_factory=dict)
     """Maps the unique identifiers of the jobs that make up the processing pipeline to their current state and
     metadata."""
-    lock_path: str = field(init=False, metadata={YAML_EXCLUDE_METADATA_KEY: True})
+    lock_path: str = field(init=False, metadata=YAML_EXCLUDE_METADATA)
     """The path to the .LOCK file used to ensure process-safe access to the tracker's data. Excluded from the
     serialized document, since it is derived from the file path."""
 
@@ -116,7 +116,7 @@ class ProcessingTracker(YamlConfig):
             deserialization machinery, which calls it from ``from_yaml()`` between reading the document and building
             the instance. Nothing calls it directly.
 
-            The tracker marks both of its path fields with ``YAML_EXCLUDE_METADATA_KEY``, so the document it writes
+            The tracker marks both of its path fields with ``YAML_EXCLUDE_METADATA``, so the document it writes
             holds the job registry alone and offers the constructor no path to take. Supplying the path here keeps
             every instance ``from_yaml()`` returns bound to a real file.
 

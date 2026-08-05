@@ -121,7 +121,7 @@ dependency for other Ataraxis framework projects.
 |------------------------------|------------------------------------------|------------------------------------------------------------|
 | SharedMemoryArray            | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory                  |
 | YamlConfig                   | `data_structures/yaml_config.py`         | Dataclass with YAML serialization                          |
-| YAML_EXCLUDE_METADATA_KEY    | `data_structures/yaml_config.py`         | Field metadata key that excludes a field from YAML         |
+| YAML_EXCLUDE_METADATA        | `data_structures/yaml_config.py`         | Field metadata that excludes a field from YAML             |
 | ProcessingTracker            | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking                  |
 | JobState                     | `data_structures/processing_tracker.py`  | Dataclass for job metadata                                 |
 | ProcessingStatus             | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED)            |
