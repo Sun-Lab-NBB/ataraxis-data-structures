@@ -20,6 +20,10 @@ def delete_directory(directory_path: Path) -> None:
     """Deletes the target directory and all its subdirectories, unlinking the files within each directory in parallel.
 
     Notes:
+        A symlink is removed as a link, whatever it points at, so the tree behind a symlinked subdirectory is left
+        untouched and only entries living inside the target directory are deleted. Every entry that is not a real
+        directory is unlinked in place, which additionally covers the sockets and FIFOs that a file check skips.
+
         Removal of each emptied directory is attempted up to five times, with a 500 millisecond delay between
         attempts, as some Operating Systems are slow to release file handles. If every attempt fails, the function
         returns without raising an error and the directory is left in place. Check the path with Path.exists() when
@@ -31,8 +35,12 @@ def delete_directory(directory_path: Path) -> None:
     if not directory_path.exists():
         return
 
-    files = [path for path in directory_path.iterdir() if path.is_file()]
-    subdirectories = [path for path in directory_path.iterdir() if path.is_dir()]
+    # Classifies entries with symlink-aware predicates, since is_dir() and is_file() both resolve a symlink to its
+    # target. Without the is_symlink() test, a symlink to a directory would be recursed into and its target's files
+    # unlinked, outside the tree this call names.
+    entries = list(directory_path.iterdir())
+    files = [path for path in entries if path.is_symlink() or not path.is_dir()]
+    subdirectories = [path for path in entries if path.is_dir() and not path.is_symlink()]
 
     with ThreadPoolExecutor() as executor:
         list(executor.map(Path.unlink, files))  # Forces completion of all tasks.

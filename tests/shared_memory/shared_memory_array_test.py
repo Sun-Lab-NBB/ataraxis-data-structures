@@ -585,3 +585,40 @@ def test_create_array_releases_buffer_when_initialization_fails() -> None:
     recreated.connect()
     recreated.disconnect()
     recreated.destroy()
+
+
+def test_create_array_reports_a_buffer_that_survives_unlinking(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that a buffer name still claimed after unlinking produces an explanatory error.
+
+    Windows destroys a shared memory buffer only once its last handle closes, so unlink() leaves the name claimed
+    while any handle remains open. The behavior is staged here through a stub, since POSIX frees the name outright.
+    """
+
+    class PersistentSharedMemory:
+        """Reports the buffer name as permanently taken, which is the post-unlink state Windows leaves behind."""
+
+        def __init__(self, name: str, **arguments: Any) -> None:
+            if arguments.get("create", False):
+                raise FileExistsError(name)
+            self.name = name
+
+        def unlink(self) -> None:
+            """Accepts the unlink without freeing the name, matching the Windows no-op."""
+
+        def close(self) -> None:
+            """Accepts the close without freeing the name."""
+
+    monkeypatch.setattr(
+        target="ataraxis_data_structures.shared_memory.shared_memory_array.SharedMemory", name=PersistentSharedMemory
+    )
+
+    message = (
+        "Unable to recreate the 'test_persistent_buffer' SharedMemoryArray object, as the shared memory buffer with "
+        "this name is still held by an open handle. Windows destroys a buffer only once every handle to it is "
+        "closed, so unlinking one that this runtime or another process still holds leaves the name claimed. "
+        "Disconnect every SharedMemoryArray instance connected to this buffer, then call this method again."
+    )
+    with pytest.raises(FileExistsError, match=error_format(message)):
+        SharedMemoryArray.create_array(
+            name="test_persistent_buffer", prototype=np.array([1, 2, 3], dtype=np.uint8), exists_ok=True
+        )

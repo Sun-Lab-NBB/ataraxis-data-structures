@@ -16,9 +16,16 @@ from .processing import (
 )
 from .data_loggers import DataLogger, LogMessage, LogPackage, LogArchiveReader, assemble_log_archives
 from .shared_memory import SharedMemoryArray
-from .data_structures import JobState, YamlConfig, ProcessingStatus, ProcessingTracker
+from .data_structures import (
+    YAML_EXCLUDE_METADATA_KEY,
+    JobState,
+    YamlConfig,
+    ProcessingStatus,
+    ProcessingTracker,
+)
 
 __all__ = [
+    "YAML_EXCLUDE_METADATA_KEY",
     "DataLogger",
     "JobState",
     "LogArchiveReader",

@@ -254,8 +254,20 @@ class SharedMemoryArray:
             if exists_ok:
                 SharedMemory(name=name, create=False).unlink()
 
-                # Recreates the shared memory buffer using the freed buffer name.
-                buffer = SharedMemory(name=name, create=True, size=prototype.nbytes)
+                # Recreates the shared memory buffer using the freed buffer name. Unlinking frees the name outright on
+                # Unix, while Windows keeps it claimed until the last handle to the buffer closes, so the recreation
+                # is the step that reports an outstanding handle.
+                try:
+                    buffer = SharedMemory(name=name, create=True, size=prototype.nbytes)
+                except FileExistsError:
+                    message = (
+                        f"Unable to recreate the '{name}' SharedMemoryArray object, as the shared memory buffer with "
+                        f"this name is still held by an open handle. Windows destroys a buffer only once every handle "
+                        f"to it is closed, so unlinking one that this runtime or another process still holds leaves "
+                        f"the name claimed. Disconnect every SharedMemoryArray instance connected to this buffer, "
+                        f"then call this method again."
+                    )
+                    console.error(message=message, error=FileExistsError)
 
             else:
                 message = (

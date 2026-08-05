@@ -397,6 +397,36 @@ def test_progress_display_restores_an_enabled_console() -> None:
         console.disable_progress()
 
 
+@pytest.mark.xdist_group(name="group1")
+def test_assemble_log_archives_ignores_nested_log_directories(tmp_path: Path) -> None:
+    """Verifies that discovery covers the target directory alone, leaving a nested logger's entries untouched."""
+    root = tmp_path / "logger_a_data_log"
+    nested = root / "logger_b_data_log"
+    nested.mkdir(parents=True)
+
+    # Both loggers legitimately use source id 1, so their entry names collide field for field.
+    for directory, payload in ((root, 11), (nested, 22)):
+        for timestamp in (0, 1000):
+            entry = np.concatenate(
+                [
+                    np.array([1], dtype=np.uint8),
+                    np.frombuffer(int(timestamp).to_bytes(length=8, byteorder="little"), dtype=np.uint8),
+                    np.array([payload], dtype=np.uint8),
+                ]
+            )
+            np.save(file=directory / f"001_{timestamp:020d}.npy", arr=entry, allow_pickle=False)
+
+    assemble_log_archives(log_directory=root, remove_sources=True, verbose=False)
+
+    # The target directory's own entries were consolidated and removed.
+    assert not list(root.glob("*.npy"))
+    assert len(list(root.glob("*.npz"))) == 1
+
+    # The nested logger's entries were neither consumed nor archived, so nothing collided.
+    assert len(list(nested.glob("*.npy"))) == 2
+    assert not list(nested.glob("*.npz"))
+
+
 def _raise_probe_error() -> None:
     """Raises an error so a test can observe how the surrounding context manager handles an exceptional exit."""
     message = "simulated failure"

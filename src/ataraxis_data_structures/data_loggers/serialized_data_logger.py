@@ -365,8 +365,14 @@ def assemble_log_archives(
         acquisition timestamp value before consolidation. The consolidated archive names include the ID code of the
         source that generated the original log entries.
 
+        Discovery covers the target directory itself and does not descend into its subdirectories, since one
+        DataLogger instance is the unit of serialization and owns exactly one log directory. Entry names carry the
+        source ID and the acquisition timestamp alone, so entries from two logger instances that share a source ID
+        would collide on name if a single call consolidated both.
+
     Args:
-        log_directory: The path to the directory that stores the log entries as .npy files.
+        log_directory: The path to the directory that stores the log entries of one DataLogger instance as .npy
+            files, which is the directory the instance exposes through its output_directory property.
         max_workers: Determines the number of worker processes and threads used to process the data in parallel. A
             positive value is honored exactly, capped at the physical core count. If set to None, 0, or a negative
             value, the function uses the number of CPU cores minus 2, clamped to at least 1.
@@ -388,7 +394,7 @@ def assemble_log_archives(
     # Collects all .npy files and groups them by source_id, parsing each stem once into its source and timestamp
     # fields so the sort below reads the parsed timestamp rather than splitting every stem a second time.
     source_entries: dict[int, list[tuple[int, Path]]] = defaultdict(list)
-    for file_path in log_directory.rglob("*.npy"):
+    for file_path in log_directory.glob("*.npy"):
         source_field, timestamp_field = file_path.stem.split("_")[:2]
         source_entries[int(source_field)].append((int(timestamp_field), file_path))
 

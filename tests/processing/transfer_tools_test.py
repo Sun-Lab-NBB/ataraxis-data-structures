@@ -610,3 +610,37 @@ def test_transfer_directory_integrity_multithread_consistency(large_directory_st
 
     # Verifies the source checksum file was created.
     assert (source / "ax_checksum.txt").exists()
+
+
+def test_delete_directory_unlinks_a_directory_symlink_without_following_it(tmp_path: Path) -> None:
+    """Verifies that a symlinked subdirectory is removed as a link, leaving the tree it points at untouched."""
+    target = tmp_path / "to_delete"
+    target.mkdir()
+    (target / "own.txt").write_text("disposable")
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "precious.txt").write_text("keep me")
+    (outside / "nested").mkdir()
+    (outside / "nested" / "also_precious.txt").write_text("keep me too")
+
+    (target / "link").symlink_to(outside, target_is_directory=True)
+
+    delete_directory(directory_path=target)
+
+    # The named tree is gone, and nothing behind the link was touched.
+    assert not target.exists()
+    assert (outside / "precious.txt").read_text() == "keep me"
+    assert (outside / "nested" / "also_precious.txt").read_text() == "keep me too"
+
+
+def test_delete_directory_removes_entries_that_are_neither_files_nor_directories(tmp_path: Path) -> None:
+    """Verifies that a dangling symlink is removed, since it reports as neither a file nor a directory."""
+    root = tmp_path / "with_dangling_link"
+    root.mkdir()
+    (root / "regular.txt").write_text("content")
+    (root / "dangling").symlink_to(root / "missing_target")
+
+    delete_directory(directory_path=root)
+
+    assert not root.exists()
