@@ -188,8 +188,8 @@ class DataLogger:
         if self._started:
             return
 
-        # Initializes the terminator array, used to control the logger process(es).
-        # Instantiating the array automatically connects the main process to the shared memory buffer.
+        # Initializes the terminator array, used to control the logger process(es). Creating the array also connects
+        # the main process to the shared memory buffer.
         self._terminator_array = SharedMemoryArray.create_array(
             name=f"{self._name}_terminator",
             prototype=np.zeros(shape=1, dtype=np.uint8),
@@ -211,11 +211,6 @@ class DataLogger:
                 daemon=True,
             )
             self._logger_process.start()
-
-        # Finishes setting up the terminator array in the main runtime thread. Specifically, connects to the shared
-        # memory buffer and enables destroying the buffer when the instance is garbage-collected.
-        self._terminator_array.connect()
-        self._terminator_array.enable_buffer_destruction()
 
         # Creates and starts the watchdog thread.
         self._watchdog_thread = Thread(target=self._watchdog, daemon=True)
@@ -379,8 +374,8 @@ class DataLogger:
             OSError: If saving any of the processed log entries to disk failed. Propagating the error terminates the
                 logger process with a non-zero exit code, which is how the failure reaches the parent process.
         """
-        terminator_array.connect()
-
+        # The terminator array connects to the shared memory buffer as part of being transferred into this process,
+        # so it is ready to use here. The finally block below still disconnects it before the process shuts down.
         executor = ThreadPoolExecutor(max_workers=thread_count)
 
         # Initializes the timer instance to delay polling the queue during idle periods.

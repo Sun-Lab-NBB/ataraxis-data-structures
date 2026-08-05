@@ -155,10 +155,9 @@ prototype = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float64)
 buffer_name = "unique_buffer_name"  # Has to be unique for all concurrently used SharedMemoryArray instances.
 
 # To initialize the array, use the create_array() method. Do not call the class initialization method directly!
+# The returned instance is connected to the shared memory buffer, and it destroys that buffer once it is
+# garbage-collected.
 sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
-
-# Ensures that the shared memory buffer is destroyed when the instance is garbage-collected.
-sma.enable_buffer_destruction()
 
 # The instantiated SharedMemoryArray object wraps an n-dimensional NumPy array with the same dimensions and data
 # type as the prototype and uses the unique shared memory buffer name to identify the shared memory buffer to
@@ -173,36 +172,38 @@ print(sma)
 
 #### SharedMemoryArray Connection, Disconnection, and Destruction
 
-Each process using the SharedMemoryArray instance, including the process that created it, must use the `connect()`
-method to connect to the array before reading or writing data. At the end of its runtime, each connected process must
-call the `disconnect()` method to release the local reference to the shared buffer. The main process also needs to call
-the `destroy()` method to destroy the shared memory buffer.
+The `create_array()` method returns an instance already connected to the shared memory buffer, and every process the
+instance is passed to connects as part of the transfer, so no process has to call `connect()` to reach the array data.
+Calling `connect()` anyway remains useful, as it establishes the connection at a chosen point rather than leaving it
+implicit, and it reconnects an instance that called `disconnect()`.
+
+At the end of its runtime, each process should call the `disconnect()` method to release its handle on the shared
+buffer. A process that exits releases its handle regardless, so this call is good practice rather than a requirement.
+The process that created the array destroys the shared memory buffer when its instance is garbage-collected, and
+calling `destroy()` ends the buffer's lifetime at a chosen point instead.
 
 ```python
 import numpy as np
 from ataraxis_data_structures import SharedMemoryArray
 
-# Initializes a SharedMemoryArray
+# Initializes a SharedMemoryArray. The creating process is connected to the buffer once this method returns.
 prototype = np.zeros(shape=6, dtype=np.uint64)
 buffer_name = "unique_buffer"
 sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
 
-# This method has to be called before attempting to manipulate the data inside the array.
-sma.connect()
-
 # The connection status of the array can be verified at any time by using is_connected property:
 assert sma.is_connected
 
-# Each process that connected to the shared memory buffer must disconnect from it at the end of its runtime. On
+# Each process that connected to the shared memory buffer should disconnect from it at the end of its runtime. On
 # Windows platforms, when all processes are disconnected from the buffer, the buffer is automatically
 # garbage-collected.
-sma.disconnect()  # For each connect() call, there has to be a matching disconnect() call
+sma.disconnect()  # Good practice in every process, as it releases the handle as soon as the work is done
 
 assert not sma.is_connected
 
-# On Unix platforms, the buffer persists even after being disconnected by all instances, unless it is explicitly
-# destroyed.
-sma.destroy()  # For each create_array() call, there has to be a matching destroy() call
+# On Unix platforms, the buffer persists even after being disconnected by all instances, until the creating instance
+# is garbage-collected or the buffer is explicitly destroyed.
+sma.destroy()  # Ends the buffer's lifetime immediately rather than waiting for garbage collection
 ```
 
 #### Reading and Writing SharedMemoryArray Data
@@ -221,7 +222,6 @@ from ataraxis_data_structures import SharedMemoryArray
 prototype = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
 buffer_name = "unique_buffer"
 sma = SharedMemoryArray.create_array(name=buffer_name, prototype=prototype)
-sma.connect()
 
 # The SharedMemoryArray data can be accessed directly using indexing or slicing, just like any regular NumPy array
 # or Python iterable:
@@ -259,9 +259,14 @@ While all methods showcased above run in the same process, the main advantage of
 it behaves the same way when used from different Python processes. The following example demonstrates using a
 SharedMemoryArray across multiple concurrent processes:
 
-***Note,*** the main process can connect to the array and enable buffer destruction either before or after starting
-the child processes. Each process independently establishes its own connection to the shared buffer, so the only
-ordering requirement is that the buffer is not destroyed until all processes have finished using it.
+***Note,*** the main process is connected to the array from the moment `create_array()` returns, and each child
+process connects as part of receiving the instance, so the example below reduces to creating the array, passing it to
+the workers, and ending the runtime. The only ordering requirement is that the buffer is not destroyed until all
+processes have finished using it, which means the creating instance has to stay referenced for that whole period.
+
+Passing `auto_connect=False` to `create_array()` opts out of connecting the receiving processes, which makes each of
+them call `connect()` before accessing the data. That defers the connection to a point the worker controls, so a
+buffer destroyed between the spawn and the worker's first access fails at that access rather than during startup.
 
 ```python
 from multiprocessing import Process
@@ -282,8 +287,7 @@ def concurrent_worker(shared_memory_object: SharedMemoryArray, index: int) -> No
         shared_memory_object: The SharedMemoryArray instance to work with.
         index: The index inside the array to increment
     """
-    # Connects to the array
-    shared_memory_object.connect()
+    # The array arrives connected, so this worker reads and writes its data without any setup of its own.
 
     # Runs until the value becomes 200
     while shared_memory_object[index] < 200:
@@ -302,7 +306,7 @@ def concurrent_worker(shared_memory_object: SharedMemoryArray, index: int) -> No
 if __name__ == "__main__":
     console.enable()  # Enables terminal printouts
 
-    # Initializes a SharedMemoryArray
+    # Initializes a SharedMemoryArray. This process is connected to the buffer and owns its destruction.
     sma = SharedMemoryArray.create_array("test_concurrent", np.zeros(5, dtype=np.int32))
 
     # Generates multiple processes and uses each to repeatedly write and read data from different indices of the
@@ -310,11 +314,6 @@ if __name__ == "__main__":
     processes = [Process(target=concurrent_worker, args=(sma, i)) for i in range(5)]
     for p in processes:
         p.start()
-
-    # Finishes setting up the local array instance by connecting to the shared memory buffer and enabling the
-    # shared memory buffer cleanup when the instance is garbage-collected (a safety feature).
-    sma.connect()
-    sma.enable_buffer_destruction()
 
     # Marks the beginning of the test runtime
     console.echo(f"Running the multiprocessing example on {len(processes)} processes...")
@@ -343,7 +342,8 @@ if __name__ == "__main__":
     time_taken = timer.elapsed
     console.echo(f"Example runtime: complete. Time taken: {time_taken / 1000:.2f} seconds.")
 
-    # Cleans up the shared memory array after all processes are terminated
+    # Cleans up the shared memory array after all processes are terminated. Ending the runtime without these calls
+    # reaches the same state, as the instance destroys the buffer once it is garbage-collected.
     sma.disconnect()
     sma.destroy()
 ```

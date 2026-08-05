@@ -96,7 +96,10 @@ dependency for other Ataraxis framework projects.
 ### Architecture
 
 - **SharedMemoryArray**: Wraps NumPy arrays in shared memory buffers for IPC with multiprocessing.Lock for
-  process-safety. Requires explicit `connect()`, `disconnect()`, and `destroy()` lifecycle management.
+  process-safety. The `create_array()` method returns an instance connected to the buffer, and every process the
+  instance is passed to connects during the transfer, so `connect()` is an optional explicit guarantee rather than a
+  requirement. The creating process destroys the buffer when its instance is garbage-collected, and `disconnect()` in
+  workers is good practice rather than a requirement.
 - **YamlConfig**: Base dataclass with YAML serialization via the `to_yaml()` instance method and the `from_yaml()`
   class method. Uses dacite for deserialization with type-aware conversions for Path and Enum types.
 - **DataLogger**: Runs a logger process with an input Queue for buffering serialized LogPackage data. Uses a watchdog
@@ -144,7 +147,7 @@ component-specific steps.
 **Modifying SharedMemoryArray** (`src/ataraxis_data_structures/shared_memory/shared_memory_array.py`):
 
 1. Understand the multiprocessing.Lock integration for process-safety
-2. Maintain the `connect()`/`disconnect()`/`destroy()` lifecycle contract
+2. Maintain the connected-on-creation and destroy-on-collection contracts, and keep `connect()` idempotent
 3. Test with scenarios that spawn real worker processes and exercise the array from each of them
 
 **Modifying YamlConfig** (`src/ataraxis_data_structures/data_structures/yaml_config.py`):
