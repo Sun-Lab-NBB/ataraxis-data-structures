@@ -2,6 +2,7 @@
 
 import os
 from enum import IntEnum
+from typing import Any
 from pathlib import Path
 from dataclasses import field, replace, dataclass
 
@@ -10,7 +11,7 @@ from filelock import FileLock
 from ataraxis_time import TimestampFormats, TimestampPrecisions, get_timestamp
 from ataraxis_base_utilities import LogLevel, console
 
-from .yaml_config import YamlConfig
+from .yaml_config import YAML_EXCLUDE_METADATA_KEY, YamlConfig
 
 _SCHEDULER_EXECUTOR_SOURCES: tuple[tuple[str, tuple[str, ...], str | None], ...] = (
     # SLURM sets SLURM_JOB_ID on current versions and SLURM_JOBID on older ones, both naming the same allocation.
@@ -92,35 +93,71 @@ class ProcessingTracker(YamlConfig):
         tracker file.
     """
 
-    file_path: Path
-    """The path to the .YAML file used to cache the tracker's data on disk."""
+    file_path: Path = field(metadata={YAML_EXCLUDE_METADATA_KEY: True})
+    """The path to the .YAML file used to cache the tracker's data on disk. Excluded from the serialized document,
+    since it records where the tracker lives rather than the pipeline state the tracker holds."""
     jobs: dict[str, JobState] = field(default_factory=dict)
     """Maps the unique identifiers of the jobs that make up the processing pipeline to their current state and
     metadata."""
-    lock_path: str = field(init=False)
-    """The path to the .LOCK file used to ensure process-safe access to the tracker's data."""
+    lock_path: str = field(init=False, metadata={YAML_EXCLUDE_METADATA_KEY: True})
+    """The path to the .LOCK file used to ensure process-safe access to the tracker's data. Excluded from the
+    serialized document, since it is derived from the file path."""
 
     def __post_init__(self) -> None:
         """Resolves the .LOCK file for the managed tracker .YAML file."""
-        # Generates the .lock file path for the target tracker .yaml file. Skips if file_path is empty (used during
-        # serialization to avoid storing instance-specific paths).
-        if self.file_path is not None and self.file_path.parts:
-            self.lock_path = str(self.file_path.with_suffix(self.file_path.suffix + ".lock"))
-        else:
-            self.lock_path = ""
+        self.lock_path = str(self.file_path.with_suffix(self.file_path.suffix + ".lock"))
+
+    @classmethod
+    def restore_excluded_fields(cls, data: dict[Any, Any], file_path: Path) -> dict[Any, Any]:
+        """Reattaches the reconstructed tracker to the file it was read from.
+
+        Notes:
+            This method overrides the ``YamlConfig`` implementation and runs only as part of that class's
+            deserialization machinery, which calls it from ``from_yaml()`` between reading the document and building
+            the instance. Nothing calls it directly.
+
+            The tracker marks both of its path fields with ``YAML_EXCLUDE_METADATA_KEY``, so the document it writes
+            holds the job registry alone and offers the constructor no path to take. Supplying the path here keeps
+            every instance ``from_yaml()`` returns bound to a real file.
+
+        Args:
+            data: The top-level mapping read from the tracker .yaml file.
+            file_path: The path the mapping was read from.
+
+        Returns:
+            The mapping extended with the tracker's own file path.
+        """
+        return {**data, "file_path": file_path}
 
     @staticmethod
     def generate_job_id(job_name: str, specifier: str = "") -> str:
         """Generates a unique hexadecimal job identifier based on the job's name and optional specifier using the
         xxHash64 checksum generator.
 
+        Notes:
+            A colon joins the two components inside the hashed string, so neither component may contain one. Were a
+            colon allowed, the pairs ('data:batch', '') and ('data', 'batch') would join to the same string and
+            therefore to the same identifier, collapsing two declared jobs onto one registry entry.
+
         Args:
-            job_name: The descriptive name for the processing job (e.g., 'process_data').
+            job_name: The descriptive name for the processing job (e.g., 'process_data'). Cannot contain a colon.
             specifier: An optional specifier that differentiates instances of the same job (e.g., 'batch_101').
+                Cannot contain a colon.
 
         Returns:
             The unique hexadecimal identifier for the target job.
+
+        Raises:
+            ValueError: If the job name or the specifier contains a colon.
         """
+        if ":" in job_name or ":" in specifier:
+            message = (
+                f"Unable to generate the identifier for the job '{job_name}' with the specifier '{specifier}'. The "
+                f"job name and the specifier must not contain the ':' character, as it joins them inside the hashed "
+                f"identifier string."
+            )
+            console.error(message=message, error=ValueError)
+
         combined = f"{job_name}:{specifier}" if specifier else job_name
         return xxhash.xxh64(combined.encode("utf-8")).hexdigest()
 
@@ -192,8 +229,18 @@ class ProcessingTracker(YamlConfig):
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
-            ValueError: If any requested job is not part of the resolved universe.
+            ValueError: If the requested job list is empty, or if any requested job is not part of the resolved
+                universe.
         """
+        # An empty request is malformed rather than meaningful. Combined with the default universe it would resolve
+        # the universe to the empty set, which classifies every tracked job as foreign and discards the whole registry.
+        if not jobs:
+            message = (
+                f"Unable to align the processing tracker at '{self.file_path}' with the requested jobs. The 'jobs' "
+                f"argument must name at least one job, but an empty list was provided."
+            )
+            console.error(message=message, error=ValueError)
+
         resolved_universe = jobs if universe is None else universe
         universe_ids = {
             self.generate_job_id(job_name=job_name, specifier=specifier) for job_name, specifier in resolved_universe
@@ -664,12 +711,5 @@ class ProcessingTracker(YamlConfig):
 
     def _save_state(self) -> None:
         """Caches the current processing state stored inside the instance's attributes as a .YAML file."""
-        # Temporarily sets file_path and lock_path to empty values to avoid serializing instance-specific paths.
-        # YamlConfig's _serialize_value() automatically handles Enum -> value conversion.
-        temporary_file_path, temporary_lock_path = self.file_path, self.lock_path
-        try:
-            self.file_path = Path()
-            self.lock_path = ""
-            self.to_yaml(file_path=temporary_file_path)
-        finally:
-            self.file_path, self.lock_path = temporary_file_path, temporary_lock_path
+        # Both path fields carry the exclusion marker, so the emitted document holds the job registry alone.
+        self.to_yaml(file_path=self.file_path)

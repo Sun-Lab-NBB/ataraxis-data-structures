@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import shutil
+from typing import TYPE_CHECKING, Any
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
+from ataraxis_base_utilities import LogLevel, console, error_format
 
 from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+from ataraxis_data_structures.data_loggers.serialized_data_logger import _compare_arrays, _progress_display
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -249,6 +252,37 @@ def test_data_logger_start_stop_cycling(tmp_path: Path) -> None:
 
 
 @pytest.mark.xdist_group(name="group1")
+def test_data_logger_failed_write(
+    tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that the DataLogger warns about the log entries its process was unable to save to disk."""
+    logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
+    logger.start()
+
+    # Removes the output directory out from under the running logger process, so saving the entry submitted below
+    # fails with a FileNotFoundError inside that process.
+    shutil.rmtree(logger.output_directory)
+
+    source_id, timestamp, data = sample_data
+    packed_data = LogPackage(source_id=np.uint8(source_id), acquisition_time=np.uint64(timestamp), serialized_data=data)
+    logger.input_queue.put(packed_data)
+
+    # Records the console call directly, since loguru writes through a stream reference that the pytest capture
+    # fixtures do not intercept.
+    reported: list[tuple[str, str]] = []
+    monkeypatch.setattr(console, "echo", lambda message, level: reported.append((message, level)))
+
+    logger.stop()
+
+    assert not logger.alive
+    assert len(reported) == 1
+    reported_message, reported_level = reported[0]
+    assert reported_level == LogLevel.WARNING
+    assert "Unable to confirm that the test_logger DataLogger saved all buffered data" in reported_message
+    assert "did not reach the disk" in reported_message
+
+
+@pytest.mark.xdist_group(name="group1")
 def test_assemble_log_archives_with_integrity_check(
     tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]]
 ) -> None:
@@ -314,3 +348,118 @@ def test_log_package_data_large_timestamp() -> None:
     expected = bytes([255]) + (2**63 + 5).to_bytes(length=8, byteorder="little") + bytes([1])
     assert data.tobytes() == expected
     assert int(data[1:9].view(np.uint64)[0]) == 2**63 + 5
+
+
+def test_compare_arrays_raises_on_mismatched_entry() -> None:
+    """Verifies that the archive integrity gate raises when an archived entry differs from its source entry."""
+    message = (
+        "Unable to verify the integrity of the assembled log archive for source 1. The archived data for entry "
+        "001_00000000000000001000 must exactly match the data of the original .npy log entry, but the two differ."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        _compare_arrays(
+            source_id=1,
+            stem="001_00000000000000001000",
+            original_array=np.array([1, 2, 3], dtype=np.uint8),
+            archived_array=np.array([1, 2, 4], dtype=np.uint8),
+        )
+
+
+def test_compare_arrays_accepts_a_matching_entry() -> None:
+    """Verifies that the archive integrity gate stays silent when the archived entry matches its source entry."""
+    payload = np.array([1, 2, 3], dtype=np.uint8)
+    _compare_arrays(source_id=1, stem="001_00000000000000001000", original_array=payload, archived_array=payload)
+
+
+@pytest.mark.xdist_group(name="group1")
+def test_assemble_log_archives_keeps_sources_when_verification_fails(
+    tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that a failed integrity check aborts before the source .npy entries are removed."""
+    logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
+    logger.start()
+    for index in range(3):
+        source_id, timestamp, data = sample_data
+        logger.input_queue.put(
+            LogPackage(
+                source_id=np.uint8(source_id), acquisition_time=np.uint64(timestamp + index), serialized_data=data
+            )
+        )
+    logger.stop()
+
+    # Fault-injects a verification failure. PHASE 2 rewrites every archive from the in-memory arrays it just loaded,
+    # so a hand-corrupted .npz cannot survive long enough to reach PHASE 3.
+    def failing_compare(**_kwargs: Any) -> None:
+        message = "simulated integrity mismatch"
+        raise ValueError(message)
+
+    monkeypatch.setattr(
+        target="ataraxis_data_structures.data_loggers.serialized_data_logger._compare_arrays", name=failing_compare
+    )
+
+    with pytest.raises(ValueError, match="simulated integrity mismatch"):
+        assemble_log_archives(
+            log_directory=logger.output_directory, remove_sources=True, verify_integrity=True, verbose=False
+        )
+
+    # PHASE 4 never runs, so the only intact copy of the data is still on disk.
+    assert len(list(logger.output_directory.glob("*.npy"))) == 3
+
+
+def test_progress_display_restores_a_disabled_console() -> None:
+    """Verifies that the progress-display context restores a previously disabled display."""
+    console.disable_progress()
+    with _progress_display(enabled=True):
+        assert console.progress_enabled
+    assert not console.progress_enabled
+
+
+def test_progress_display_restores_an_enabled_console() -> None:
+    """Verifies that the progress-display context restores a previously enabled display, including when it raises."""
+    console.enable_progress()
+    try:
+        with _progress_display(enabled=False):
+            assert not console.progress_enabled
+        assert console.progress_enabled
+
+        with pytest.raises(RuntimeError, match="simulated failure"), _progress_display(enabled=False):
+            _raise_probe_error()
+        assert console.progress_enabled
+    finally:
+        console.disable_progress()
+
+
+@pytest.mark.xdist_group(name="group1")
+def test_assemble_log_archives_ignores_nested_log_directories(tmp_path: Path) -> None:
+    """Verifies that discovery covers the target directory alone, leaving a nested logger's entries untouched."""
+    root = tmp_path / "logger_a_data_log"
+    nested = root / "logger_b_data_log"
+    nested.mkdir(parents=True)
+
+    # Both loggers legitimately use source id 1, so their entry names collide field for field.
+    for directory, payload in ((root, 11), (nested, 22)):
+        for timestamp in (0, 1000):
+            entry = np.concatenate(
+                [
+                    np.array([1], dtype=np.uint8),
+                    np.frombuffer(int(timestamp).to_bytes(length=8, byteorder="little"), dtype=np.uint8),
+                    np.array([payload], dtype=np.uint8),
+                ]
+            )
+            np.save(file=directory / f"001_{timestamp:020d}.npy", arr=entry, allow_pickle=False)
+
+    assemble_log_archives(log_directory=root, remove_sources=True, verbose=False)
+
+    # The target directory's own entries were consolidated and removed.
+    assert not list(root.glob("*.npy"))
+    assert len(list(root.glob("*.npz"))) == 1
+
+    # The nested logger's entries were neither consumed nor archived, so nothing collided.
+    assert len(list(nested.glob("*.npy"))) == 2
+    assert not list(nested.glob("*.npz"))
+
+
+def _raise_probe_error() -> None:
+    """Raises an error so a test can observe how the surrounding context manager handles an exceptional exit."""
+    message = "simulated failure"
+    raise RuntimeError(message)

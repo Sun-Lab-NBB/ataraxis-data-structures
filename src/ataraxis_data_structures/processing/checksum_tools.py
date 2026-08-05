@@ -1,11 +1,37 @@
 """Provides assets for computing data integrity checksums."""
 
-from pathlib import Path
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 from functools import partial
+from multiprocessing import get_context
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import xxhash
 from ataraxis_base_utilities import console, resolve_worker_count
+
+from .parallel_tools import limit_worker_threads
+
+if TYPE_CHECKING:
+    from pathlib import Path
+    from multiprocessing.context import SpawnContext
+
+
+_MULTIPROCESSING_CONTEXT: SpawnContext = get_context("spawn")
+"""The spawn-based multiprocessing context used to create the process pool that calculates file checksums, ensuring
+identical cross-platform behavior on all supported platforms."""
+
+CHECKSUM_FILENAME: str = "ax_checksum.txt"
+"""The name of the file a directory checksum is written to, at the top level of the checksummed directory.
+
+Notes:
+    The name is shared with the transfer utilities, which both exclude it from the digest and treat it as an expected
+    destination entry, so both sides have to agree on the spelling.
+"""
+
+_CHECKSUM_CHUNK_SIZE: int = 1024 * 1024 * 8
+"""The size, in bytes, of the buffer each worker reads file data into. Bounds the resident memory one worker needs to
+checksum a file of any size."""
 
 
 def calculate_directory_checksum(
@@ -41,7 +67,7 @@ def calculate_directory_checksum(
         The xxHash3-128 checksum for the input directory as a hexadecimal string.
     """
     if excluded_files is None:
-        excluded_files = {"ax_checksum.txt"}
+        excluded_files = {CHECKSUM_FILENAME}
 
     if num_processes is None:
         num_processes = resolve_worker_count()
@@ -50,7 +76,10 @@ def calculate_directory_checksum(
 
     checksum = xxhash.xxh3_128()
 
-    with ProcessPoolExecutor(max_workers=num_processes) as executor:
+    with (
+        limit_worker_threads(),
+        ProcessPoolExecutor(max_workers=num_processes, mp_context=_MULTIPROCESSING_CONTEXT) as executor,
+    ):
         # Binds base_directory so each submitted task only needs to supply the per-file path.
         process_file = partial(_calculate_file_checksum, base_directory=directory)
 
@@ -103,10 +132,13 @@ def _calculate_file_checksum(base_directory: Path, file_path: Path) -> tuple[str
     checksum.update(relative_path.encode())
 
     # Extends the checksum to reflect the file data state. Uses 8 MB chunks to avoid excessive RAM hogging at the cost
-    # of slightly reduced throughput.
+    # of slightly reduced throughput. Reads into one reusable buffer, so a large file costs a single allocation
+    # instead of one per chunk.
+    chunk_buffer = bytearray(_CHECKSUM_CHUNK_SIZE)
+    chunk_view = memoryview(chunk_buffer)
     with file_path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024 * 8), b""):
-            checksum.update(chunk)
+        while (read_byte_count := file.readinto(chunk_buffer)) > 0:
+            checksum.update(chunk_view[:read_byte_count])
 
     # Returns both path and file checksum. Although the relative path information is already encoded in the hashsum, the
     # relative path information is re-encoded at the directory level to protect against future changes to the per-file
@@ -136,6 +168,6 @@ def _write_checksum_file(directory: Path, checksum: str) -> None:
         directory: The directory whose top level receives the ax_checksum.txt file.
         checksum: The hexadecimal checksum string to write.
     """
-    checksum_path = directory.joinpath("ax_checksum.txt")
+    checksum_path = directory.joinpath(CHECKSUM_FILENAME)
     with checksum_path.open("w") as file:
         file.write(checksum)

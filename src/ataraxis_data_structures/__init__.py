@@ -7,12 +7,25 @@ available classes and structures. See the `source code repository
 Authors: Ivan Kondratyev (Inkaros)
 """
 
-from .processing import delete_directory, interpolate_data, transfer_directory, calculate_directory_checksum
+from .processing import (
+    delete_directory,
+    interpolate_data,
+    transfer_directory,
+    limit_worker_threads,
+    calculate_directory_checksum,
+)
 from .data_loggers import DataLogger, LogMessage, LogPackage, LogArchiveReader, assemble_log_archives
 from .shared_memory import SharedMemoryArray
-from .data_structures import JobState, YamlConfig, ProcessingStatus, ProcessingTracker
+from .data_structures import (
+    YAML_EXCLUDE_METADATA_KEY,
+    JobState,
+    YamlConfig,
+    ProcessingStatus,
+    ProcessingTracker,
+)
 
 __all__ = [
+    "YAML_EXCLUDE_METADATA_KEY",
     "DataLogger",
     "JobState",
     "LogArchiveReader",
@@ -26,5 +39,6 @@ __all__ = [
     "calculate_directory_checksum",
     "delete_directory",
     "interpolate_data",
+    "limit_worker_threads",
     "transfer_directory",
 ]

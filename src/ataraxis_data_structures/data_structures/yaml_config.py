@@ -2,16 +2,30 @@
 its data from a .yaml (YAML) file.
 """
 
+import os
 from enum import Enum
 from types import UnionType
 from typing import Any, Self, Union, get_args, get_origin, get_type_hints
 from pathlib import Path
+from tempfile import mkstemp
 from dataclasses import fields, dataclass, is_dataclass
-from collections.abc import Callable
+from collections.abc import Mapping, Callable
 
 import yaml
 from dacite import Config, from_dict
 from ataraxis_base_utilities import console, ensure_directory_exists
+
+YAML_EXCLUDE_METADATA_KEY: str = "yaml_exclude"
+"""The dataclass field metadata key that keeps a field out of the serialized document.
+
+Notes:
+    A field declared as ``field(metadata={YAML_EXCLUDE_METADATA_KEY: True})`` is skipped when the instance is written,
+    which suits a field describing where the instance lives rather than what it holds. A class excluding a field that
+    its constructor requires supplies the value back through ``restore_excluded_fields()``.
+"""
+
+_MAPPING_ARGUMENT_COUNT: int = 2
+"""The number of type arguments a mapping annotation carries, which is its key type followed by its value type."""
 
 _LIBYAML_AVAILABLE: bool = hasattr(yaml, "CSafeLoader")
 """Determines whether the PyYAML build provides the libyaml-backed parser and emitter. Reading and writing both
@@ -47,7 +61,9 @@ def _serialize_value(value: Any) -> Any:
 
     if is_dataclass(value) and not isinstance(value, type):
         return {
-            data_field.name: _serialize_value(value=getattr(value, data_field.name)) for data_field in fields(value)
+            data_field.name: _serialize_value(value=getattr(value, data_field.name))
+            for data_field in fields(value)
+            if not data_field.metadata.get(YAML_EXCLUDE_METADATA_KEY, False)
         }
 
     if isinstance(value, dict):
@@ -95,6 +111,31 @@ def _make_union_enum_hook(enum_types: list[type]) -> Callable[[Any], Any]:
             except (ValueError, KeyError):
                 continue
         return value
+
+    return _hook
+
+
+def _make_mapping_key_hook(key_type: type) -> Callable[[Any], Any]:
+    """Creates a dacite type hook that converts the keys of a mapping to the type its annotation names.
+
+    Notes:
+        dacite converts a mapping's values through the hook registered for the value type and hands every key through
+        untouched, so a field annotated with a Path or Enum key would otherwise load with the raw strings YAML stores.
+        Registering this hook against the mapping annotation itself fires it before dacite descends into the values,
+        which mirrors the key conversion ``_serialize_value`` performs on the way out.
+
+    Args:
+        key_type: The type each key is converted to.
+
+    Returns:
+        A callable that accepts a raw YAML mapping and returns the same mapping with its keys converted.
+    """
+
+    def _hook(value: Any) -> Any:
+        """Converts every key of the mapping, leaving the values for dacite to convert."""
+        if not isinstance(value, dict):
+            return value
+        return {key_type(key): item for key, item in value.items()}
 
     return _hook
 
@@ -147,6 +188,20 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
                         pass  # pragma: no cover
                 if enum_targets:
                     hooks[type_hint] = _make_union_enum_hook(enum_types=enum_targets)
+
+            # Registers a key-converting hook for a mapping whose key annotation names a Path or Enum type, since
+            # dacite converts mapping values alone.
+            mapping_origin = get_origin(type_hint)
+            if (
+                isinstance(mapping_origin, type)
+                and issubclass(mapping_origin, Mapping)
+                and len(type_arguments) == _MAPPING_ARGUMENT_COUNT
+            ):
+                key_type = type_arguments[0]
+                if isinstance(key_type, type) and (
+                    issubclass(key_type, Path) or (issubclass(key_type, Enum) and key_type is not Enum)
+                ):
+                    hooks[type_hint] = _make_mapping_key_hook(key_type=key_type)
 
             # Recurses into all generic arguments (union members, list items, dict values, etc.).
             for argument in type_arguments:
@@ -218,6 +273,9 @@ class YamlConfig:
             annotated fields. A field whose annotation unions ``Path`` with ``str`` cannot be discriminated on load
             and is restored as a string.
 
+            The file is written through a temporary file and renamed into place, so a process killed mid-write leaves
+            the previously saved file intact. Both reading and writing use UTF-8 regardless of the host locale.
+
         Args:
             file_path: The path to the .yaml file to write.
 
@@ -252,14 +310,50 @@ class YamlConfig:
         ensure_directory_exists(path=file_path)
 
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
-        # to the .yaml file.
-        with file_path.open(mode="w") as yaml_file:
-            yaml.dump(  # type: ignore[call-overload]
-                data=_serialize_value(value=self),
-                stream=yaml_file,
-                Dumper=yaml.CDumper if _LIBYAML_AVAILABLE else yaml.Dumper,
-                **yaml_formatting,
-            )
+        # through a temporary file created in the destination's own directory, so the rename below stays inside one
+        # filesystem and is therefore atomic. A writer killed mid-dump leaves the previous complete document in place,
+        # rather than the empty file that truncating the destination first would leave.
+        descriptor, temporary_path = mkstemp(dir=file_path.parent, prefix=f".{file_path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd=descriptor, mode="w", encoding="utf-8") as yaml_file:
+                yaml.dump(  # type: ignore[call-overload]
+                    data=_serialize_value(value=self),
+                    stream=yaml_file,
+                    Dumper=yaml.CDumper if _LIBYAML_AVAILABLE else yaml.Dumper,
+                    **yaml_formatting,
+                )
+                # Forces the data out of the userspace and kernel buffers before the rename publishes the file.
+                yaml_file.flush()
+                os.fsync(yaml_file.fileno())
+            Path(temporary_path).replace(target=file_path)
+        except BaseException:
+            Path(temporary_path).unlink(missing_ok=True)
+            raise
+
+    @classmethod
+    def restore_excluded_fields(cls, data: dict[Any, Any], file_path: Path) -> dict[Any, Any]:  # noqa: ARG003
+        """Returns the loaded mapping extended with the values of any field this class excludes from serialization.
+
+        Notes:
+            This method exists to be replaced by subclasses. The implementation here excludes no field and returns
+            the mapping untouched, which is correct for every class that serializes all of its fields.
+
+            A subclass marking a constructor-required field with ``YAML_EXCLUDE_METADATA_KEY`` overrides this method
+            to supply that field's value. The written document carries no entry for such a field, so deserialization
+            cannot build the instance without one. The path the document was read from is passed in, because a field
+            excluded this way usually records where the instance lives.
+
+            ``from_yaml()`` calls this method between reading the document and building the instance, so it belongs
+            to the deserialization machinery rather than to the API a caller invokes.
+
+        Args:
+            data: The top-level mapping read from the .yaml file.
+            file_path: The path the mapping was read from.
+
+        Returns:
+            The mapping to build the instance from, which is the input unchanged when no field is excluded.
+        """
+        return data
 
     @classmethod
     def from_yaml(cls, file_path: Path) -> Self:
@@ -298,7 +392,7 @@ class YamlConfig:
         # Loads the data from the .yaml file. Both parsers build values through the same safe constructor, so they
         # differ in speed alone. Each loader is named literally, since a loader resolved through a variable reads as
         # an arbitrary-object deserialization risk to static analysis.
-        with file_path.open() as yaml_file:
+        with file_path.open(encoding="utf-8") as yaml_file:
             data = (
                 yaml.load(stream=yaml_file, Loader=yaml.CSafeLoader)
                 if _LIBYAML_AVAILABLE
@@ -314,6 +408,6 @@ class YamlConfig:
             )
             console.error(message=message, error=ValueError)
 
-        data_dictionary: dict[Any, Any] = dict(data)
+        data_dictionary: dict[Any, Any] = cls.restore_excluded_fields(data=dict(data), file_path=file_path)
 
         return from_dict(data_class=cls, data=data_dictionary, config=class_config)

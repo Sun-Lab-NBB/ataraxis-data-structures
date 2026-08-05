@@ -9,7 +9,7 @@ import yaml
 import pytest
 from ataraxis_base_utilities import error_format
 
-from ataraxis_data_structures import YamlConfig
+from ataraxis_data_structures import YAML_EXCLUDE_METADATA_KEY, YamlConfig
 from ataraxis_data_structures.data_structures.yaml_config import _serialize_value, _collect_type_hooks
 
 
@@ -526,3 +526,114 @@ def test_collect_type_hooks_union_enum() -> None:
     int_priority_hook = hooks[int | Priority]
     assert int_priority_hook(1) is Priority.LOW
     assert int_priority_hook(99) == 99
+
+
+def test_to_yaml_leaves_previous_file_intact_when_the_dump_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that a failed dump removes its temporary file and leaves the previously saved document in place."""
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        value: str = ""
+
+    yaml_path = tmp_path / "atomic.yaml"
+    TestConfig(value="original").to_yaml(file_path=yaml_path)
+    original_bytes = yaml_path.read_bytes()
+
+    def failing_dump(**_kwargs: Any) -> None:
+        message = "simulated dump failure"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(target="yaml.dump", name=failing_dump)
+
+    with pytest.raises(RuntimeError, match="simulated dump failure"):
+        TestConfig(value="replacement").to_yaml(file_path=yaml_path)
+
+    # The previous document survives untouched, and the temporary file the failed write created is gone.
+    assert yaml_path.read_bytes() == original_bytes
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["atomic.yaml"]
+
+
+def test_yaml_round_trip_uses_utf8_regardless_of_locale(tmp_path: Path) -> None:
+    """Verifies that non-ASCII content authored as UTF-8 survives a load, rather than decoding through the locale."""
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        name: str = ""
+
+    yaml_path = tmp_path / "unicode.yaml"
+    yaml_path.write_bytes("---\nname: caf\u00e9 na\u00efve\n...\n".encode())
+
+    assert TestConfig.from_yaml(file_path=yaml_path).name == "caf\u00e9 na\u00efve"
+
+
+def test_mapping_key_round_trip(tmp_path: Path) -> None:
+    """Verifies that Path and Enum mapping keys are restored as their annotated types, matching the write side."""
+
+    @dataclass
+    class MappingConfig(YamlConfig):
+        by_path: dict[Path, int] = field(default_factory=dict)
+        by_color: dict[Color, str] = field(default_factory=dict)
+        by_string: dict[str, int] = field(default_factory=dict)
+
+    yaml_path = tmp_path / "mappings.yaml"
+    MappingConfig(
+        by_path={Path("/a/b"): 1},
+        by_color={Color.RED: "warm"},
+        by_string={"plain": 2},
+    ).to_yaml(file_path=yaml_path)
+
+    # The document stores plain strings, since that is what YAML can express.
+    with yaml_path.open() as yaml_file:
+        raw = yaml.safe_load(yaml_file)
+    assert raw == {"by_path": {"/a/b": 1}, "by_color": {"red": "warm"}, "by_string": {"plain": 2}}
+
+    loaded = MappingConfig.from_yaml(file_path=yaml_path)
+    assert loaded.by_path == {Path("/a/b"): 1}
+    assert all(isinstance(key, Path) for key in loaded.by_path)
+    assert loaded.by_color == {Color.RED: "warm"}
+    assert all(isinstance(key, Color) for key in loaded.by_color)
+    # A key type needing no conversion is left exactly as YAML produced it.
+    assert loaded.by_string == {"plain": 2}
+    assert all(isinstance(key, str) for key in loaded.by_string)
+
+
+def test_mapping_key_hook_passes_through_a_non_mapping() -> None:
+    """Verifies that the key hook returns a non-mapping value untouched, which a mistyped document can supply."""
+    hooks = _collect_type_hooks(cls=_PathKeyedConfig)
+    assert hooks[dict[Path, int]]("not a mapping") == "not a mapping"
+
+
+@dataclass
+class _PathKeyedConfig(YamlConfig):
+    """Declares a Path-keyed mapping so the key hook can be retrieved for direct testing."""
+
+    by_path: dict[Path, int] = field(default_factory=dict)
+
+
+def test_excluded_field_round_trip(tmp_path: Path) -> None:
+    """Verifies the pattern a subclass uses to keep a location field out of the document it writes."""
+
+    @dataclass
+    class LocatedConfig(YamlConfig):
+        value: int = 0
+        source_path: Path = field(default=Path("/unset"), metadata={YAML_EXCLUDE_METADATA_KEY: True})
+
+        @classmethod
+        def restore_excluded_fields(cls, data: dict[Any, Any], file_path: Path) -> dict[Any, Any]:
+            """Reattaches the instance to the file it was read from."""
+            return {**data, "source_path": file_path}
+
+    yaml_path = tmp_path / "located.yaml"
+    LocatedConfig(value=7, source_path=Path("/the/writing/host/path")).to_yaml(file_path=yaml_path)
+
+    # The writing host's path stays out of the document entirely.
+    with yaml_path.open() as yaml_file:
+        raw = yaml.safe_load(yaml_file)
+    assert raw == {"value": 7}
+
+    # The reader supplies the path from where it found the file, rather than from what the writer recorded.
+    loaded = LocatedConfig.from_yaml(file_path=yaml_path)
+    assert loaded.value == 7
+    assert loaded.source_path == yaml_path

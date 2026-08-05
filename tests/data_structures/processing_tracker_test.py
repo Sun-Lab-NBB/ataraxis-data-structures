@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+import yaml
 import pytest
 from ataraxis_base_utilities import error_format
 
@@ -867,6 +868,85 @@ def test_processing_tracker_complete_property_empty_jobs(tmp_path: Path) -> None
     tracker._save_state()
 
     assert not tracker.complete
+
+
+def test_processing_tracker_generate_job_id_golden_values() -> None:
+    """Verifies that generate_job_id produces the exact digests every tracker file on disk is keyed by."""
+    # These are golden values. Job IDs are the persisted keys inside every tracker YAML and the cross-process handle
+    # for a job, so any change to the delimiter, the encoding, the hash function, or its seed orphans existing
+    # trackers. Deriving the expectation by calling the function would make the implementation its own oracle.
+    assert ProcessingTracker.generate_job_id(job_name="suite2p_processing", specifier="plane_0") == "cd0547cf71e4ea30"
+    assert ProcessingTracker.generate_job_id(job_name="suite2p_processing", specifier="") == "ced6b6029ca878f9"
+    assert ProcessingTracker.generate_job_id(job_name="process_data", specifier="batch_101") == "e30d3e55fffe8b95"
+
+
+def test_processing_tracker_generate_job_id_rejects_a_colon() -> None:
+    """Verifies that a colon in either component is rejected, since it joins them inside the hashed string."""
+    message = (
+        "Unable to generate the identifier for the job 'data:batch' with the specifier ''. The job name and the "
+        "specifier must not contain the ':' character, as it joins them inside the hashed identifier string."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        ProcessingTracker.generate_job_id(job_name="data:batch")
+
+    specifier_message = (
+        "Unable to generate the identifier for the job 'data' with the specifier 'batch:one'. The job name and the "
+        "specifier must not contain the ':' character, as it joins them inside the hashed identifier string."
+    )
+    with pytest.raises(ValueError, match=error_format(specifier_message)):
+        ProcessingTracker.generate_job_id(job_name="data", specifier="batch:one")
+
+
+def test_processing_tracker_align_jobs_rejects_an_empty_request(tmp_path: Path) -> None:
+    """Verifies that an empty job list is rejected instead of resolving to a universe that discards every entry."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    universe = [("job_a", ""), ("job_b", "1")]
+    job_ids = tracker.align_jobs(jobs=universe, universe=universe)
+    for job_id in job_ids:
+        tracker.start_job(job_id=job_id)
+        tracker.complete_job(job_id=job_id)
+
+    message = (
+        f"Unable to align the processing tracker at '{tracker_file}' with the requested jobs. The 'jobs' argument "
+        f"must name at least one job, but an empty list was provided."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        tracker.align_jobs(jobs=[])
+
+    # The rejected request left every recorded outcome in place.
+    registry = tracker.snapshot()
+    assert set(registry) == set(job_ids)
+    assert all(job_state.status == ProcessingStatus.SUCCEEDED for job_state in registry.values())
+
+
+def test_processing_tracker_serializes_the_job_registry_alone(tmp_path: Path) -> None:
+    """Verifies that the tracker document carries the job registry and neither of the instance's path fields."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    tracker.initialize_jobs(jobs=[("job_a", "")])
+
+    with tracker_file.open() as yaml_file:
+        document = yaml.safe_load(yaml_file)
+
+    assert set(document) == {"jobs"}
+
+
+def test_processing_tracker_from_yaml_returns_an_attached_instance(tmp_path: Path) -> None:
+    """Verifies that a tracker rebuilt through the public from_yaml() stays bound to the file it was read from."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    job_ids = tracker.initialize_jobs(jobs=[("job_a", ""), ("job_b", "")])
+    tracker.start_job(job_id=job_ids[0])
+    tracker.complete_job(job_id=job_ids[0])
+
+    rebuilt = ProcessingTracker.from_yaml(file_path=tracker_file)
+
+    assert rebuilt.file_path == tracker_file
+    assert rebuilt.lock_path == str(tracker_file.with_suffix(".yaml.lock"))
+    # The rebuilt instance reads the same registry the writer recorded, rather than reporting an empty pipeline.
+    assert rebuilt.snapshot()[job_ids[0]].status == ProcessingStatus.SUCCEEDED
+    assert len(rebuilt.find_jobs()) == 2
 
 
 def _clear_scheduler_environment(monkeypatch: pytest.MonkeyPatch) -> None:

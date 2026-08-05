@@ -69,7 +69,10 @@ class SharedMemoryArray:
         self._datatype: np.dtype[Any] = datatype
         self._buffer: SharedMemory | None = buffer
         self._lock: synchronize.Lock = _MULTIPROCESSING_CONTEXT.Lock()
-        self._array: NDArray[Any] | None = np.zeros(shape=shape, dtype=datatype)
+        # Stays None until connect() binds the view to the shared buffer. Every reader gates on _connected, which
+        # connect() sets only after rebinding this attribute, so allocating a private array here would be discarded
+        # unread while transiently doubling the memory the buffer already occupies.
+        self._array: NDArray[Any] | None = None
         self._connected: bool = False
         self._destroy_buffer: bool = False
 
@@ -138,10 +141,13 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-        with self.array(with_lock=True) as shared_array:
+        # Takes the lock directly rather than through the array() context manager, whose generator, wrapper object,
+        # and repeated connection guard dominate the cost of a single element access. The lock acquisition, the
+        # returned values, and the guard above are the same either way.
+        with self._lock:
             # Returns a copy to prevent external modifications to the returned data from affecting the shared array
             # without going through __setitem__.
-            result = shared_array[index]
+            result = self._array[index]
             if isinstance(result, np.ndarray):
                 return result.copy()
             return result
@@ -177,8 +183,9 @@ class SharedMemoryArray:
             )
             console.error(message=message, error=ConnectionError)
 
-        with self.array(with_lock=True) as shared_array:
-            shared_array[index] = value
+        # Takes the lock directly, for the reason given in __getitem__.
+        with self._lock:
+            self._array[index] = value
 
     def enable_buffer_destruction(self) -> None:
         """Configures the instance to destroy the shared memory buffer when it is garbage-collected.
@@ -247,8 +254,20 @@ class SharedMemoryArray:
             if exists_ok:
                 SharedMemory(name=name, create=False).unlink()
 
-                # Recreates the shared memory buffer using the freed buffer name.
-                buffer = SharedMemory(name=name, create=True, size=prototype.nbytes)
+                # Recreates the shared memory buffer using the freed buffer name. Unlinking frees the name outright on
+                # Unix, while Windows keeps it claimed until the last handle to the buffer closes, so the recreation
+                # is the step that reports an outstanding handle.
+                try:
+                    buffer = SharedMemory(name=name, create=True, size=prototype.nbytes)
+                except FileExistsError:
+                    message = (
+                        f"Unable to recreate the '{name}' SharedMemoryArray object, as the shared memory buffer with "
+                        f"this name is still held by an open handle. Windows destroys a buffer only once every handle "
+                        f"to it is closed, so unlinking one that this runtime or another process still holds leaves "
+                        f"the name claimed. Disconnect every SharedMemoryArray instance connected to this buffer, "
+                        f"then call this method again."
+                    )
+                    console.error(message=message, error=FileExistsError)
 
             else:
                 message = (
@@ -260,9 +279,15 @@ class SharedMemoryArray:
                 console.error(message=message, error=FileExistsError)
 
         # Instantiates a NumPy array using the shared memory buffer and copies the prototype array data into the shared
-        # array instance.
-        shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
-        shared_array[:] = prototype[:]
+        # array instance. Releases the buffer if either step fails, since no instance exists yet to release it through
+        # destroy() and the name would otherwise stay claimed for the rest of the runtime.
+        try:
+            shared_array: NDArray[Any] = np.ndarray(shape=prototype.shape, dtype=prototype.dtype, buffer=buffer.buf)
+            shared_array[:] = prototype[:]
+        except BaseException:
+            buffer.close()
+            buffer.unlink()
+            raise
 
         # Packages the data necessary to connect to the shared array into the class instance and returns it to caller.
         return cls(

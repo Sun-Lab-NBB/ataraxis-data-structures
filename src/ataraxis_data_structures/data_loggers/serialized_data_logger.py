@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from queue import Empty
 from typing import TYPE_CHECKING, Any, Literal
+from operator import itemgetter
 import platform
 from functools import partial
 from threading import Thread
+from contextlib import contextmanager
 from collections import defaultdict
 from dataclasses import dataclass
 from multiprocessing import (
@@ -20,18 +22,31 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 
 import numpy as np
 from ataraxis_time import PrecisionTimer, TimerPrecisions
-from ataraxis_base_utilities import console, resolve_worker_count, convert_scalar_to_bytes, ensure_directory_exists
+from ataraxis_base_utilities import (
+    LogLevel,
+    console,
+    resolve_worker_count,
+    convert_scalar_to_bytes,
+    ensure_directory_exists,
+)
 
+from ..processing import limit_worker_threads
 from ..shared_memory import SharedMemoryArray
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from collections.abc import Generator
+    from concurrent.futures import Future
     from multiprocessing.context import SpawnContext
     from multiprocessing.process import BaseProcess
     from multiprocessing.managers import SyncManager
 
     from numpy.typing import NDArray
 
+
+_MULTIPROCESSING_CONTEXT: SpawnContext = get_context("spawn")
+"""The spawn-based multiprocessing context used to create the process pool that assembles log archives, ensuring
+identical cross-platform behavior on all supported platforms."""
 
 _BATCH_OVERSCALE_FACTOR: int = 4
 """The multiplier applied to the per-worker share of log entries when sizing the batches used for parallel loading."""
@@ -66,11 +81,12 @@ class LogPackage:
         serialized_source = convert_scalar_to_bytes(value=self.source_id, dtype=np.dtype(np.uint8))
 
         # Assumes that each source produces the data sequentially and that timestamps are acquired with high enough
-        # resolution to resolve the order of data acquisition.
+        # resolution to resolve the order of data acquisition. np.concatenate allocates a fresh array that owns its
+        # buffer and aliases none of its inputs, so the result needs no defensive copy.
         data = np.concatenate(
             [serialized_source, serialized_acquisition_time, self.serialized_data],
             dtype=np.uint8,
-        ).copy()
+        )
 
         # Zero-pads ID and timestamp. Uses the correct number of zeroes to represent the number of digits that
         # fit into each datatype (uint8 and uint64).
@@ -91,6 +107,11 @@ class DataLogger:
 
         Use the multiprocessing Queue exposed via the 'input_queue' property to send the data to the logger. The data
         must be packaged into the LogPackage class instance before it is submitted to the queue.
+
+        Submitting data to the input queue does not confirm that the data reached the disk, since the logger process
+        writes the entries asynchronously. A write that fails while the logger is running terminates the logger
+        process, which the watchdog thread reports as a ChildProcessError. A write that fails during the shutdown
+        sequence is reported by stop() as a warning.
 
     Args:
         output_directory: The directory in which to save the logged data. The data is saved under a subdirectory named
@@ -175,19 +196,21 @@ class DataLogger:
             exists_ok=True,
         )
 
-        # Creates and starts the logger process.
-        self._logger_process = self._multiprocessing_context.Process(
-            target=self._log_cycle,
-            args=(
-                self._input_queue,
-                self._terminator_array,
-                self._output_directory,
-                self._thread_count,
-                self._poll_interval,
-            ),
-            daemon=True,
-        )
-        self._logger_process.start()
+        # Creates and starts the logger process. The logger writes .npy files rather than performing numeric work, so
+        # its process is spawned under the thread limit to keep the numeric backends from opening a pool it never uses.
+        with limit_worker_threads():
+            self._logger_process = self._multiprocessing_context.Process(
+                target=self._log_cycle,
+                args=(
+                    self._input_queue,
+                    self._terminator_array,
+                    self._output_directory,
+                    self._thread_count,
+                    self._poll_interval,
+                ),
+                daemon=True,
+            )
+            self._logger_process.start()
 
         # Finishes setting up the terminator array in the main runtime thread. Specifically, connects to the shared
         # memory buffer and enables destroying the buffer when the instance is garbage-collected.
@@ -201,7 +224,13 @@ class DataLogger:
         self._started = True
 
     def stop(self) -> None:
-        """Stops the logger process once it saves all buffered data and releases reserved resources."""
+        """Stops the logger process once it saves all buffered data and releases reserved resources.
+
+        Notes:
+            A logger process that failed to save one of its buffered entries is reported through a warning rather than
+            an exception. This method only reaches that check during the shutdown sequence, where raising would mask
+            the shutdown work of the caller that is already unwinding, and where the data is lost either way.
+        """
         if not self._started:
             return
 
@@ -212,8 +241,10 @@ class DataLogger:
         if self._terminator_array is not None:
             self._terminator_array[0] = 1
 
+        logger_exit_code: int | None = None
         if self._logger_process is not None:
             self._logger_process.join()
+            logger_exit_code = self._logger_process.exitcode
 
         if self._watchdog_thread is not None:
             self._watchdog_thread.join()
@@ -221,6 +252,20 @@ class DataLogger:
         if self._terminator_array is not None:
             self._terminator_array.disconnect()
             self._terminator_array.destroy()
+
+        # The logger process exits non-zero when a disk write fails, so the code is the only evidence the caller gets
+        # that its data did not reach the disk. Every resource above is released first, so reporting the failure does
+        # not also leak the shared memory buffer. The console is temporarily enabled, since a silent data loss report
+        # would defeat the purpose of making the check at all.
+        if logger_exit_code:
+            message = (
+                f"Unable to confirm that the {self._name} DataLogger saved all buffered data. The logger process "
+                f"exited with code {logger_exit_code} instead of shutting down cleanly, which indicates that at least "
+                f"one of the submitted log entries did not reach the disk. Treat the data this logger recorded as "
+                f"incomplete."
+            )
+            with console.temporarily_enabled():
+                console.echo(message=message, level=LogLevel.WARNING)
 
     @property
     def input_queue(self) -> MultiprocessingQueue:  # type: ignore[type-arg]
@@ -256,13 +301,16 @@ class DataLogger:
 
             # Only checks that the process is alive if it is started.
             if self._logger_process is not None and not self._logger_process.is_alive():  # pragma: no cover
+                # Retires the instance in the same order stop() uses, clearing the started flag before releasing the
+                # terminator array. stop() reads that flag first and returns early once it is False, so a concurrent
+                # shutdown cannot reach the array after this thread has destroyed it.
+                self._started = False
+
                 # Cleans up all resources, similar to the stop() method.
                 self._terminator_array[0] = 1
                 self._logger_process.join()
                 self._terminator_array.disconnect()
                 self._terminator_array.destroy()
-                # Prevents stop() from running again via __del__.
-                self._started = False
 
                 # Raises the error.
                 message = (
@@ -280,6 +328,31 @@ class DataLogger:
             data: The data to be saved, packaged into a one-dimensional byte array.
         """
         np.save(file=filename, arr=data, allow_pickle=False)
+
+    @staticmethod
+    def _retire_completed_writes(pending_writes: list[Future[None]]) -> list[Future[None]]:
+        """Removes the finished disk writes from the input list and re-raises the error of the first failed write.
+
+        Args:
+            pending_writes: The futures of the disk writes submitted to the logger process thread pool.
+
+        Returns:
+            The futures of the disk writes that are still running.
+
+        Raises:
+            OSError: If saving one of the finished log entries to disk failed.
+        """
+        running_writes = []
+        for write in pending_writes:
+            if not write.done():
+                running_writes.append(write)
+                continue
+
+            # Propagates the error of a finished write. Discarding the result instead would allow the logger to report
+            # a clean shutdown after silently losing the data of that log entry.
+            write.result()
+
+        return running_writes
 
     @staticmethod
     def _log_cycle(
@@ -301,6 +374,10 @@ class DataLogger:
             thread_count: The number of threads to use for parallelizing I/O operations.
             poll_interval: The interval, in milliseconds, at which to poll the input queue for new data if the queue
                 has been emptied.
+
+        Raises:
+            OSError: If saving any of the processed log entries to disk failed. Propagating the error terminates the
+                logger process with a non-zero exit code, which is how the failure reaches the parent process.
         """
         terminator_array.connect()
 
@@ -308,6 +385,10 @@ class DataLogger:
 
         # Initializes the timer instance to delay polling the queue during idle periods.
         sleep_timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
+
+        # Tracks the writes still in flight. Retiring each one as it completes keeps the list bounded by the pool's own
+        # width and surfaces a failed write while the logger is still running.
+        pending_writes: list[Future[None]] = []
 
         # Runs until both the terminator flag is set and the input queue is drained.
         try:
@@ -323,7 +404,8 @@ class DataLogger:
                     # the path to the output directory.
                     filename = output_directory.joinpath(file_name)
 
-                    executor.submit(DataLogger._save_data, filename=filename, data=data)
+                    pending_writes.append(executor.submit(DataLogger._save_data, filename=filename, data=data))
+                    pending_writes = DataLogger._retire_completed_writes(pending_writes=pending_writes)
 
                 # If the queue is empty, invokes the sleep timer to reduce CPU load. Whether the consumer ever
                 # outpaces the producer depends on runtime timing, so the branch stays outside the measured corpus.
@@ -333,6 +415,10 @@ class DataLogger:
             # Ensures all remote assets are released before the process shutdown.
             executor.shutdown(wait=True)
             terminator_array.disconnect()
+
+        # Re-raises the error of the first failed write once the pool has drained. The error terminates this process
+        # with a non-zero exit code, which is what stop() reads to determine that some data did not reach the disk.
+        DataLogger._retire_completed_writes(pending_writes=pending_writes)
 
 
 def assemble_log_archives(
@@ -351,8 +437,14 @@ def assemble_log_archives(
         acquisition timestamp value before consolidation. The consolidated archive names include the ID code of the
         source that generated the original log entries.
 
+        Discovery covers the target directory itself and does not descend into its subdirectories, since one
+        DataLogger instance is the unit of serialization and owns exactly one log directory. Entry names carry the
+        source ID and the acquisition timestamp alone, so entries from two logger instances that share a source ID
+        would collide on name if a single call consolidated both.
+
     Args:
-        log_directory: The path to the directory that stores the log entries as .npy files.
+        log_directory: The path to the directory that stores the log entries of one DataLogger instance as .npy
+            files, which is the directory the instance exposes through its output_directory property.
         max_workers: Determines the number of worker processes and threads used to process the data in parallel. A
             positive value is honored exactly, capped at the physical core count. If set to None, 0, or a negative
             value, the function uses the number of CPU cores minus 2, clamped to at least 1.
@@ -371,29 +463,26 @@ def assemble_log_archives(
     # Windows. Callers cap RAM usage on Windows through the max_workers argument.
     memory_mapping = memory_mapping and platform.system() != "Windows"
 
-    # Configures console progress display based on the verbose flag and saves the prior progress state to allow
-    # restoring it once the function runtime completes.
-    previous_progress = console.progress_enabled
-    if verbose:
-        console.enable_progress()
-    else:
-        console.disable_progress()
+    # Collects all .npy files and groups them by source_id, parsing each stem once into its source and timestamp
+    # fields so the sort below reads the parsed timestamp rather than splitting every stem a second time.
+    source_entries: dict[int, list[tuple[int, Path]]] = defaultdict(list)
+    for file_path in log_directory.glob("*.npy"):
+        source_field, timestamp_field = file_path.stem.split("_")[:2]
+        source_entries[int(source_field)].append((int(timestamp_field), file_path))
 
-    # Collects all .npy files and groups them by source_id.
-    source_files: dict[int, list[Path]] = defaultdict(list)
-    for file_path in log_directory.rglob("*.npy"):
-        source_id = int(file_path.stem.split("_")[0])
-        source_files[source_id].append(file_path)
-
-    # Sorts files within each source_id group by their integer-convertible timestamp.
-    for files in source_files.values():
-        files.sort(key=lambda file_path: int(file_path.stem.split("_")[1]))
+    # Sorts entries within each source_id group by their acquisition timestamp and drops the parsed sort keys.
+    source_files: dict[int, list[Path]] = {
+        source_id: [file_path for _, file_path in sorted(entries, key=itemgetter(0))]
+        for source_id, entries in source_entries.items()
+    }
 
     # Initiates log processing. Since some steps of log processing are more efficiently executed via multithreading
     # and others via multiprocessing, uses both process and thread pool executors to efficiently process the data.
     with (
+        _progress_display(enabled=verbose),
+        limit_worker_threads(),
         console.temporarily_enabled(),
-        ProcessPoolExecutor(max_workers=max_workers) as process_executor,
+        ProcessPoolExecutor(max_workers=max_workers, mp_context=_MULTIPROCESSING_CONTEXT) as process_executor,
         ThreadPoolExecutor(max_workers=max_workers) as thread_executor,
     ):
         # PHASE 1: Loads source files in parallel batches.
@@ -462,7 +551,8 @@ def assemble_log_archives(
             # Verifies the integrity of each archive data against the original data.
             verification_futures = [
                 thread_executor.submit(
-                    partial(_compare_arrays, source_id=source_id),
+                    _compare_arrays,
+                    source_id=source_id,
                     stem=stem,
                     original_array=original_array,
                     archived_array=archive_data[source_id][stem],
@@ -495,11 +585,34 @@ def assemble_log_archives(
                     remove_future.result()
                     progress_bar.update(1)
 
-    # Restores the console progress display to its previous state.
-    if previous_progress:
-        console.enable_progress()  # pragma: no cover
+
+@contextmanager
+def _progress_display(*, enabled: bool) -> Generator[None, None, None]:
+    """Sets the console progress display for the duration of the context and restores the previous state on exit.
+
+    Notes:
+        The console tracks the progress display separately from its enabled state, so ``temporarily_enabled()`` does
+        not restore it. The restore runs on the exception path as well, which keeps a failed archive assembly from
+        leaving the process-global display flag inverted for every later caller.
+
+    Args:
+        enabled: Determines whether the progress display is active inside the context.
+
+    Yields:
+        None.
+    """
+    previous_progress = console.progress_enabled
+    if enabled:
+        console.enable_progress()
     else:
         console.disable_progress()
+    try:
+        yield
+    finally:
+        if previous_progress:
+            console.enable_progress()
+        else:
+            console.disable_progress()
 
 
 def _load_numpy_files(

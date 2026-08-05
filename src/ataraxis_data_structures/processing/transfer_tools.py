@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from ataraxis_time import PrecisionTimer, TimerPrecisions
 from ataraxis_base_utilities import console, resolve_worker_count, ensure_directory_exists
 
-from .checksum_tools import calculate_directory_checksum
+from .checksum_tools import CHECKSUM_FILENAME, calculate_directory_checksum
 
 _MAXIMUM_DELETION_ATTEMPTS: int = 5
 """The maximum number of times directory deletion is retried before giving up."""
@@ -20,6 +20,10 @@ def delete_directory(directory_path: Path) -> None:
     """Deletes the target directory and all its subdirectories, unlinking the files within each directory in parallel.
 
     Notes:
+        A symlink is removed as a link, whatever it points at, so the tree behind a symlinked subdirectory is left
+        untouched and only entries living inside the target directory are deleted. Every entry that is not a real
+        directory is unlinked in place, which additionally covers the sockets and FIFOs that a file check skips.
+
         Removal of each emptied directory is attempted up to five times, with a 500 millisecond delay between
         attempts, as some Operating Systems are slow to release file handles. If every attempt fails, the function
         returns without raising an error and the directory is left in place. Check the path with Path.exists() when
@@ -31,8 +35,12 @@ def delete_directory(directory_path: Path) -> None:
     if not directory_path.exists():
         return
 
-    files = [path for path in directory_path.iterdir() if path.is_file()]
-    subdirectories = [path for path in directory_path.iterdir() if path.is_dir()]
+    # Classifies entries with symlink-aware predicates, since is_dir() and is_file() both resolve a symlink to its
+    # target. Without the is_symlink() test, a symlink to a directory would be recursed into and its target's files
+    # unlinked, outside the tree this call names.
+    entries = list(directory_path.iterdir())
+    files = [path for path in entries if path.is_symlink() or not path.is_dir()]
+    subdirectories = [path for path in entries if path.is_dir() and not path.is_symlink()]
 
     with ThreadPoolExecutor() as executor:
         list(executor.map(Path.unlink, files))  # Forces completion of all tasks.
@@ -60,6 +68,7 @@ def transfer_directory(
     verify_integrity: bool = False,
     remove_source: bool = False,
     progress: bool = False,
+    reset_dirty_destination: bool = False,
 ) -> None:
     """Copies the contents of the input source directory to the destination directory while preserving the underlying
     directory hierarchy.
@@ -77,6 +86,15 @@ def transfer_directory(
         transfer, it recomputes the checksum for the destination directory and compares it against the source
         checksum to detect data corruption.
 
+        A source tree containing a symlink of any kind is rejected. A link is meaningful only relative to the
+        filesystem that holds it, so moving one is either a silent omission or a dangling entry at the destination.
+        Resolve every link into real data before transferring the tree.
+
+        A destination holding files the source does not account for is also rejected, since the integrity check
+        covers the whole destination and those files would fail it while every transferred byte is correct. Enabling
+        ``reset_dirty_destination`` deletes exactly those files instead of rejecting the transfer. The checksum file
+        never counts as unaccounted, because the transfer overwrites it.
+
     Args:
         source: The path to the directory to be transferred.
         destination: The path to the destination directory where to move the contents of the source directory.
@@ -86,10 +104,14 @@ def transfer_directory(
         remove_source: Determines whether to remove the source directory after the transfer is complete and
             (optionally) verified.
         progress: Determines whether to track the transfer progress using a progress bar.
+        reset_dirty_destination: Determines whether to delete the destination files the source does not account for,
+            rather than rejecting the transfer when any are found.
 
     Raises:
         FileNotFoundError: If the source directory does not exist.
-        RuntimeError: If the transferred files do not pass the xxHash3-128 checksum integrity verification.
+        RuntimeError: If the source directory contains a symlink, if the destination holds unaccounted files while
+            ``reset_dirty_destination`` is disabled, or if the transferred files do not pass the xxHash3-128 checksum
+            integrity verification.
     """
     if not source.exists():
         message = f"Unable to transfer the source directory {source}, as it does not exist."
@@ -100,16 +122,48 @@ def transfer_directory(
     if num_threads < 1:
         num_threads = resolve_worker_count()
 
-    # If transfer integrity verification is enabled, but the source directory does not contain the 'ax_checksum.txt'
-    # file, checksums the directory before the transfer operation.
-    if verify_integrity and not source.joinpath("ax_checksum.txt").exists():
-        calculate_directory_checksum(directory=source, progress=False, save_checksum=True)
+    # Discovers the source directory contents before anything is written, so a rejected transfer leaves no checksum
+    # file behind and creates no destination entries.
+    subdirectories, file_list, symlinks = _collect_source_items(source=source)
+
+    if symlinks:
+        message = (
+            f"Unable to transfer the source directory {source}, as it contains {len(symlinks)} symbolic link(s). A "
+            f"link resolves only against the filesystem holding it, so transferring one either drops the data it "
+            f"stands for or leaves a dangling entry at the destination. Resolve the following link(s) into real "
+            f"data before transferring the tree: {', '.join(str(link.relative_to(source)) for link in symlinks)}."
+        )
+        console.error(message=message, error=RuntimeError)
 
     ensure_directory_exists(path=destination)
 
-    # Discovers the source directory contents and recreates its subdirectory hierarchy inside the destination before
-    # copying any files.
-    subdirectories, file_list = _collect_source_items(source=source)
+    # Reconciles the destination against the source before writing to it. The integrity check hashes the whole
+    # destination tree, so a file the source does not account for fails verification even when every transferred byte
+    # is correct.
+    unaccounted_files = _find_unaccounted_destination_files(
+        source=source, destination=destination, source_files=file_list
+    )
+    if unaccounted_files and not reset_dirty_destination:
+        message = (
+            f"Unable to transfer the source directory {source} to {destination}, as the destination holds "
+            f"{len(unaccounted_files)} file(s) the source does not account for. These files would fail the integrity "
+            f"check the transfer performs. Remove them, or enable the 'reset_dirty_destination' flag to have the "
+            f"transfer remove them: {', '.join(str(file.relative_to(destination)) for file in unaccounted_files)}."
+        )
+        console.error(message=message, error=RuntimeError)
+    for unaccounted_file in unaccounted_files:
+        unaccounted_file.unlink()
+
+    # If transfer integrity verification is enabled, but the source directory does not contain the 'ax_checksum.txt'
+    # file, checksums the directory before the transfer operation. A checksum written here postdates the discovery
+    # above, so it is added to the transfer set explicitly and travels to the destination with the data it covers.
+    if verify_integrity:
+        source_checksum_path = source.joinpath(CHECKSUM_FILENAME)
+        if not source_checksum_path.exists():
+            calculate_directory_checksum(directory=source, progress=False, save_checksum=True)
+            file_list.append(source_checksum_path)
+
+    # Recreates the source subdirectory hierarchy inside the destination before copying any files.
     for destination_directory_path in _plan_destination_directories(
         source=source,
         destination=destination,
@@ -156,7 +210,7 @@ def transfer_directory(
     # Verifies the integrity of the transferred directory by rerunning xxHash3-128 calculation.
     if verify_integrity:
         destination_checksum = calculate_directory_checksum(directory=destination, progress=False, save_checksum=False)
-        with source.joinpath("ax_checksum.txt").open("r") as local_checksum:
+        with source.joinpath(CHECKSUM_FILENAME).open("r") as local_checksum:
             if destination_checksum != local_checksum.readline().strip():
                 message = (
                     f"Checksum mismatch detected when transferring {Path(*source.parts[-6:])} to "
@@ -174,23 +228,50 @@ def transfer_directory(
         delete_directory(directory_path=source)
 
 
-def _collect_source_items(source: Path) -> tuple[list[Path], list[Path]]:
-    """Discovers the contents of the source directory and separates them into subdirectories and files.
+def _collect_source_items(source: Path) -> tuple[list[Path], list[Path], list[Path]]:
+    """Discovers the contents of the source directory and separates them into subdirectories, files, and symlinks.
 
     Notes:
-        Both lists are sorted by path depth so that parent directories precede their children and the file copy
-        order is deterministic. Any item that is not a directory is treated as a file.
+        Every list is sorted by path depth so that parent directories precede their children and the file copy order
+        is deterministic. Any item that is neither a directory nor a symlink is treated as a file.
+
+        Symlinks are reported separately rather than classified, because ``is_dir()`` and ``is_file()`` both resolve
+        a link to its target and would otherwise file it as whichever kind it points at.
 
     Args:
         source: The root directory whose contents are discovered.
 
     Returns:
-        The subdirectories and files found anywhere under the source directory, each sorted by path depth.
+        The subdirectories, files, and symlinks found anywhere under the source directory, each sorted by path depth.
     """
     all_items = sorted(source.rglob("*"), key=lambda path: len(path.relative_to(source).parts))
-    subdirectories = [item for item in all_items if item.is_dir()]
-    files = [item for item in all_items if not item.is_dir()]
-    return subdirectories, files
+    symlinks = [item for item in all_items if item.is_symlink()]
+    subdirectories = [item for item in all_items if item.is_dir() and not item.is_symlink()]
+    files = [item for item in all_items if not item.is_dir() and not item.is_symlink()]
+    return subdirectories, files, symlinks
+
+
+def _find_unaccounted_destination_files(source: Path, destination: Path, source_files: list[Path]) -> list[Path]:
+    """Finds the destination files the source directory does not account for.
+
+    Notes:
+        The checksum file never counts as unaccounted, because the transfer overwrites it with the source's own copy.
+        Directories are ignored, since an empty directory contributes nothing to the integrity check.
+
+    Args:
+        source: The root source directory the transferred files are relative to.
+        destination: The destination directory to reconcile against the source.
+        source_files: The files the transfer copies out of the source directory.
+
+    Returns:
+        The unaccounted destination files, sorted by path.
+    """
+    expected = {file_path.relative_to(source) for file_path in source_files}
+    return sorted(
+        path
+        for path in destination.rglob("*")
+        if path.is_file() and path.name != CHECKSUM_FILENAME and path.relative_to(destination) not in expected
+    )
 
 
 def _plan_destination_directories(source: Path, destination: Path, subdirectories: list[Path]) -> list[Path]:
