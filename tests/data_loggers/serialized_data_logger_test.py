@@ -364,6 +364,34 @@ def test_log_package_data_large_timestamp() -> None:
     assert int(data[1:9].view(np.uint64)[0]) == 2**63 + 5
 
 
+@pytest.mark.parametrize("payload_dtype", [np.int32, np.int64, np.float64])
+def test_log_package_data_rejects_a_payload_of_another_datatype_kind(payload_dtype: Any) -> None:
+    """Verifies that LogPackage.data raises instead of reinterpreting a payload whose datatype belongs to another
+    kind.
+    """
+    package = LogPackage(
+        source_id=np.uint8(3),
+        acquisition_time=np.uint64(9),
+        serialized_data=np.array([1, 300, -2], dtype=payload_dtype),
+    )
+
+    with pytest.raises(TypeError):
+        _ = package.data
+
+
+def test_log_package_data_accepts_a_boolean_payload() -> None:
+    """Verifies that LogPackage.data serializes a boolean payload, which casts to bytes without losing information."""
+    package = LogPackage(
+        source_id=np.uint8(3),
+        acquisition_time=np.uint64(9),
+        serialized_data=np.array([True, False, True], dtype=np.bool_),
+    )
+
+    _, data = package.data
+
+    assert data[9:].tolist() == [1, 0, 1]
+
+
 def test_compare_arrays_raises_on_mismatched_entry() -> None:
     """Verifies that the archive integrity gate raises when an archived entry differs from its source entry."""
     message = (

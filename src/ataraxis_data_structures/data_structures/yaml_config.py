@@ -8,6 +8,7 @@ from types import UnionType, MappingProxyType
 from typing import Any, Self, Union, get_args, get_origin, get_type_hints
 from pathlib import Path
 from tempfile import mkstemp
+from functools import lru_cache
 from dataclasses import fields, dataclass, is_dataclass
 from collections.abc import Mapping, Callable
 
@@ -29,6 +30,14 @@ Notes:
 
 _MAPPING_ARGUMENT_COUNT: int = 2
 """The number of type arguments a mapping annotation carries, which is its key type followed by its value type."""
+
+_TYPE_HOOK_CACHE_SIZE: int = 256
+"""The number of dataclass type-hook tables the collector retains.
+
+Notes:
+    The cache holds a strong reference to every class it keys, so bounding it keeps a program that builds dataclasses
+    dynamically from retaining every class it ever built.
+"""
 
 _LIBYAML_AVAILABLE: bool = hasattr(yaml, "CSafeLoader")
 """Determines whether the PyYAML build provides the libyaml-backed parser and emitter. Reading and writing both
@@ -143,6 +152,7 @@ def _make_mapping_key_hook(key_type: type) -> Callable[[Any], Any]:
     return _hook
 
 
+@lru_cache(maxsize=_TYPE_HOOK_CACHE_SIZE)
 def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
     """Builds a dacite ``type_hooks`` dictionary by introspecting the dataclass class hierarchy.
 
@@ -151,6 +161,10 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
     deserialization.
 
     Notes:
+        The table depends on the input class alone, so it is built once and reused for every later call naming that
+        class. Every caller therefore receives the same mapping object, which dacite reads without modifying. A
+        caller that needs to modify the mapping copies it first.
+
         For union annotations containing Enum subclasses (e.g., ``str | Color`` or ``int | Priority``), a union-level
         hook is registered that tries each enum constructor before dacite's default left-to-right member iteration.
         This makes deserialization order-independent: ``str | Color`` and ``Color | str`` both correctly produce enum
@@ -388,10 +402,12 @@ class YamlConfig:
             )
             console.error(message=message, error=ValueError)
 
-        # Builds type_hooks from the class hierarchy to auto-convert str -> Path, raw value -> Enum, etc. The cast
-        # list converts YAML lists back to tuples at the field level. check_types=False allows union annotations
-        # such as ``Enum | str`` to accept either member.
-        type_hooks = _collect_type_hooks(cls=cls)
+        # Resolves the type_hooks for the class hierarchy to auto-convert str -> Path, raw value -> Enum, etc. The
+        # cast list converts YAML lists back to tuples at the field level. check_types=False allows union annotations
+        # such as ``Enum | str`` to accept either member. The classmethod's Self-bound 'cls' is widened to a plain
+        # type first, which is what the collector's hashable parameter declaration accepts.
+        config_class: type = cls
+        type_hooks = _collect_type_hooks(cls=config_class)
         class_config = Config(type_hooks=type_hooks, cast=[tuple], check_types=False)
 
         # Loads the data from the .yaml file. Both parsers build values through the same safe constructor, so they

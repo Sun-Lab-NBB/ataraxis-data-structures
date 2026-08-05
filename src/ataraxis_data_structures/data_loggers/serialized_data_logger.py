@@ -26,7 +26,6 @@ from ataraxis_base_utilities import (
     LogLevel,
     console,
     resolve_worker_count,
-    convert_scalar_to_bytes,
     ensure_directory_exists,
 )
 
@@ -50,6 +49,13 @@ identical cross-platform behavior on all supported platforms."""
 
 _BATCH_OVERSCALE_FACTOR: int = 4
 """The multiplier applied to the per-worker share of log entries when sizing the batches used for parallel loading."""
+
+_SOURCE_ID_BYTE_SIZE: int = 1
+"""The number of bytes the source ID occupies at the start of each serialized log entry."""
+
+_HEADER_BYTE_SIZE: int = 9
+"""The number of bytes the source ID and the acquisition timestamp occupy together at the start of each serialized log
+entry."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,17 +82,19 @@ class LogPackage:
     @property
     def data(self) -> tuple[str, NDArray[np.uint8]]:
         """Returns the filename and the serialized data package to be processed by a DataLogger instance."""
-        # Serializes the scalar header fields to bytes, then concatenates them with the payload into one array.
-        serialized_acquisition_time = convert_scalar_to_bytes(value=self.acquisition_time, dtype=np.dtype(np.uint64))
-        serialized_source = convert_scalar_to_bytes(value=self.source_id, dtype=np.dtype(np.uint8))
-
-        # Assumes that each source produces the data sequentially and that timestamps are acquired with high enough
-        # resolution to resolve the order of data acquisition. np.concatenate allocates a fresh array that owns its
-        # buffer and aliases none of its inputs, so the result needs no defensive copy.
-        data = np.concatenate(
-            [serialized_source, serialized_acquisition_time, self.serialized_data],
-            dtype=np.uint8,
+        # Fills one preallocated buffer, so an entry costs a single allocation. The timestamp is serialized through
+        # its own native-order bytes, which is the layout LogArchiveReader reads back. The buffer owns its memory and
+        # aliases none of its inputs, so the result needs no defensive copy.
+        data: NDArray[np.uint8] = np.empty(shape=_HEADER_BYTE_SIZE + self.serialized_data.size, dtype=np.uint8)
+        data[0] = self.source_id
+        data[_SOURCE_ID_BYTE_SIZE:_HEADER_BYTE_SIZE] = np.frombuffer(
+            buffer=np.uint64(self.acquisition_time).tobytes(), dtype=np.uint8
         )
+
+        # Copies the payload under same-kind casting, which rejects a signed, floating point, or complex payload
+        # rather than reinterpreting its elements as bytes. A wider unsigned payload is narrowed element by element,
+        # which is the rule np.concatenate applies to the same dtypes.
+        np.copyto(dst=data[_HEADER_BYTE_SIZE:], src=self.serialized_data, casting="same_kind")
 
         # Zero-pads ID and timestamp. Uses the correct number of zeroes to represent the number of digits that
         # fit into each datatype (uint8 and uint64).

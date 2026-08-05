@@ -83,7 +83,7 @@ def calculate_directory_checksum(
         # Binds base_directory so each submitted task only needs to supply the per-file path.
         process_file = partial(_calculate_file_checksum, base_directory=directory)
 
-        future_to_path = {executor.submit(process_file, file_path=file): file for file in files}
+        checksum_futures = [executor.submit(process_file, file_path=file) for file in files]
 
         results = []
         if progress:
@@ -92,13 +92,13 @@ def calculate_directory_checksum(
                 description=f"Calculating checksum for {directory.name}",
                 unit="file",
             ) as progress_bar:
-                for future in as_completed(future_to_path):
+                for future in as_completed(checksum_futures):
                     results.append(future.result())
                     progress_bar.update(n=1)
         else:
             # Skips progress tracking in batch mode to avoid its overhead and to keep batched contexts free of
             # terminal clutter.
-            results = [future.result() for future in as_completed(future_to_path)]
+            results = [future.result() for future in as_completed(checksum_futures)]
 
         # Sorts results for consistency, so that the combined directory checksum does not depend on completion order.
         for file_path, file_checksum in sorted(results):

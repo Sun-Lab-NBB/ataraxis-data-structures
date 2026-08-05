@@ -1,5 +1,7 @@
 """Contains tests for the transfer_tools module provided by the processing package."""
 
+import os
+import errno
 from typing import Any
 from pathlib import Path
 
@@ -10,6 +12,7 @@ from ataraxis_data_structures import (
     transfer_directory,
     calculate_directory_checksum,
 )
+from ataraxis_data_structures.processing.transfer_tools import _classify_entry
 
 
 @pytest.fixture
@@ -714,3 +717,39 @@ def test_delete_directory_removes_entries_that_are_neither_files_nor_directories
     delete_directory(directory_path=root)
 
     assert not root.exists()
+
+
+def test_classify_entry_reports_each_entry_kind(tmp_path: Path) -> None:
+    """Verifies that _classify_entry separates symlinks, directories, and files by their link-level metadata."""
+    (tmp_path / "regular.txt").write_text("content")
+    (tmp_path / "subdirectory").mkdir()
+    (tmp_path / "link_to_file").symlink_to(tmp_path / "regular.txt")
+    (tmp_path / "link_to_directory").symlink_to(tmp_path / "subdirectory", target_is_directory=True)
+
+    assert _classify_entry(path=tmp_path / "regular.txt") == (False, False)
+    assert _classify_entry(path=tmp_path / "subdirectory") == (False, True)
+
+    # A link answers the directory question with False whatever it points at.
+    assert _classify_entry(path=tmp_path / "link_to_file") == (True, False)
+    assert _classify_entry(path=tmp_path / "link_to_directory") == (True, False)
+
+
+def test_classify_entry_reports_a_vanished_entry_as_a_plain_file(tmp_path: Path) -> None:
+    """Verifies that _classify_entry answers False to both questions when the entry no longer exists."""
+    assert _classify_entry(path=tmp_path / "never_created.bin") == (False, False)
+
+
+def test_classify_entry_propagates_an_unreadable_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that _classify_entry raises when the entry exists but its metadata cannot be read."""
+    target = tmp_path / "unreadable.bin"
+    target.write_text("content")
+
+    def _deny_metadata(_path: Path) -> os.stat_result:
+        raise PermissionError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(target=os, name="lstat", value=_deny_metadata)
+
+    # A propagated failure is what keeps an unreadable symlink from being filed as a plain file, which would carry it
+    # past the link rejection transfer_directory performs.
+    with pytest.raises(PermissionError):
+        _classify_entry(path=target)

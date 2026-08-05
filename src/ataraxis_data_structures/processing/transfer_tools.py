@@ -1,5 +1,8 @@
 """Provides assets for moving data between filesystem destinations and removing data from the host machine."""
 
+import os
+import stat
+import errno
 import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,6 +17,19 @@ _MAXIMUM_DELETION_ATTEMPTS: int = 5
 
 _DELETION_RETRY_DELAY_MILLISECONDS: int = 500
 """The delay in milliseconds between failed directory-deletion attempts."""
+
+_ABSENT_ENTRY_ERRNOS: frozenset[int] = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
+"""The metadata-query failures the entry classifier answers as an absent entry.
+
+Notes:
+    An entry that disappears between its discovery and its classification has to read as absent, since discovery and
+    classification are separate filesystem calls. ENOENT, ENOTDIR, and ELOOP each name a path component that does not
+    resolve, and EBADF joins them to absorb the spurious failure macOS stat raises.
+
+    Every other failure, a permission error above all, means the entry exists and its kind is unknown. Answering that
+    case as absent would file a symbolic link as a plain file, which loses the one property a caller distinguishing
+    links depends on.
+"""
 
 
 def delete_directory(directory_path: Path) -> None:
@@ -35,12 +51,15 @@ def delete_directory(directory_path: Path) -> None:
     if not directory_path.exists():
         return
 
-    # Classifies entries with symlink-aware predicates, since is_dir() and is_file() both resolve a symlink to its
-    # target. Without the is_symlink() test, a symlink to a directory would be recursed into and its target's files
-    # unlinked, outside the tree this call names.
-    entries = list(directory_path.iterdir())
-    files = [path for path in entries if path.is_symlink() or not path.is_dir()]
-    subdirectories = [path for path in entries if path.is_dir() and not path.is_symlink()]
+    # Classifies entries through lstat, which reports a symlink as a link rather than as its target.
+    files = []
+    subdirectories = []
+    for path in directory_path.iterdir():
+        _, is_directory = _classify_entry(path=path)
+        if is_directory:
+            subdirectories.append(path)
+        else:
+            files.append(path)
 
     with ThreadPoolExecutor() as executor:
         list(executor.map(Path.unlink, files))  # Forces completion of all tasks.
@@ -177,15 +196,15 @@ def transfer_directory(
     # files at the same time. I/O operations release the GIL, so threads suffice and Processes are unnecessary.
     if num_threads > 1:
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = {
+            futures = [
                 executor.submit(
                     _transfer_file,
                     source_file=file,
                     source_directory=source,
                     destination_directory=destination,
-                ): file
+                )
                 for file in file_list
-            }
+            ]
             if progress:  # pragma: no cover
                 with console.progress(
                     total=len(file_list),
@@ -238,8 +257,7 @@ def _collect_source_items(source: Path) -> tuple[list[Path], list[Path], list[Pa
         Every list is sorted by path depth so that parent directories precede their children and the file copy order
         is deterministic. Any item that is neither a directory nor a symlink is treated as a file.
 
-        Symlinks are reported separately rather than classified, because ``is_dir()`` and ``is_file()`` both resolve
-        a link to its target and would otherwise file it as whichever kind it points at.
+        Symlinks are reported separately, since a link stands for data living outside the tree the caller named.
 
     Args:
         source: The root directory whose contents are discovered.
@@ -248,10 +266,49 @@ def _collect_source_items(source: Path) -> tuple[list[Path], list[Path], list[Pa
         The subdirectories, files, and symlinks found anywhere under the source directory, each sorted by path depth.
     """
     all_items = sorted(source.rglob("*"), key=lambda path: len(path.relative_to(source).parts))
-    symlinks = [item for item in all_items if item.is_symlink()]
-    subdirectories = [item for item in all_items if item.is_dir() and not item.is_symlink()]
-    files = [item for item in all_items if not item.is_dir() and not item.is_symlink()]
+
+    symlinks: list[Path] = []
+    subdirectories: list[Path] = []
+    files: list[Path] = []
+    for item in all_items:
+        is_symlink, is_directory = _classify_entry(path=item)
+        if is_symlink:
+            symlinks.append(item)
+        elif is_directory:
+            subdirectories.append(item)
+        else:
+            files.append(item)
+
     return subdirectories, files, symlinks
+
+
+def _classify_entry(path: Path) -> tuple[bool, bool]:
+    """Determines whether the target filesystem entry is a symbolic link and whether it is a directory.
+
+    Notes:
+        One lstat call answers both questions. Since lstat reports a link rather than its target, a symbolic link
+        answers False to the directory question whatever it points at.
+
+        An entry whose metadata query fails with one of the ``_ABSENT_ENTRY_ERRNOS`` answers False to both questions,
+        which covers an entry that disappears between its discovery and this call. Every other failure propagates,
+        since an entry that exists but cannot be read has an unknown kind rather than no kind.
+
+    Args:
+        path: The filesystem entry to classify.
+
+    Returns:
+        The first element is True when the entry is a symbolic link. The second is True when the entry is a directory.
+
+    Raises:
+        OSError: If the entry's metadata cannot be read for any reason other than the entry being absent.
+    """
+    try:
+        entry_mode = os.lstat(path).st_mode
+    except OSError as error:
+        if error.errno not in _ABSENT_ENTRY_ERRNOS:
+            raise
+        return False, False
+    return stat.S_ISLNK(entry_mode), stat.S_ISDIR(entry_mode)
 
 
 def _find_unaccounted_destination_files(source: Path, destination: Path, source_files: list[Path]) -> list[Path]:

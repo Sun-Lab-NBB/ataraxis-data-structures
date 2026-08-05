@@ -41,26 +41,14 @@ def interpolate_data(
         interpolated data values.
     """
     if is_discrete:
-        interpolated_data = np.empty(target_coordinates.shape, dtype=source_values.dtype)
+        # Locates the last source coordinate at or to the left of each target coordinate. The subtraction lands a
+        # target above the source range on the final index, and a target below it on -1, which the lower clip raises
+        # to the first index. The upper clip binds only when the value array is shorter than the coordinate array.
+        indices = np.searchsorted(a=source_coordinates, v=target_coordinates, side="right")
+        indices -= 1
+        np.clip(a=indices, a_min=0, a_max=source_values.size - 1, out=indices)
 
-        # Handles boundary conditions in bulk using boolean masks. Clamps all target coordinates below the first source
-        # coordinate to the first source coordinate's value. Clamps all target coordinates above the last source
-        # coordinate to the last source coordinate's value.
-        below_minimum = target_coordinates < source_coordinates[0]
-        above_maximum = target_coordinates > source_coordinates[-1]
-
-        within_bounds = ~(below_minimum | above_maximum)
-
-        interpolated_data[below_minimum] = source_values[0]
-        interpolated_data[above_maximum] = source_values[-1]
-
-        # Processes within-boundary coordinates by finding the last known certain value to the left of each target
-        # coordinate and setting each to that value.
-        if np.any(within_bounds):
-            indices = np.searchsorted(a=source_coordinates, v=target_coordinates[within_bounds], side="right") - 1
-            interpolated_data[within_bounds] = source_values[indices]
-
-        return interpolated_data
+        return source_values[indices]
 
     # Casts all inputs to float64 because linear interpolation always produces float64 outputs. np.asarray returns the
     # input object itself when it already carries that dtype, so a float64 caller pays no copy.
