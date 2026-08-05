@@ -22,7 +22,13 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 
 import numpy as np
 from ataraxis_time import PrecisionTimer, TimerPrecisions
-from ataraxis_base_utilities import console, resolve_worker_count, convert_scalar_to_bytes, ensure_directory_exists
+from ataraxis_base_utilities import (
+    LogLevel,
+    console,
+    resolve_worker_count,
+    convert_scalar_to_bytes,
+    ensure_directory_exists,
+)
 
 from ..processing import limit_worker_threads
 from ..shared_memory import SharedMemoryArray
@@ -30,6 +36,7 @@ from ..shared_memory import SharedMemoryArray
 if TYPE_CHECKING:
     from pathlib import Path
     from collections.abc import Generator
+    from concurrent.futures import Future
     from multiprocessing.context import SpawnContext
     from multiprocessing.process import BaseProcess
     from multiprocessing.managers import SyncManager
@@ -100,6 +107,11 @@ class DataLogger:
 
         Use the multiprocessing Queue exposed via the 'input_queue' property to send the data to the logger. The data
         must be packaged into the LogPackage class instance before it is submitted to the queue.
+
+        Submitting data to the input queue does not confirm that the data reached the disk, since the logger process
+        writes the entries asynchronously. A write that fails while the logger is running terminates the logger
+        process, which the watchdog thread reports as a ChildProcessError. A write that fails during the shutdown
+        sequence is reported by stop() as a warning.
 
     Args:
         output_directory: The directory in which to save the logged data. The data is saved under a subdirectory named
@@ -212,7 +224,13 @@ class DataLogger:
         self._started = True
 
     def stop(self) -> None:
-        """Stops the logger process once it saves all buffered data and releases reserved resources."""
+        """Stops the logger process once it saves all buffered data and releases reserved resources.
+
+        Notes:
+            A logger process that failed to save one of its buffered entries is reported through a warning rather than
+            an exception. This method only reaches that check during the shutdown sequence, where raising would mask
+            the shutdown work of the caller that is already unwinding, and where the data is lost either way.
+        """
         if not self._started:
             return
 
@@ -223,8 +241,10 @@ class DataLogger:
         if self._terminator_array is not None:
             self._terminator_array[0] = 1
 
+        logger_exit_code: int | None = None
         if self._logger_process is not None:
             self._logger_process.join()
+            logger_exit_code = self._logger_process.exitcode
 
         if self._watchdog_thread is not None:
             self._watchdog_thread.join()
@@ -232,6 +252,20 @@ class DataLogger:
         if self._terminator_array is not None:
             self._terminator_array.disconnect()
             self._terminator_array.destroy()
+
+        # The logger process exits non-zero when a disk write fails, so the code is the only evidence the caller gets
+        # that its data did not reach the disk. Every resource above is released first, so reporting the failure does
+        # not also leak the shared memory buffer. The console is temporarily enabled, since a silent data loss report
+        # would defeat the purpose of making the check at all.
+        if logger_exit_code:
+            message = (
+                f"Unable to confirm that the {self._name} DataLogger saved all buffered data. The logger process "
+                f"exited with code {logger_exit_code} instead of shutting down cleanly, which indicates that at least "
+                f"one of the submitted log entries did not reach the disk. Treat the data this logger recorded as "
+                f"incomplete."
+            )
+            with console.temporarily_enabled():
+                console.echo(message=message, level=LogLevel.WARNING)
 
     @property
     def input_queue(self) -> MultiprocessingQueue:  # type: ignore[type-arg]
@@ -296,6 +330,31 @@ class DataLogger:
         np.save(file=filename, arr=data, allow_pickle=False)
 
     @staticmethod
+    def _retire_completed_writes(pending_writes: list[Future[None]]) -> list[Future[None]]:
+        """Removes the finished disk writes from the input list and re-raises the error of the first failed write.
+
+        Args:
+            pending_writes: The futures of the disk writes submitted to the logger process thread pool.
+
+        Returns:
+            The futures of the disk writes that are still running.
+
+        Raises:
+            OSError: If saving one of the finished log entries to disk failed.
+        """
+        running_writes = []
+        for write in pending_writes:
+            if not write.done():
+                running_writes.append(write)
+                continue
+
+            # Propagates the error of a finished write. Discarding the result instead would allow the logger to report
+            # a clean shutdown after silently losing the data of that log entry.
+            write.result()
+
+        return running_writes
+
+    @staticmethod
     def _log_cycle(
         input_queue: MultiprocessingQueue,  # type: ignore[type-arg]
         terminator_array: SharedMemoryArray,
@@ -315,6 +374,10 @@ class DataLogger:
             thread_count: The number of threads to use for parallelizing I/O operations.
             poll_interval: The interval, in milliseconds, at which to poll the input queue for new data if the queue
                 has been emptied.
+
+        Raises:
+            OSError: If saving any of the processed log entries to disk failed. Propagating the error terminates the
+                logger process with a non-zero exit code, which is how the failure reaches the parent process.
         """
         terminator_array.connect()
 
@@ -322,6 +385,10 @@ class DataLogger:
 
         # Initializes the timer instance to delay polling the queue during idle periods.
         sleep_timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
+
+        # Tracks the writes still in flight. Retiring each one as it completes keeps the list bounded by the pool's own
+        # width and surfaces a failed write while the logger is still running.
+        pending_writes: list[Future[None]] = []
 
         # Runs until both the terminator flag is set and the input queue is drained.
         try:
@@ -337,7 +404,8 @@ class DataLogger:
                     # the path to the output directory.
                     filename = output_directory.joinpath(file_name)
 
-                    executor.submit(DataLogger._save_data, filename=filename, data=data)
+                    pending_writes.append(executor.submit(DataLogger._save_data, filename=filename, data=data))
+                    pending_writes = DataLogger._retire_completed_writes(pending_writes=pending_writes)
 
                 # If the queue is empty, invokes the sleep timer to reduce CPU load. Whether the consumer ever
                 # outpaces the producer depends on runtime timing, so the branch stays outside the measured corpus.
@@ -347,6 +415,10 @@ class DataLogger:
             # Ensures all remote assets are released before the process shutdown.
             executor.shutdown(wait=True)
             terminator_array.disconnect()
+
+        # Re-raises the error of the first failed write once the pool has drained. The error terminates this process
+        # with a non-zero exit code, which is what stop() reads to determine that some data did not reach the disk.
+        DataLogger._retire_completed_writes(pending_writes=pending_writes)
 
 
 def assemble_log_archives(

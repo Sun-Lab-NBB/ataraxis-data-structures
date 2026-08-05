@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import shutil
 from typing import TYPE_CHECKING, Any
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
-from ataraxis_base_utilities import console, error_format
+from ataraxis_base_utilities import LogLevel, console, error_format
 
 from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
 from ataraxis_data_structures.data_loggers.serialized_data_logger import _compare_arrays, _progress_display
@@ -248,6 +249,37 @@ def test_data_logger_start_stop_cycling(tmp_path: Path) -> None:
     logger.start()
     logger.start()
     logger.stop()
+
+
+@pytest.mark.xdist_group(name="group1")
+def test_data_logger_failed_write(
+    tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that the DataLogger warns about the log entries its process was unable to save to disk."""
+    logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
+    logger.start()
+
+    # Removes the output directory out from under the running logger process, so saving the entry submitted below
+    # fails with a FileNotFoundError inside that process.
+    shutil.rmtree(logger.output_directory)
+
+    source_id, timestamp, data = sample_data
+    packed_data = LogPackage(source_id=np.uint8(source_id), acquisition_time=np.uint64(timestamp), serialized_data=data)
+    logger.input_queue.put(packed_data)
+
+    # Records the console call directly, since loguru writes through a stream reference that the pytest capture
+    # fixtures do not intercept.
+    reported: list[tuple[str, str]] = []
+    monkeypatch.setattr(console, "echo", lambda message, level: reported.append((message, level)))
+
+    logger.stop()
+
+    assert not logger.alive
+    assert len(reported) == 1
+    reported_message, reported_level = reported[0]
+    assert reported_level == LogLevel.WARNING
+    assert "Unable to confirm that the test_logger DataLogger saved all buffered data" in reported_message
+    assert "did not reach the disk" in reported_message
 
 
 @pytest.mark.xdist_group(name="group1")
