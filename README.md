@@ -74,21 +74,21 @@ ___
 1. Download this repository to the local machine using the preferred method, such as git-cloning. Use one of the
    [stable releases](https://github.com/Sun-Lab-NBB/ataraxis-data-structures/tags) that include precompiled binary
    and source code distribution (sdist) wheels.
-2. If the downloaded distribution is stored as a compressed archive, unpack it using the appropriate decompression tool.
+2. If the downloaded distribution is stored as a compressed archive, unpack it using the appropriate decompression
+   tool.
 3. `cd` to the root directory of the prepared project distribution.
 4. Run `pip install .` to install the project and its dependencies.
 
 ### pip
 
-Use the following command to install the library and all of its dependencies via
-[pip](https://pip.pypa.io/en/stable/): `pip install ataraxis-data-structures`
+Use the following command to install the library and all of its dependencies via [pip](https://pip.pypa.io/en/stable/):
+`pip install ataraxis-data-structures`
 
 ___
 
 ## Usage
 
-This section provides an overview of the primary components exposed by the library. For detailed information about
-method signatures and parameters, consult the [API documentation](#api-documentation).
+For detailed information about method signatures and parameters, consult the [API documentation](#api-documentation).
 
 ### YamlConfig
 
@@ -298,14 +298,13 @@ sma.destroy()
 
 #### Using SharedMemoryArray from Multiple Processes
 
-While all methods showcased above run in the same process, the main advantage of the SharedMemoryArray class is that
-it behaves the same way when used from different Python processes. The following example demonstrates using a
-SharedMemoryArray across multiple concurrent processes:
+While all methods showcased above run in the same process, the main advantage of the SharedMemoryArray class is that it
+behaves the same way when used from different Python processes.
 
-***Note,*** the main process is connected to the array from the moment `create_array()` returns, and each child
-process connects as part of receiving the instance, so the example below reduces to creating the array, passing it to
-the workers, and ending the runtime. The only ordering requirement is that the buffer is not destroyed until all
-processes have finished using it, which means the creating instance has to stay referenced for that whole period.
+***Note,*** the main process is connected to the array from the moment `create_array()` returns, and each child process
+connects as part of receiving the instance. The example below therefore reduces to creating the array, passing it to the
+workers, and ending the runtime. The only ordering requirement is that the buffer is not destroyed until all processes
+have finished using it, which means the creating instance has to stay referenced for that whole period.
 
 Passing `auto_connect=False` to `create_array()` opts out of connecting the receiving processes, which makes each of
 them call `connect()` before accessing the data. That defers the connection to a point the worker controls, so a
@@ -479,11 +478,9 @@ if __name__ == "__main__":
 
 #### Log Archive Assembly
 
-To optimize the log writing speed and minimize the time the data sits in the volatile memory, all log entries are saved
-to disk as separate NumPy array .npy files. While this format is efficient for time-critical runtimes, it is not
-optimal for long-term storage and data transfer. To help with optimizing the post-runtime data storage, the library
-offers the `assemble_log_archives()` function which aggregates .npy files from the same data source into an
-(uncompressed) .npz archive.
+Each log entry is saved to disk as a separate NumPy array .npy file, which keeps the write path short and the time the
+data spends in volatile memory small. The `assemble_log_archives()` function aggregates the .npy files from one data
+source into a single (uncompressed) .npz archive for storage and transfer.
 
 ```python
 from pathlib import Path
@@ -553,9 +550,8 @@ for message in reader.iter_messages():
 
 #### Batch Processing for Multiprocessing Workflows
 
-The LogArchiveReader supports efficient batch processing for parallel workflows. The main process can generate batch
-assignments, and worker processes can create lightweight reader instances by passing the pre-discovered onset timestamp
-to skip redundant scanning.
+The main process can generate batch assignments, and worker processes can create lightweight reader instances by passing
+the pre-discovered onset timestamp to skip redundant scanning.
 
 ```python
 from pathlib import Path
@@ -699,8 +695,6 @@ Batch, or AWS Batch) when one is detected, otherwise the process ID, tagged with
 
 #### Querying Pipeline State
 
-The ProcessingTracker provides methods for querying the overall pipeline state and individual job information.
-
 ```python
 from pathlib import Path
 from ataraxis_data_structures import ProcessingTracker, ProcessingStatus
@@ -766,8 +760,6 @@ tracker.reset()
 ```
 
 ### Processing Utilities
-
-The library provides several utility functions for common data processing tasks.
 
 #### Directory Checksum Calculation
 
@@ -923,12 +915,12 @@ the source code of this library.
 
 ### Installing the Project
 
-***Note,*** this installation method requires **mamba version 2.3.2 or above**. Currently, all automation
-pipelines require that mamba is installed through the [miniforge3](https://github.com/conda-forge/miniforge)
-installer.
+***Note,*** this installation method requires **mamba version 2.3.2 or above**. Currently, all automation pipelines
+require that mamba is installed through the [miniforge3](https://github.com/conda-forge/miniforge) installer.
 
 1. Download this repository to the local machine using the preferred method, such as git-cloning.
-2. If the downloaded distribution is stored as a compressed archive, unpack it using the appropriate decompression tool.
+2. If the downloaded distribution is stored as a compressed archive, unpack it using the appropriate decompression
+   tool.
 3. `cd` to the root directory of the prepared project distribution.
 4. Install the core development dependencies into the ***base*** mamba environment via the
    `mamba install tox uv tox-uv` command.

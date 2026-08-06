@@ -50,9 +50,7 @@ def test_processing_tracker_generate_job_id_without_specifier() -> None:
     """Verifies that generate_job_id works without a specifier."""
     job_name = "suite2p_processing"
 
-    # With empty specifier.
     first_id = ProcessingTracker.generate_job_id(job_name=job_name, specifier="")
-    # Without specifier (default).
     second_id = ProcessingTracker.generate_job_id(job_name=job_name)
 
     assert first_id == second_id
@@ -72,7 +70,6 @@ def test_processing_tracker_initialize_jobs(tmp_path: Path) -> None:
 
     job_ids = tracker.initialize_jobs(jobs=jobs)
 
-    # Verifies returned job IDs.
     assert len(job_ids) == 3
     for (job_name, specifier), job_id in zip(jobs, job_ids, strict=True):
         assert job_id == ProcessingTracker.generate_job_id(job_name=job_name, specifier=specifier)
@@ -100,16 +97,13 @@ def test_processing_tracker_initialize_jobs_preserves_existing(tmp_path: Path) -
     ]
     job_ids = [ProcessingTracker.generate_job_id(job_name=name, specifier=specifier) for name, specifier in jobs]
 
-    # Initializes first time.
     tracker.initialize_jobs(jobs=jobs)
 
     # Gives the first job a non-default status before reinitializing.
     tracker.start_job(job_id=job_ids[0])
 
-    # Reinitializes with the same jobs.
     tracker.initialize_jobs(jobs=jobs)
 
-    # Verifies the first job's status is preserved.
     tracker._load_state()
     assert tracker.jobs[job_ids[0]].status == ProcessingStatus.RUNNING
     assert tracker.jobs[job_ids[1]].status == ProcessingStatus.SCHEDULED
@@ -129,28 +123,22 @@ def test_processing_tracker_find_jobs(tmp_path: Path) -> None:
     ]
     tracker.initialize_jobs(jobs=jobs)
 
-    # Searches by job name only.
     matches = tracker.find_jobs(job_name="process_plane")
     assert len(matches) == 3
 
-    # Searches by specifier only.
     matches = tracker.find_jobs(specifier="plane_1")
     assert len(matches) == 1
     assert next(iter(matches.values())) == ("process_plane", "plane_1")
 
-    # Searches by partial job name.
     matches = tracker.find_jobs(job_name="process")
     assert len(matches) == 3
 
-    # Searches by partial specifier.
     matches = tracker.find_jobs(specifier="plane")
     assert len(matches) == 3
 
-    # Searches by both name and specifier.
     matches = tracker.find_jobs(job_name="process_plane", specifier="plane_0")
     assert len(matches) == 1
 
-    # No matches.
     matches = tracker.find_jobs(job_name="nonexistent")
     assert not matches
 
@@ -421,11 +409,9 @@ def test_processing_tracker_get_job_status(tmp_path: Path) -> None:
 
     assert tracker.get_job_status(job_id=job_id) == ProcessingStatus.SCHEDULED
 
-    # Starts and checks the running status.
     tracker.start_job(job_id=job_id)
     assert tracker.get_job_status(job_id=job_id) == ProcessingStatus.RUNNING
 
-    # Completes and checks the succeeded status.
     tracker.complete_job(job_id=job_id)
     assert tracker.get_job_status(job_id=job_id) == ProcessingStatus.SUCCEEDED
 
@@ -497,13 +483,11 @@ def test_processing_tracker_concurrent_access(tmp_path: Path) -> None:
 
     job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
 
-    # Initializes from the first process.
     first_tracker.initialize_jobs(jobs=[("test_job", "")])
 
     # Confirms the second process sees the job.
     assert second_tracker.get_job_status(job_id=job_id) == ProcessingStatus.SCHEDULED
 
-    # Starts the job from the first process.
     first_tracker.start_job(job_id=job_id)
 
     # Confirms the second process sees the update.
@@ -521,7 +505,6 @@ def test_processing_tracker_yaml_serialization(tmp_path: Path) -> None:
     tracker.initialize_jobs(jobs=jobs)
     tracker.start_job(job_id=job_ids[0])
 
-    # Creates a new instance and verifies it loads correctly.
     reloaded_tracker = ProcessingTracker(file_path=tracker_file)
     reloaded_tracker._load_state()
 
@@ -589,13 +572,11 @@ def test_processing_tracker_timestamps(tmp_path: Path) -> None:
     job_id = ProcessingTracker.generate_job_id(job_name="test_job", specifier="")
     tracker.initialize_jobs(jobs=[("test_job", "")])
 
-    # Starts the job and verifies started_at is set.
     tracker.start_job(job_id=job_id)
     job_info = tracker.get_job_info(job_id=job_id)
     assert job_info.started_at is not None
     assert job_info.completed_at is None
 
-    # Completes the job and verifies completed_at is set.
     tracker.complete_job(job_id=job_id)
     job_info = tracker.get_job_info(job_id=job_id)
     assert job_info.completed_at is not None
@@ -732,7 +713,6 @@ def test_processing_tracker_get_jobs_by_status(tmp_path: Path) -> None:
     assert job_ids[0] in running
     assert job_ids[1] in running
 
-    # Completes one, fails one.
     tracker.complete_job(job_id=job_ids[0])
     tracker.fail_job(job_id=job_ids[1])
     succeeded = tracker.get_jobs_by_status(status=ProcessingStatus.SUCCEEDED)
@@ -755,7 +735,6 @@ def test_processing_tracker_get_summary(tmp_path: Path) -> None:
     assert summary[ProcessingStatus.SUCCEEDED] == 0
     assert summary[ProcessingStatus.FAILED] == 0
 
-    # Mixed states.
     tracker.start_job(job_id=job_ids[0])
     tracker.start_job(job_id=job_ids[1])
     tracker.complete_job(job_id=job_ids[0])
@@ -810,13 +789,11 @@ def test_processing_tracker_retry_failed_jobs(tmp_path: Path) -> None:
     tracker.start_job(job_id=job_ids[2])
     tracker.complete_job(job_id=job_ids[2])
 
-    # Retries failed jobs.
     retried = tracker.retry_failed_jobs()
     assert len(retried) == 2
     assert job_ids[0] in retried
     assert job_ids[1] in retried
 
-    # Verifies reset state.
     job_info = tracker.get_job_info(job_id=job_ids[0])
     assert job_info.status == ProcessingStatus.SCHEDULED
     assert job_info.error_message is None
@@ -864,7 +841,6 @@ def test_processing_tracker_complete_property_empty_jobs(tmp_path: Path) -> None
     tracker_file = tmp_path / "tracker.yaml"
     tracker = ProcessingTracker(file_path=tracker_file)
 
-    # Saves empty state.
     tracker._save_state()
 
     assert not tracker.complete
@@ -944,26 +920,9 @@ def test_processing_tracker_from_yaml_returns_an_attached_instance(tmp_path: Pat
 
     assert rebuilt.file_path == tracker_file
     assert rebuilt.lock_path == str(tracker_file.with_suffix(".yaml.lock"))
-    # The rebuilt instance reads the same registry the writer recorded, rather than reporting an empty pipeline.
+    # The rebuilt instance reads the same registry the writer recorded.
     assert rebuilt.snapshot()[job_ids[0]].status == ProcessingStatus.SUCCEEDED
     assert len(rebuilt.find_jobs()) == 2
-
-
-def _clear_scheduler_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Removes every scheduler variable the executor resolver consults so a test observes the process-id fallback."""
-    for variable in (
-        "SLURM_JOB_ID",
-        "SLURM_JOBID",
-        "PBS_JOBID",
-        "LSB_JOBID",
-        "OAR_JOB_ID",
-        "JOB_ID",
-        "SGE_ROOT",
-        "CCP_JOBID",
-        "AZ_BATCH_JOB_ID",
-        "AWS_BATCH_JOB_ID",
-    ):
-        monkeypatch.delenv(variable, raising=False)
 
 
 def test_processing_tracker_discover_finds_every_tracker(tmp_path: Path) -> None:
@@ -1043,7 +1002,7 @@ def test_processing_tracker_summarize_reports_details_counts_and_status(tmp_path
     assert running_entry["executor_id"] is not None
     assert running_entry["started_at"] is not None
     assert running_entry["completed_at"] is None
-    # A job that recorded no failure reason omits the key rather than carrying it as an empty value.
+    # A job that recorded no failure reason omits the key.
     assert "error_message" not in running_entry
 
 
@@ -1175,6 +1134,23 @@ def test_tracker_status_members_compare_as_plain_strings() -> None:
         "completed",
         "failed",
     }
+
+
+def _clear_scheduler_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Removes every scheduler variable the executor resolver consults so a test observes the process-id fallback."""
+    for variable in (
+        "SLURM_JOB_ID",
+        "SLURM_JOBID",
+        "PBS_JOBID",
+        "LSB_JOBID",
+        "OAR_JOB_ID",
+        "JOB_ID",
+        "SGE_ROOT",
+        "CCP_JOBID",
+        "AZ_BATCH_JOB_ID",
+        "AWS_BATCH_JOB_ID",
+    ):
+        monkeypatch.delenv(variable, raising=False)
 
 
 def _raise_job_error() -> None:

@@ -233,7 +233,6 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
                 _walk_type(type_hint=argument)
             return
 
-        # Only processes concrete types from here.
         if not isinstance(type_hint, type):
             return
 
@@ -327,7 +326,6 @@ class YamlConfig:
             "sort_keys": False,
         }
 
-        # Ensures that the output file path points to a .yaml (or .yml) file.
         if file_path.suffix not in {".yaml", ".yml"}:
             message: str = (
                 f"Unable to write the dataclass instance to a .yaml file using the provided file path. The "
@@ -409,7 +407,6 @@ class YamlConfig:
             MissingValueError: If the document omits a field the class requires and the class supplies no default for
                 it.
         """
-        # Ensures that file_path points to a .yaml / .yml file.
         if file_path.suffix not in {".yaml", ".yml"}:
             message: str = (
                 f"Unable to create the dataclass instance using the data from a .yaml file. The 'file_path' argument "

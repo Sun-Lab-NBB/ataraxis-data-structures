@@ -57,17 +57,14 @@ def test_yaml_config_to_yaml(tmp_path: Path, config_path: Path, expected_content
         nested: dict = field(default_factory=dict)
         list: list = field(default_factory=list)
 
-    # Generates and dumps the config as a .yaml file.
     config = TestConfig(**expected_content)
     full_path = tmp_path.joinpath(config_path)
     config.to_yaml(file_path=full_path)
 
-    # Verifies that the file was created and contains data.
     assert full_path.exists()
     assert full_path.stat().st_size > 0, f"File {full_path} is empty"
 
-    # Manually reads and verifies the config data.
-    with full_path.open("r") as yaml_file:
+    with full_path.open(mode="r") as yaml_file:
         loaded_content = yaml.safe_load(yaml_file)
         assert loaded_content == expected_content, f"Expected {expected_content}, but got {loaded_content}"
 
@@ -113,7 +110,7 @@ def test_yaml_config_from_yaml(tmp_path: Path, config_path: Path, content: dict[
         list: Optional[list] = None  # noqa: UP045 - field name shadows builtin, X | None fails
 
     full_path = tmp_path / config_path
-    with full_path.open("w") as yaml_file:
+    with full_path.open(mode="w") as yaml_file:
         yaml.dump(data=content, stream=yaml_file)
 
     config = TestConfig.from_yaml(file_path=full_path)
@@ -199,7 +196,6 @@ def test_yaml_config_subclassing() -> None:
     assert config.extra_param == "extra"
     assert config.another_param == {"key": "value"}
 
-    # Tests that the subclass still has the 'to_yaml' and 'from_yaml' methods.
     assert hasattr(config, "to_yaml")
     assert hasattr(ExtendedConfig, "from_yaml")
 
@@ -221,14 +217,13 @@ def test_path_round_trip(tmp_path: Path) -> None:
     yaml_path = tmp_path / "paths.yaml"
     config.to_yaml(file_path=yaml_path)
 
-    # Verifies that raw YAML contains strings, not Path objects.
+    # The raw YAML stores each path as a string.
     with yaml_path.open() as yaml_file:
         raw = yaml.safe_load(yaml_file)
     assert raw["single_path"] == "/home/user/data"
     assert raw["nullable_path"] == "/opt/output"
     assert raw["path_list"] == ["/a/b", "/c/d"]
 
-    # Verifies round-trip back to Python produces correct types.
     loaded = PathConfig.from_yaml(file_path=yaml_path)
     assert loaded.single_path == Path("/home/user/data")
     assert isinstance(loaded.single_path, Path)
@@ -265,13 +260,11 @@ def test_str_enum_round_trip(tmp_path: Path) -> None:
     yaml_path = tmp_path / "enum.yaml"
     config.to_yaml(file_path=yaml_path)
 
-    # Verifies that raw YAML contains string values.
     with yaml_path.open() as yaml_file:
         raw = yaml.safe_load(yaml_file)
     assert raw["color"] == "green"
     assert raw["nullable_color"] == "blue"
 
-    # Verifies round-trip deserialization.
     loaded = EnumConfig.from_yaml(file_path=yaml_path)
     assert loaded.color is Color.GREEN
     assert isinstance(loaded.color, Color)
@@ -289,13 +282,11 @@ def test_int_enum_round_trip(tmp_path: Path) -> None:
     yaml_path = tmp_path / "priority.yaml"
     config.to_yaml(file_path=yaml_path)
 
-    # Verifies that raw YAML contains an int.
     with yaml_path.open() as yaml_file:
         raw = yaml.safe_load(yaml_file)
     assert raw["level"] == 3
     assert isinstance(raw["level"], int)
 
-    # Verifies round-trip deserialization.
     loaded = PriorityConfig.from_yaml(file_path=yaml_path)
     assert loaded.level is Priority.HIGH
     assert isinstance(loaded.level, Priority)
@@ -318,14 +309,12 @@ def test_tuple_round_trip(tmp_path: Path) -> None:
     yaml_path = tmp_path / "tuples.yaml"
     config.to_yaml(file_path=yaml_path)
 
-    # Verifies that raw YAML contains lists.
     with yaml_path.open() as yaml_file:
         raw = yaml.safe_load(yaml_file)
     assert raw["int_tuple"] == [1, 2, 3]
     assert raw["path_tuple"] == ["/a", "/b"]
     assert raw["empty_tuple"] == []
 
-    # Verifies round-trip deserialization.
     loaded = TupleConfig.from_yaml(file_path=yaml_path)
     assert loaded.int_tuple == (1, 2, 3)
     assert isinstance(loaded.int_tuple, tuple)
@@ -353,13 +342,11 @@ def test_nested_dataclass_round_trip(tmp_path: Path) -> None:
     yaml_path = tmp_path / "nested.yaml"
     config.to_yaml(file_path=yaml_path)
 
-    # Verifies raw YAML structure.
     with yaml_path.open() as yaml_file:
         raw = yaml.safe_load(yaml_file)
     assert raw["inner"]["path"] == "/nested/path"
     assert raw["inner"]["color"] == "blue"
 
-    # Verifies round-trip deserialization.
     loaded = OuterConfig.from_yaml(file_path=yaml_path)
     assert loaded.inner.path == Path("/nested/path")
     assert isinstance(loaded.inner.path, Path)
@@ -375,14 +362,12 @@ def test_union_enum_str_round_trip(tmp_path: Path) -> None:
     class UnionConfig(YamlConfig):
         method: Color | str = "auto"
 
-    # Tests with a valid enum value.
     config_enum = UnionConfig(method=Color.RED)
     yaml_path = tmp_path / "union_enum.yaml"
     config_enum.to_yaml(file_path=yaml_path)
     loaded_enum = UnionConfig.from_yaml(file_path=yaml_path)
     assert loaded_enum.method is Color.RED
 
-    # Tests with a non-enum string value.
     config_string = UnionConfig(method="custom_method")
     yaml_path_string = tmp_path / "union_str.yaml"
     config_string.to_yaml(file_path=yaml_path_string)
@@ -400,15 +385,15 @@ def test_primitive_first_union_enum_round_trip(tmp_path: Path) -> None:
     """
 
     @dataclass
-    class PrimFirstConfig(YamlConfig):
+    class PrimitiveFirstConfig(YamlConfig):
         color: str | Color = Color.RED
         level: int | Priority = Priority.LOW
 
-    config = PrimFirstConfig(color=Color.GREEN, level=Priority.HIGH)
+    config = PrimitiveFirstConfig(color=Color.GREEN, level=Priority.HIGH)
     yaml_path = tmp_path / "prim_first.yaml"
     config.to_yaml(file_path=yaml_path)
 
-    loaded = PrimFirstConfig.from_yaml(file_path=yaml_path)
+    loaded = PrimitiveFirstConfig.from_yaml(file_path=yaml_path)
     assert loaded.color is Color.GREEN
     assert isinstance(loaded.color, Color)
     assert loaded.level is Priority.HIGH
@@ -416,13 +401,13 @@ def test_primitive_first_union_enum_round_trip(tmp_path: Path) -> None:
 
     # Verifies that non-member values fall back to the primitive type.
     @dataclass
-    class PrimFirstFallback(YamlConfig):
+    class PrimitiveFirstFallback(YamlConfig):
         color: str | Color = "auto"
 
-    config_fallback = PrimFirstFallback(color="not_a_color")
+    config_fallback = PrimitiveFirstFallback(color="not_a_color")
     yaml_path_fallback = tmp_path / "prim_first_fallback.yaml"
     config_fallback.to_yaml(file_path=yaml_path_fallback)
-    loaded_fallback = PrimFirstFallback.from_yaml(file_path=yaml_path_fallback)
+    loaded_fallback = PrimitiveFirstFallback.from_yaml(file_path=yaml_path_fallback)
     assert loaded_fallback.color == "not_a_color"
     assert isinstance(loaded_fallback.color, str)
 
@@ -509,15 +494,15 @@ def test_collect_type_hooks_union_enum() -> None:
 
     hooks = _collect_type_hooks(cls=UnionConfig)
 
-    # Concrete enum hooks should still be registered.
+    # Confirms that the concrete enum hooks are still registered.
     assert Color in hooks
     assert Priority in hooks
 
-    # Union-level hooks should be registered for the union types themselves.
+    # Confirms that the union types themselves carry hooks.
     assert (str | Color) in hooks
     assert (int | Priority) in hooks
 
-    # The union hook should convert valid enum values and pass through non-members.
+    # The union hook converts valid enum values and passes through non-members.
     str_color_hook = hooks[str | Color]
     assert str_color_hook("red") is Color.RED
     assert str_color_hook("not_a_color") == "not_a_color"
@@ -541,29 +526,6 @@ def test_collect_type_hooks_skips_a_generic_union_member() -> None:
 
     assert Color in hooks
     assert (Color | None) in hooks
-
-
-class _ImportProxy:
-    """Stands in for a module-level import proxy used in place of an absent optional dependency.
-
-    Notes:
-        Reporting 'type' as its class is what makes isinstance() accept the proxy as a class, while the absent
-        '__bases__' tuple is what makes issubclass() reject it. Annotating a field with such a proxy is the
-        realistic way a dataclass reaches the type hook walk's issubclass failure handlers.
-
-        The name attributes are what the dataclass machinery reads when it renders the annotation, which every
-        object standing in for a class carries.
-    """
-
-    def __init__(self) -> None:
-        self.__qualname__ = "_ImportProxy"
-
-    @property
-    def __class__(self) -> type:  # type: ignore[override]
-        return type
-
-    def __call__(self, *arguments: object, **keywords: object) -> None:
-        """Accepts the callability check that typing performs when it validates a union member."""
 
 
 def test_collect_type_hooks_skips_a_union_member_that_is_not_a_real_class() -> None:
@@ -618,7 +580,7 @@ def test_to_yaml_leaves_previous_file_intact_when_the_dump_fails(
     TestConfig(value="original").to_yaml(file_path=yaml_path)
     original_bytes = yaml_path.read_bytes()
 
-    def failing_dump(**_kwargs: Any) -> None:
+    def failing_dump(**_keywords: Any) -> None:
         message = "simulated dump failure"
         raise RuntimeError(message)
 
@@ -682,13 +644,6 @@ def test_mapping_key_hook_passes_through_a_non_mapping() -> None:
     assert hooks[dict[Path, int]]("not a mapping") == "not a mapping"
 
 
-@dataclass
-class _PathKeyedConfig(YamlConfig):
-    """Declares a Path-keyed mapping so the key hook can be retrieved for direct testing."""
-
-    by_path: dict[Path, int] = field(default_factory=dict)
-
-
 def test_excluded_field_round_trip(tmp_path: Path) -> None:
     """Verifies the pattern a subclass uses to keep a location field out of the document it writes."""
 
@@ -710,7 +665,37 @@ def test_excluded_field_round_trip(tmp_path: Path) -> None:
         raw = yaml.safe_load(yaml_file)
     assert raw == {"value": 7}
 
-    # The reader supplies the path from where it found the file, rather than from what the writer recorded.
+    # The reader supplies the path from where it found the file.
     loaded = LocatedConfig.from_yaml(file_path=yaml_path)
     assert loaded.value == 7
     assert loaded.source_path == yaml_path
+
+
+class _ImportProxy:
+    """Stands in for a module-level import proxy used in place of an absent optional dependency.
+
+    Notes:
+        Reporting 'type' as its class is what makes isinstance() accept the proxy as a class, while the absent
+        '__bases__' tuple is what makes issubclass() reject it. Annotating a field with such a proxy is the
+        realistic way a dataclass reaches the type hook walk's issubclass failure handlers.
+
+        The name attributes are what the dataclass machinery reads when it renders the annotation, which every
+        object standing in for a class carries.
+    """
+
+    def __init__(self) -> None:
+        self.__qualname__ = "_ImportProxy"
+
+    @property
+    def __class__(self) -> type:  # type: ignore[override]
+        return type
+
+    def __call__(self, *arguments: object, **keywords: object) -> None:
+        """Accepts the callability check that typing performs when it validates a union member."""
+
+
+@dataclass
+class _PathKeyedConfig(YamlConfig):
+    """Declares a Path-keyed mapping so the key hook can be retrieved for direct testing."""
+
+    by_path: dict[Path, int] = field(default_factory=dict)

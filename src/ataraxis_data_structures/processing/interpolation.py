@@ -20,8 +20,8 @@ def interpolate_data(
     """Interpolates the data values at the requested coordinates using the source coordinate-value distribution.
 
     Notes:
-        This function expects ``source_coordinates`` and ``target_coordinates`` arrays to be one-dimensional and
-        monotonically increasing.
+        Expects the ``source_coordinates`` and ``target_coordinates`` arrays to be one-dimensional and monotonically
+        increasing.
 
         Discrete interpolated data is returned as an array with the same datatype as the input data. Continuous
         interpolated data is returned as a float64 datatype array.
@@ -37,8 +37,7 @@ def interpolate_data(
         is_discrete: Determines whether the interpolated data is discrete or continuous.
 
     Returns:
-        A one-dimensional NumPy array with the same length as the ``target_coordinates`` array that stores the
-        interpolated data values.
+        The interpolated data value at each target coordinate, in the order the target coordinates were supplied.
     """
     if is_discrete:
         # Locates the last source coordinate at or to the left of each target coordinate. The subtraction lands a

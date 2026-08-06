@@ -202,40 +202,8 @@ def reports_absent_entry(error: OSError) -> bool:
         True when the failure names an entry that does not resolve, and False when the entry exists while its kind
         stays unknown.
     """
-    # The Windows status is read through getattr, since OSError carries the attribute on that platform alone.
+    # Reads the Windows status through getattr, since OSError carries the attribute on that platform alone.
     return error.errno in _ABSENT_ENTRY_ERRNOS or getattr(error, "winerror", None) in _ABSENT_ENTRY_WINERRORS
-
-
-def _extract_unique_components(paths: list[Path]) -> tuple[str, ...]:
-    """Extracts the deepest component of each target path that no other target path carries.
-
-    Args:
-        paths: The paths whose distinguishing components are extracted.
-
-    Returns:
-        One distinguishing component per input path, in input order.
-
-    Raises:
-        ValueError: If any path shares every one of its components with the other paths.
-    """
-    components: list[str] = []
-    for index, path in enumerate(paths):
-        shared = {
-            component for other_index, other in enumerate(paths) if other_index != index for component in other.parts
-        }
-        unique_component = next((component for component in reversed(path.parts) if component not in shared), None)
-
-        if unique_component is None:
-            message = (
-                f"Unable to extract the distinguishing component of the path '{path}'. Every path must carry at "
-                f"least one component that no other path carries, but this path shares all {len(path.parts)} of its "
-                f"components with the others."
-            )
-            console.error(message=message, error=ValueError)
-
-        components.append(unique_component)
-
-    return tuple(components)
 
 
 def _scan_tree(directory: Path) -> Iterator[os.DirEntry[str]]:
@@ -290,3 +258,35 @@ def _resolves_to_file(entry: os.DirEntry[str]) -> bool:
         if not reports_absent_entry(error=error):
             raise
         return False
+
+
+def _extract_unique_components(paths: list[Path]) -> tuple[str, ...]:
+    """Extracts the deepest component of each target path that no other target path carries.
+
+    Args:
+        paths: The paths whose distinguishing components are extracted.
+
+    Returns:
+        One distinguishing component per input path, in input order.
+
+    Raises:
+        ValueError: If any path shares every one of its components with the other paths.
+    """
+    components: list[str] = []
+    for index, path in enumerate(paths):
+        shared = {
+            component for other_index, other in enumerate(paths) if other_index != index for component in other.parts
+        }
+        unique_component = next((component for component in reversed(path.parts) if component not in shared), None)
+
+        if unique_component is None:
+            message = (
+                f"Unable to extract the distinguishing component of the path '{path}'. Every path must carry at "
+                f"least one component that no other path carries, but this path shares all {len(path.parts)} of its "
+                f"components with the others."
+            )
+            console.error(message=message, error=ValueError)
+
+        components.append(unique_component)
+
+    return tuple(components)

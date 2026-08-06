@@ -31,7 +31,6 @@ def sample_data() -> tuple[int, int, NDArray[np.uint8]]:
 @pytest.mark.xdist_group(name="group1")
 def test_data_logger_initialization(tmp_path: Path) -> None:
     """Verifies the initialization of the DataLogger class with different parameters."""
-    # Tests default initialization.
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     assert logger._thread_count == 5
     assert logger._poll_interval == 5
@@ -44,7 +43,6 @@ def test_data_logger_initialization(tmp_path: Path) -> None:
     logger = DataLogger(output_directory=tmp_path, instance_name="custom_logger", thread_count=10, poll_interval=1000)
     assert logger._thread_count == 10
     assert logger._poll_interval == 1000
-    # Ensures __repr__ works as expected.
     assert repr(logger)
 
 
@@ -76,7 +74,6 @@ def test_data_logger_start_stop(tmp_path: Path) -> None:
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     assert not logger.alive
 
-    # Tests start.
     logger.start()
     assert logger.alive
     # Ensures that calling start() twice does nothing.
@@ -88,21 +85,19 @@ def test_data_logger_start_stop(tmp_path: Path) -> None:
     logger_2 = DataLogger(output_directory=tmp_path, instance_name="custom_name")
     logger_2.start()
 
-    # Tests stop.
     logger.stop()
     assert not logger.alive
     assert not logger._logger_process.is_alive()
     # Verifies that calling stop twice does nothing.
     logger.stop()
 
-    # Cleans up the second logger.
     logger_2.stop()
 
 
 @pytest.mark.xdist_group(name="group1")
 @pytest.mark.parametrize(
     "thread_count",
-    [5, 3, 10],  # Different thread configurations.
+    [5, 3, 10],
 )
 def test_data_logger_multithreading(
     tmp_path: Path, thread_count: int, sample_data: tuple[int, int, NDArray[np.uint8]]
@@ -111,7 +106,6 @@ def test_data_logger_multithreading(
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger", thread_count=thread_count)
     logger.start()
 
-    # Submits multiple data points.
     for index in range(5):
         source_id, timestamp, data = sample_data
         timestamp += index
@@ -123,7 +117,6 @@ def test_data_logger_multithreading(
     # Allows time for processing.
     logger.stop()
 
-    # Verifies files were created.
     log_directory = tmp_path / "test_logger_data_log"
     files = list(log_directory.glob("*.npy"))
     assert files
@@ -145,10 +138,8 @@ def test_data_logger_data_integrity(tmp_path: Path, sample_data: tuple[int, int,
     saved_files = list(logger.output_directory.glob("*.npy"))
     assert len(saved_files) == 1
 
-    # Loads and verifies the saved data.
     saved_data = np.load(file=saved_files[0])
 
-    # Extracts components from saved data.
     saved_source_id = int.from_bytes(saved_data[:1].tobytes(), byteorder="little")
     saved_timestamp = int.from_bytes(saved_data[1:9].tobytes(), byteorder="little")
     saved_content = saved_data[9:]
@@ -176,7 +167,6 @@ def test_data_logger_assembly(tmp_path: Path, sample_data: tuple[int, int, NDArr
 
     logger.stop()
 
-    # Tests log assembly using a standalone function.
     assemble_log_archives(log_directory=logger.output_directory, remove_sources=True, verbose=True)
 
     # Verifies log archives.
@@ -202,7 +192,6 @@ def test_data_logger_concurrent_access(tmp_path: Path, sample_data: tuple[int, i
         )
         logger.input_queue.put(packed_data)
 
-    # Submits data concurrently.
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(submit_data, range(20))
 
@@ -226,7 +215,6 @@ def test_data_logger_empty_queue_shutdown(tmp_path: Path) -> None:
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
 
-    # Stops without sending any data.
     logger.stop()
 
     # Verifies no files were created.
@@ -331,7 +319,6 @@ def test_assemble_log_archives_with_integrity_check(
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
 
-    # Submits test data.
     for index in range(3):
         source_id, timestamp, data = sample_data
         timestamp += index
@@ -342,7 +329,6 @@ def test_assemble_log_archives_with_integrity_check(
 
     logger.stop()
 
-    # Tests archive assembly with integrity verification.
     assemble_log_archives(
         log_directory=logger.output_directory, remove_sources=False, verify_integrity=True, verbose=False
     )
@@ -369,7 +355,6 @@ def test_log_package_data_golden_bytes() -> None:
     assert data.dtype == np.uint8
     assert data.tobytes() == expected
 
-    # Verifies the zero-padded filename format.
     assert log_name == "007_00000000001234567890.npy"
 
     # Verifies the layout round-trips exactly as LogArchiveReader reads it.
@@ -393,9 +378,7 @@ def test_log_package_data_large_timestamp() -> None:
 
 @pytest.mark.parametrize("payload_dtype", [np.int32, np.int64, np.float64])
 def test_log_package_data_rejects_a_payload_of_another_datatype_kind(payload_dtype: Any) -> None:
-    """Verifies that LogPackage.data raises instead of reinterpreting a payload whose datatype belongs to another
-    kind.
-    """
+    """Verifies that LogPackage.data raises for a payload whose datatype belongs to another kind."""
     package = LogPackage(
         source_id=np.uint8(3),
         acquisition_time=np.uint64(9),
