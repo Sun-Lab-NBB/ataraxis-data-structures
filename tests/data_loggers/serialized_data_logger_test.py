@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from ataraxis_base_utilities import LogLevel, console, error_format
 
-from ataraxis_data_structures import DataLogger, LogPackage, assemble_log_archives
+from ataraxis_data_structures import DataLogger, LogPackage, SharedMemoryArray, assemble_log_archives
 from ataraxis_data_structures.data_loggers.serialized_data_logger import _compare_arrays, _progress_display
 
 if TYPE_CHECKING:
@@ -266,6 +266,33 @@ def test_data_logger_start_stop_cycling(tmp_path: Path) -> None:
 
 
 @pytest.mark.xdist_group(name="group1")
+def test_data_logger_watchdog_reports_a_prematurely_shut_down_process(tmp_path: Path) -> None:
+    """Verifies that the watchdog raises when the logger process exits before the shutdown command is issued."""
+    logger = DataLogger(output_directory=tmp_path, instance_name="watchdog_logger")
+
+    # Builds the state the watchdog monitors without start(), which would also run the check on its own thread, where
+    # the error it raises is unobservable and the resources it releases race the ones this test releases.
+    terminator_array = SharedMemoryArray.create_array(
+        name="watchdog_logger_terminator", prototype=np.zeros(shape=1, dtype=np.uint8), exists_ok=True
+    )
+    logger._terminator_array = terminator_array
+    logger._logger_process = _ExitedProcess()
+    logger._started = True
+
+    message = (
+        "Remote logger process for the watchdog_logger DataLogger has been prematurely shut down. This likely "
+        "indicates that the process has encountered a runtime error."
+    )
+    with pytest.raises(ChildProcessError, match=error_format(message)):
+        logger._watchdog()
+
+    # The watchdog retires the instance before reporting, so the terminator array is released and stop() has no
+    # shutdown work left to repeat.
+    assert not logger._started
+    assert not logger.alive
+
+
+@pytest.mark.xdist_group(name="group1")
 def test_data_logger_failed_write(
     tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -505,3 +532,19 @@ def _raise_probe_error() -> None:
     """Raises an error so a test can observe how the surrounding context manager handles an exceptional exit."""
     message = "simulated failure"
     raise RuntimeError(message)
+
+
+class _ExitedProcess:
+    """Stands in for a logger process that has already shut down.
+
+    The exit code is what stop() reads, so the stand-in carries one to keep a watchdog regression surfacing as a
+    failed assertion rather than as an AttributeError the destructor swallows.
+    """
+
+    exitcode = 0
+
+    def is_alive(self) -> bool:
+        return False
+
+    def join(self, timeout: float | None = None) -> None:
+        """Accepts the join without waiting, since the stand-in process is already gone."""

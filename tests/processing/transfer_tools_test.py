@@ -6,6 +6,7 @@ from typing import Any
 from pathlib import Path
 
 import pytest
+from ataraxis_base_utilities import LogLevel, console
 
 from ataraxis_data_structures import (
     delete_directory,
@@ -608,6 +609,78 @@ def test_transfer_directory_integrity_check_with_progress(sample_directory_struc
 
     # Verifies the checksum file exists.
     assert (source / "ax_checksum.txt").exists()
+
+
+def test_transfer_directory_multithreaded_with_progress(sample_directory_structure: Path, tmp_path: Path) -> None:
+    """Verifies that a multithreaded transfer reports progress while copying every file."""
+    destination = tmp_path / "dest_multithreaded_progress"
+
+    # The progress bar wraps the completion of the submitted futures, which is a separate loop from the one the
+    # single-threaded transfer tracks, so reaching it takes both a thread count above one and progress enabled.
+    transfer_directory(
+        source=sample_directory_structure,
+        destination=destination,
+        num_threads=4,
+        progress=True,
+    )
+
+    assert (destination / "file1.txt").read_text() == "content1"
+    assert (destination / "subdir1" / "file3.txt").read_text() == "content3"
+    assert (destination / "subdir1" / "nested" / "file6.txt").read_text() == "content6"
+
+
+def test_delete_directory_retries_a_refused_removal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that directory removal retries after an attempt that the filesystem refuses."""
+    target = tmp_path / "retried"
+    target.mkdir()
+    (target / "data.txt").write_text("payload")
+
+    real_rmdir = Path.rmdir
+    attempts: list[str] = []
+
+    def _refuse_first_attempt(self: Path) -> None:
+        # Windows refuses the removal while a handle to a just-unlinked entry is still open, which is the transient
+        # failure the retry loop absorbs.
+        attempts.append(str(self))
+        if len(attempts) == 1:
+            raise PermissionError(errno.EACCES, "Injected failure", str(self))
+        real_rmdir(self)
+
+    monkeypatch.setattr(target=Path, name="rmdir", value=_refuse_first_attempt)
+
+    delete_directory(directory_path=target)
+
+    assert len(attempts) > 1
+    assert not target.exists()
+
+
+def test_delete_directory_warns_when_every_removal_attempt_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that directory removal reports a warning when it exhausts every attempt."""
+    target = tmp_path / "undeletable"
+    target.mkdir()
+    (target / "data.txt").write_text("payload")
+
+    def _refuse_every_attempt(self: Path) -> None:
+        raise PermissionError(errno.EACCES, "Injected failure", str(self))
+
+    monkeypatch.setattr(target=Path, name="rmdir", value=_refuse_every_attempt)
+
+    # Records the console call directly, since loguru writes through a stream reference that the pytest capture
+    # fixtures do not intercept.
+    reported: list[tuple[str, str]] = []
+    monkeypatch.setattr(console, "echo", lambda message, level: reported.append((message, level)))
+
+    delete_directory(directory_path=target)
+
+    assert len(reported) == 1
+    reported_message, reported_level = reported[0]
+    assert reported_level == LogLevel.WARNING
+    assert f"Unable to remove the {target} directory after 5 attempts" in reported_message
+
+    # The warning stands in for the removal, so the directory survives while its contents are already unlinked.
+    assert target.exists()
 
 
 def test_transfer_directory_creates_checksum_when_missing(tmp_path: Path) -> None:

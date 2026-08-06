@@ -12,8 +12,8 @@ from ataraxis_base_utilities import console
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-ABSENT_ENTRY_ERRNOS: frozenset[int] = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
-"""The metadata-query failures that answer as an absent entry rather than propagating.
+_ABSENT_ENTRY_ERRNOS: frozenset[int] = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
+"""The metadata-query error numbers that answer as an absent entry rather than propagating.
 
 Notes:
     An entry that disappears between its discovery and its inspection has to read as absent, since discovery and
@@ -22,6 +22,20 @@ Notes:
 
     Every other failure, a permission error above all, means the entry exists while its kind stays unknown. Answering
     that case as absent would drop the entry from a result meant to cover the whole tree.
+"""
+
+_ABSENT_ENTRY_WINERRORS: frozenset[int] = frozenset({1921})
+"""The Windows status codes that answer as an absent entry rather than propagating.
+
+Notes:
+    Windows reports a link chain that does not resolve as ERROR_CANT_RESOLVE_FILENAME (1921), which the interpreter
+    surfaces under the generic EINVAL rather than under ELOOP. The ELOOP name additionally carries an unrelated socket
+    value on Windows, so the status code is what separates a looping link from a genuine argument error there.
+
+    Windows files every unfollowable link under this one status, so a link the host is merely configured not to
+    follow reads as absent alongside a link that genuinely loops. Reporting a looping link as no file is what the
+    traversal contract promises on every platform, and the permission and sharing failures that must keep
+    propagating carry their own distinct status codes.
 """
 
 
@@ -178,6 +192,20 @@ def resolve_unique_roots(paths: list[Path] | tuple[Path, ...]) -> tuple[Path, ..
     return tuple(roots)
 
 
+def reports_absent_entry(error: OSError) -> bool:
+    """Determines whether the target metadata-query failure answers as an absent entry.
+
+    Args:
+        error: The failure raised by the metadata query.
+
+    Returns:
+        True when the failure names an entry that does not resolve, and False when the entry exists while its kind
+        stays unknown.
+    """
+    # The Windows status is read through getattr, since OSError carries the attribute on that platform alone.
+    return error.errno in _ABSENT_ENTRY_ERRNOS or getattr(error, "winerror", None) in _ABSENT_ENTRY_WINERRORS
+
+
 def _extract_unique_components(paths: list[Path]) -> tuple[str, ...]:
     """Extracts the deepest component of each target path that no other target path carries.
 
@@ -259,6 +287,6 @@ def _resolves_to_file(entry: os.DirEntry[str]) -> bool:
     try:
         return entry.is_file()
     except OSError as error:
-        if error.errno not in ABSENT_ENTRY_ERRNOS:
+        if not reports_absent_entry(error=error):
             raise
         return False

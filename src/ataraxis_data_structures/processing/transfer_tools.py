@@ -7,10 +7,10 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ataraxis_time import PrecisionTimer, TimerPrecisions
-from ataraxis_base_utilities import console, resolve_worker_count, ensure_directory_exists
+from ataraxis_base_utilities import LogLevel, console, resolve_worker_count, ensure_directory_exists
 
 from .checksum_tools import CHECKSUM_FILENAME, calculate_directory_checksum
-from .filesystem_tools import ABSENT_ENTRY_ERRNOS, walk_files, walk_directory
+from .filesystem_tools import walk_files, walk_directory, reports_absent_entry
 
 _MAXIMUM_DELETION_ATTEMPTS: int = 5
 """The maximum number of times directory deletion is retried before giving up."""
@@ -29,8 +29,8 @@ def delete_directory(directory_path: Path) -> None:
 
         Removal of each emptied directory is attempted up to five times, with a 500 millisecond delay between
         attempts, as some Operating Systems are slow to release file handles. If every attempt fails, the function
-        returns without raising an error and the directory is left in place. Check the path with Path.exists() when
-        the removal has to be guaranteed.
+        reports a warning and returns, leaving the directory in place. Check the path with Path.exists() when the
+        removal has to be guaranteed.
 
     Args:
         directory_path: The path to the directory to delete.
@@ -65,9 +65,19 @@ def delete_directory(directory_path: Path) -> None:
         try:
             directory_path.rmdir()
             break
-        except Exception:  # pragma: no cover
+        except Exception:
             delay_timer.delay(block=False, delay=_DELETION_RETRY_DELAY_MILLISECONDS, allow_sleep=True)
             continue
+    else:
+        # Exhausting every attempt leaves a directory that the caller has been told is gone, so the outcome is
+        # reported rather than returned silently. It stays a warning, since the data the caller asked to remove is
+        # still intact and every caller that needs the removal is able to verify the path itself.
+        message = (
+            f"Unable to remove the {directory_path} directory after {_MAXIMUM_DELETION_ATTEMPTS} attempts. The "
+            f"directory is left in place, which typically indicates that another process still holds an open handle "
+            f"to it or to one of the entries it stored."
+        )
+        console.echo(message=message, level=LogLevel.WARNING)
 
 
 def transfer_directory(
@@ -212,7 +222,7 @@ def transfer_directory(
                 )
                 for file in file_list
             ]
-            if progress:  # pragma: no cover
+            if progress:
                 with console.progress(
                     total=len(file_list),
                     description=f"Transferring files to {destination.name}",
@@ -300,7 +310,7 @@ def _classify_entry(path: Path) -> tuple[bool, bool]:
         One lstat call answers both questions. Since lstat reports a link rather than its target, a symbolic link
         answers False to the directory question whatever it points at.
 
-        An entry whose metadata query fails with one of the ``ABSENT_ENTRY_ERRNOS`` answers False to both questions,
+        An entry whose metadata query fails in a way ``reports_absent_entry`` accepts answers False to both questions,
         which covers an entry that disappears between its discovery and this call. Every other failure propagates,
         since an entry that exists but cannot be read has an unknown kind rather than no kind.
 
@@ -316,7 +326,7 @@ def _classify_entry(path: Path) -> tuple[bool, bool]:
     try:
         entry_mode = os.lstat(path).st_mode
     except OSError as error:
-        if error.errno not in ABSENT_ENTRY_ERRNOS:
+        if not reports_absent_entry(error=error):
             raise
         return False, False
     return stat.S_ISLNK(entry_mode), stat.S_ISDIR(entry_mode)

@@ -1,7 +1,7 @@
 """Contains tests for classes and methods provided by the yaml_config.py module."""
 
 from enum import IntEnum, StrEnum
-from typing import Any, Optional
+from typing import Any, Union, Optional
 from pathlib import Path
 from dataclasses import field, dataclass
 
@@ -526,6 +526,83 @@ def test_collect_type_hooks_union_enum() -> None:
     int_priority_hook = hooks[int | Priority]
     assert int_priority_hook(1) is Priority.LOW
     assert int_priority_hook(99) == 99
+
+
+def test_collect_type_hooks_skips_a_generic_union_member() -> None:
+    """Verifies that _collect_type_hooks registers the enum of a union whose other member is a generic alias."""
+
+    @dataclass
+    class GenericUnionConfig(YamlConfig):
+        # 'list[str]' is a generic alias rather than a class, so the union walk steps over it to reach the enum.
+        items: list[str] | None = None
+        tint: Color | None = None
+
+    hooks = _collect_type_hooks(cls=GenericUnionConfig)
+
+    assert Color in hooks
+    assert (Color | None) in hooks
+
+
+class _ImportProxy:
+    """Stands in for a module-level import proxy used in place of an absent optional dependency.
+
+    Notes:
+        Reporting 'type' as its class is what makes isinstance() accept the proxy as a class, while the absent
+        '__bases__' tuple is what makes issubclass() reject it. Annotating a field with such a proxy is the
+        realistic way a dataclass reaches the type hook walk's issubclass failure handlers.
+
+        The name attributes are what the dataclass machinery reads when it renders the annotation, which every
+        object standing in for a class carries.
+    """
+
+    def __init__(self) -> None:
+        self.__qualname__ = "_ImportProxy"
+
+    @property
+    def __class__(self) -> type:  # type: ignore[override]
+        return type
+
+    def __call__(self, *arguments: object, **keywords: object) -> None:
+        """Accepts the construction call that typing performs when it validates a union member."""
+
+
+def test_collect_type_hooks_skips_a_union_member_that_is_not_a_real_class() -> None:
+    """Verifies that _collect_type_hooks registers the enum of a union whose other member fails the subclass check."""
+    proxy = _ImportProxy()
+
+    # The proxy is not a real class, so the union is built through typing rather than through the '|' operator.
+    annotation = Union[Color, proxy]  # noqa: UP007 - The '|' operator rejects a member that is not a real class.
+
+    @dataclass
+    class ProxyUnionConfig(YamlConfig):
+        tint: annotation = Color.RED  # type: ignore[valid-type]
+
+    hooks = _collect_type_hooks(cls=ProxyUnionConfig)
+
+    # The proxy is stepped over rather than aborting the walk, so the real enum member still earns its hooks.
+    assert Color in hooks
+    assert hooks[annotation]("red") is Color.RED
+
+
+def test_collect_type_hooks_returns_no_hook_for_an_annotation_that_is_not_a_real_class() -> None:
+    """Verifies that _collect_type_hooks answers with no hook for a field annotated with an import proxy."""
+
+    @dataclass
+    class ProxyConfig(YamlConfig):
+        value: _ImportProxy() = None  # type: ignore[valid-type]
+
+    assert _collect_type_hooks(cls=ProxyConfig) == {}
+
+
+def test_collect_type_hooks_returns_no_hook_for_an_unresolvable_annotation() -> None:
+    """Verifies that _collect_type_hooks answers with no hook for a class whose annotations do not resolve."""
+
+    @dataclass
+    class UnresolvableConfig(YamlConfig):
+        # The annotation names a type that exists nowhere, so resolving the class hints raises rather than returning.
+        value: "NeverDefinedType" = None  # type: ignore[name-defined]  # noqa: F821 - Intentionally unresolvable.
+
+    assert _collect_type_hooks(cls=UnresolvableConfig) == {}
 
 
 def test_to_yaml_leaves_previous_file_intact_when_the_dump_fails(

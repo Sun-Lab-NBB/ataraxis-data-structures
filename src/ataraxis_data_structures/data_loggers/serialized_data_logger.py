@@ -321,7 +321,7 @@ class DataLogger:
                 continue
 
             # Only checks that the process is alive if it is started.
-            if self._logger_process is not None and not self._logger_process.is_alive():  # pragma: no cover
+            if self._logger_process is not None and not self._logger_process.is_alive():
                 # Retires the instance in the same order stop() uses, clearing the started flag before releasing the
                 # terminator array. stop() reads that flag first and returns early once it is False, so a concurrent
                 # shutdown cannot reach the array after this thread has destroyed it.
@@ -704,7 +704,7 @@ def _compare_arrays(source_id: int, stem: str, original_array: NDArray[Any], arc
     Raises:
         ValueError: If the arrays do not match.
     """
-    if not np.array_equal(a1=original_array, a2=archived_array):  # pragma: no cover
+    if not np.array_equal(a1=original_array, a2=archived_array):
         message = (
             f"Unable to verify the integrity of the assembled log archive for source {source_id}. The archived data "
             f"for entry {stem} must exactly match the data of the original .npy log entry, but the two differ."

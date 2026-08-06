@@ -196,13 +196,19 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
             if isinstance(type_hint, UnionType) or get_origin(type_hint) is Union:
                 enum_targets: list[type] = []
                 for argument in type_arguments:
-                    if not isinstance(argument, type):  # pragma: no cover
-                        continue  # pragma: no cover
+                    # A generic member such as the 'list[str]' of a 'list[str] | None' annotation is not a class, so
+                    # it carries no enum to discriminate on and issubclass() below would reject it outright.
+                    if not isinstance(argument, type):
+                        continue
+                    # isinstance() accepts anything reporting 'type' as its class, while issubclass() additionally
+                    # demands a real '__bases__' tuple, so an import proxy standing in for an absent optional
+                    # dependency clears the guard above and fails here. Such a member carries no enum to
+                    # discriminate on, so the union is left without a hook rather than failing the whole load.
                     try:
                         if issubclass(argument, Enum) and argument is not Enum:
                             enum_targets.append(argument)
-                    except TypeError:  # pragma: no cover
-                        pass  # pragma: no cover
+                    except TypeError:
+                        pass
                 if enum_targets:
                     hooks[type_hint] = _make_union_enum_hook(enum_types=enum_targets)
 
@@ -233,15 +239,17 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
             return
         visited.add(type_hint)
 
-        # Registers Path subclasses. dacite calls Path(str_value) during deserialization.
+        # Registers Path subclasses. dacite calls Path(str_value) during deserialization. An annotation that clears
+        # the guard above without satisfying issubclass() is left without a hook, as described in the union walk.
         try:
             if issubclass(type_hint, Path):
                 hooks[type_hint] = type_hint
                 return
-        except TypeError:  # pragma: no cover
-            return  # pragma: no cover
+        except TypeError:
+            return
 
-        # Registers Enum subclasses (but not the abstract Enum base itself).
+        # Registers Enum subclasses (but not the abstract Enum base itself). The Path check above shields this one,
+        # since an annotation that answers it without raising has the '__bases__' tuple this check also needs.
         try:
             if issubclass(type_hint, Enum) and type_hint is not Enum:
                 hooks[type_hint] = type_hint
@@ -259,10 +267,12 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
         Args:
             dataclass_type: The dataclass type whose field annotations should be walked.
         """
+        # An annotation naming a type this module cannot resolve leaves the class without a hook rather than failing
+        # the load, since the fields that do resolve still deserialize through the hooks the walk collected.
         try:
             hints = get_type_hints(dataclass_type)
-        except (TypeError, NameError, AttributeError):  # pragma: no cover
-            return  # pragma: no cover
+        except (TypeError, NameError, AttributeError):
+            return
 
         for hint_type in hints.values():
             _walk_type(type_hint=hint_type)
