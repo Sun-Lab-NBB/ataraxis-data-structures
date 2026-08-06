@@ -119,10 +119,12 @@ def transfer_directory(
 
     Raises:
         FileNotFoundError: If the source directory does not exist.
-        OSError: If any directory inside the source or the destination tree cannot be read, if a copied file cannot be
-            read or written, or if the source cannot be removed once ``remove_source`` is enabled. A discovery failure
-            leaves the destination untouched, since both trees are discovered before anything is written.
-        RuntimeError: If the source directory contains a symlink, if the destination holds unaccounted files while
+        OSError: If any directory inside the source or the destination tree cannot be read, or if the destination
+            path already exists as a file rather than as a directory. Also raised if a copied file cannot be read or
+            written, or if the source cannot be removed once ``remove_source`` is enabled. A discovery failure leaves
+            the destination untouched, since both trees are discovered before anything is written.
+        RuntimeError: If the source directory contains a symlink, if ``verify_integrity`` is enabled while the
+            source holds no file the checksum can cover, if the destination holds unaccounted files while
             ``reset_dirty_destination`` is disabled, or if the transferred files do not pass the xxHash3-128 checksum
             integrity verification.
     """
@@ -145,6 +147,17 @@ def transfer_directory(
             f"link resolves only against the filesystem holding it, so transferring one either drops the data it "
             f"stands for or leaves a dangling entry at the destination. Resolve the following link(s) into real "
             f"data before transferring the tree: {', '.join(str(link.relative_to(source)) for link in symlinks)}."
+        )
+        console.error(message=message, error=RuntimeError)
+
+    # A verified transfer needs a digest over real data, and the checksum refuses a directory holding no file it can
+    # cover. Rejecting here keeps that refusal ahead of every destination write below, so a rejected transfer leaves
+    # the destination as it found it. The checksum file is discounted, since the digest excludes it either way.
+    if verify_integrity and all(source_file.name == CHECKSUM_FILENAME for source_file in file_list):
+        message = (
+            f"Unable to transfer the source directory {source} with integrity verification enabled, as the directory "
+            f"holds no file the checksum can cover. Disable the 'verify_integrity' flag to transfer a directory tree "
+            f"that stores no data."
         )
         console.error(message=message, error=RuntimeError)
 

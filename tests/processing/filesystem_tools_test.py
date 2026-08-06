@@ -2,7 +2,9 @@
 
 import os
 import errno
+from typing import Any
 from pathlib import Path
+from collections.abc import Iterator
 
 import pytest
 
@@ -10,17 +12,21 @@ from ataraxis_data_structures import transfer_directory, calculate_directory_che
 from ataraxis_data_structures.processing.checksum_tools import _discover_checksum_files
 from ataraxis_data_structures.processing.filesystem_tools import walk_files, walk_directory
 
-# An injected scan failure covers the unreadable-directory case on every platform, but it lands upstream of the
-# per-entry metadata query, so the tests below build that second condition from a real permission bit instead. Those
-# bits are enforced only on a POSIX host running as an unprivileged user.
-requires_enforced_permissions = pytest.mark.skipif(
+_REQUIRES_ENFORCED_PERMISSIONS: pytest.MarkDecorator = pytest.mark.skipif(
     os.name != "posix" or os.geteuid() == 0,
     reason="Directory permission bits are enforced only on POSIX hosts running as an unprivileged user.",
 )
+"""Limits a test to the hosts that enforce a directory's permission bits.
+
+Notes:
+    An injected scan failure covers the unreadable-directory case on every platform, but it lands upstream of the
+    per-entry metadata query. A test that needs the second condition builds it from a real permission bit, which
+    Windows ignores on a directory and which a privileged user bypasses everywhere.
+"""
 
 
 @pytest.fixture
-def unsearchable_tree(tmp_path: Path) -> Path:
+def unsearchable_tree(tmp_path: Path) -> Iterator[Path]:
     """Builds a directory tree whose one subdirectory can be listed but whose entries cannot be inspected."""
     root = tmp_path / "tree"
     locked = root / "locked"
@@ -38,9 +44,8 @@ def unsearchable_tree(tmp_path: Path) -> Path:
 def unreadable_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Builds a directory tree holding one readable file and one subdirectory whose scan is refused.
 
-    The refusal is injected rather than produced with a permission bit. A directory's read permission is a no-op on
-    Windows and is bypassed by a privileged user on every platform, so a permission bit would leave these tests
-    unexercised on part of the supported matrix.
+    The refusal is injected rather than produced with a permission bit, so the tests consuming this fixture run on
+    every supported platform.
     """
     root = tmp_path / "tree"
     locked = root / "locked"
@@ -50,7 +55,7 @@ def unreadable_tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     real_scandir = os.scandir
 
-    def _refuse_locked_directory(path):
+    def _refuse_locked_directory(path: Any) -> Any:
         # Compares the rendered paths, so a scan the interpreter performs against a descriptor passes through
         # untouched.
         if str(path) == str(locked):
@@ -129,31 +134,18 @@ def test_walk_files_resolves_links_to_decide_the_kind(tmp_path: Path) -> None:
     assert discovered == {"target.txt", "link_to_file"}
 
 
-class _StubScan:
-    """Stands in for the scandir context manager, yielding the entries the test supplies."""
+def test_walk_files_reports_no_file_for_a_link_that_resolves_to_nothing(tmp_path: Path) -> None:
+    """Verifies that walk_files omits every unresolvable link kind without failing the traversal."""
+    (tmp_path / "data.txt").write_text("payload")
+    (tmp_path / "dangling").symlink_to(tmp_path / "nowhere")
+    (tmp_path / "loop_a").symlink_to(tmp_path / "loop_b")
+    (tmp_path / "loop_b").symlink_to(tmp_path / "loop_a")
+    (tmp_path / "through_file").symlink_to(tmp_path / "data.txt" / "child")
 
-    def __init__(self, entries):
-        self._entries = entries
+    # The three unresolvable kinds answer alike rather than one of them aborting the whole traversal.
+    discovered = {path.relative_to(tmp_path).as_posix() for path in walk_files(directory=tmp_path)}
 
-    def __enter__(self):
-        return iter(self._entries)
-
-    def __exit__(self, *_arguments):
-        return False
-
-
-class _RefusingEntry:
-    """Stands in for a scan entry whose kind query fails with the errno the test supplies."""
-
-    def __init__(self, path, error_number):
-        self.path = str(path)
-        self._error_number = error_number
-
-    def is_dir(self, *, follow_symlinks=True):  # noqa: ARG002 - The stub entry is never a directory.
-        return False
-
-    def is_file(self):
-        raise PermissionError(self._error_number, "Injected failure", self.path)
+    assert discovered == {"data.txt"}
 
 
 def test_walk_files_propagates_a_kind_failure_that_is_not_absence(
@@ -175,49 +167,6 @@ def test_walk_files_tolerates_a_kind_failure_that_means_absence(
     monkeypatch.setattr(target=os, name="scandir", value=lambda _path: _StubScan(entries=[entry]))
 
     assert walk_files(directory=tmp_path) == []
-
-
-def test_walk_files_reports_no_file_for_a_link_that_resolves_to_nothing(tmp_path: Path) -> None:
-    """Verifies that walk_files omits every unresolvable link kind without failing the traversal."""
-    (tmp_path / "data.txt").write_text("payload")
-    (tmp_path / "dangling").symlink_to(tmp_path / "nowhere")
-    (tmp_path / "loop_a").symlink_to(tmp_path / "loop_b")
-    (tmp_path / "loop_b").symlink_to(tmp_path / "loop_a")
-    (tmp_path / "through_file").symlink_to(tmp_path / "data.txt" / "child")
-
-    # A link that resolves to nothing is no file, and the three kinds answer alike rather than one of them aborting
-    # the whole traversal.
-    discovered = {path.relative_to(tmp_path).as_posix() for path in walk_files(directory=tmp_path)}
-
-    assert discovered == {"data.txt"}
-
-
-@requires_enforced_permissions
-def test_calculate_directory_checksum_raises_for_an_unsearchable_subdirectory(unsearchable_tree: Path) -> None:
-    """Verifies that a directory checksum fails for a tree whose entries cannot be inspected."""
-    with pytest.raises(PermissionError):
-        calculate_directory_checksum(directory=unsearchable_tree, progress=False, save_checksum=False)
-
-
-@requires_enforced_permissions
-def test_transfer_directory_rejects_an_unaccounted_file_under_an_unsearchable_destination_directory(
-    tmp_path: Path,
-) -> None:
-    """Verifies that a destination file the source does not account for is found even when it cannot be inspected."""
-    source = tmp_path / "source"
-    source.mkdir()
-    (source / "data.txt").write_text("payload")
-    destination = tmp_path / "destination"
-    locked = destination / "locked"
-    locked.mkdir(parents=True)
-    (locked / "stray.txt").write_text("stray")
-    locked.chmod(0o444)
-
-    try:
-        with pytest.raises((RuntimeError, PermissionError)):
-            transfer_directory(source=source, destination=destination, verify_integrity=False)
-    finally:
-        locked.chmod(0o700)
 
 
 def test_walk_files_raises_for_an_unreadable_subdirectory(unreadable_tree: Path) -> None:
@@ -252,6 +201,13 @@ def test_calculate_directory_checksum_raises_for_an_unreadable_subdirectory(unre
         calculate_directory_checksum(directory=unreadable_tree, progress=False, save_checksum=False)
 
 
+@_REQUIRES_ENFORCED_PERMISSIONS
+def test_calculate_directory_checksum_raises_for_an_unsearchable_subdirectory(unsearchable_tree: Path) -> None:
+    """Verifies that a directory checksum fails for a tree whose entries cannot be inspected."""
+    with pytest.raises(PermissionError):
+        calculate_directory_checksum(directory=unsearchable_tree, progress=False, save_checksum=False)
+
+
 def test_transfer_directory_raises_for_an_unreadable_source_subdirectory(unreadable_tree: Path, tmp_path: Path) -> None:
     """Verifies that a transfer fails rather than silently copying the subset of the source it can read."""
     destination = tmp_path / "destination"
@@ -270,3 +226,104 @@ def test_transfer_directory_raises_for_an_unreadable_source_subdirectory(unreada
     # The transfer discovers the source before it writes, so a rejected transfer leaves the destination as it found it.
     assert stale.exists()
     assert not (unreadable_tree / "ax_checksum.txt").exists()
+
+
+@_REQUIRES_ENFORCED_PERMISSIONS
+def test_transfer_directory_rejects_an_unaccounted_file_under_an_unsearchable_destination_directory(
+    tmp_path: Path,
+) -> None:
+    """Verifies that a destination file the source does not account for is found even when it cannot be inspected."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "data.txt").write_text("payload")
+    destination = tmp_path / "destination"
+    locked = destination / "locked"
+    locked.mkdir(parents=True)
+    (locked / "stray.txt").write_text("stray")
+    locked.chmod(0o444)
+
+    try:
+        with pytest.raises((RuntimeError, PermissionError)):
+            transfer_directory(source=source, destination=destination, verify_integrity=False)
+    finally:
+        locked.chmod(0o700)
+
+
+def test_transfer_directory_rejects_a_verified_source_holding_no_coverable_file(tmp_path: Path) -> None:
+    """Verifies that a verified transfer of a file-less source is refused before the destination is written to."""
+    source = tmp_path / "source"
+    (source / "empty_subdirectory").mkdir(parents=True)
+    destination = tmp_path / "destination"
+    destination.mkdir()
+    stray = destination / "stray.txt"
+    stray.write_text("destination data")
+
+    with pytest.raises(RuntimeError, match="holds no file the checksum can cover"):
+        transfer_directory(
+            source=source,
+            destination=destination,
+            verify_integrity=True,
+            reset_dirty_destination=True,
+        )
+
+    # The refusal precedes every destination write, so the unaccounted file the transfer would otherwise delete stays.
+    assert stray.exists()
+    assert not (source / "ax_checksum.txt").exists()
+
+
+def test_transfer_directory_rejects_a_verified_source_holding_only_a_checksum_file(tmp_path: Path) -> None:
+    """Verifies that a source whose only file is the checksum file is refused, since the digest excludes that file."""
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "ax_checksum.txt").write_text("stale")
+    destination = tmp_path / "destination"
+
+    with pytest.raises(RuntimeError, match="holds no file the checksum can cover"):
+        transfer_directory(source=source, destination=destination, verify_integrity=True)
+
+
+def test_transfer_directory_still_transfers_a_file_less_source_without_verification(tmp_path: Path) -> None:
+    """Verifies that a source holding no file transfers normally while integrity verification is disabled."""
+    source = tmp_path / "source"
+    (source / "empty_subdirectory").mkdir(parents=True)
+    destination = tmp_path / "destination"
+
+    transfer_directory(source=source, destination=destination, verify_integrity=False)
+
+    assert (destination / "empty_subdirectory").is_dir()
+
+
+class _StubScan:
+    """Stands in for the scandir context manager, yielding the entries the test supplies.
+
+    Attributes:
+        _entries: Cached entries the context manager yields.
+    """
+
+    def __init__(self, entries: list[Any]) -> None:
+        self._entries = entries
+
+    def __enter__(self) -> Iterator[Any]:
+        return iter(self._entries)
+
+    def __exit__(self, *_arguments: object) -> bool:
+        return False
+
+
+class _RefusingEntry:
+    """Stands in for a scan entry whose kind query fails with the errno the test supplies.
+
+    Attributes:
+        path: The rendered path of the stand-in entry.
+        _error_number: Cached errno the kind query fails with.
+    """
+
+    def __init__(self, path: Path, error_number: int) -> None:
+        self.path = str(path)
+        self._error_number = error_number
+
+    def is_dir(self, *, follow_symlinks: bool = True) -> bool:  # noqa: ARG002 - The stub entry is never a directory.
+        return False
+
+    def is_file(self) -> bool:
+        raise PermissionError(self._error_number, "Injected failure", self.path)

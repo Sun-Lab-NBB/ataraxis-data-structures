@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
+from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import calculate_directory_checksum
 
@@ -176,16 +177,58 @@ def test_calculate_directory_checksum_empty_excluded_files(tmp_path: Path) -> No
     assert checksum_all != checksum_without
 
 
-def test_calculate_directory_checksum_empty_directory(tmp_path: Path) -> None:
-    """Verifies checksum calculation for an empty directory."""
+def test_calculate_directory_checksum_rejects_an_empty_directory(tmp_path: Path) -> None:
+    """Verifies that checksumming a directory holding no file is rejected."""
     empty_directory = tmp_path / "empty"
     empty_directory.mkdir()
 
-    checksum = calculate_directory_checksum(directory=empty_directory, save_checksum=False)
+    message = (
+        f"Unable to calculate the checksum for the {empty_directory} directory. The directory must hold at least one "
+        f"file the checksum can cover, but it holds none."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        calculate_directory_checksum(directory=empty_directory, save_checksum=False)
 
-    # Verifies a valid checksum is still generated.
-    assert isinstance(checksum, str)
-    assert len(checksum) == 32
+
+def test_calculate_directory_checksum_rejects_a_directory_holding_only_excluded_files(tmp_path: Path) -> None:
+    """Verifies that a directory whose every file is excluded is rejected, since nothing remains to cover."""
+    directory = tmp_path / "only_excluded"
+    directory.mkdir()
+    (directory / "ax_checksum.txt").write_text("stale")
+
+    message = (
+        f"Unable to calculate the checksum for the {directory} directory. The directory must hold at least one "
+        f"file the checksum can cover, but it holds none."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        calculate_directory_checksum(directory=directory, save_checksum=False)
+
+
+def test_calculate_directory_checksum_matches_a_recorded_digest(tmp_path: Path) -> None:
+    """Verifies that a fixed tree produces the exact digest earlier releases produced for it."""
+    directory = tmp_path / "golden"
+    directory.mkdir()
+    (directory / "data.txt").write_text("payload")
+    (directory / ".gitignore").write_text("ignored")
+    (directory / "archive.tar.gz").write_text("compressed")
+
+    # Pins the digest itself rather than a relationship between two digests, so a change to which files discovery
+    # reports, or to how each one is folded in, fails here instead of shipping. The tree is flat, since a nested path
+    # renders with the host separator and would make the recorded value platform-dependent.
+    assert calculate_directory_checksum(directory=directory, save_checksum=False) == "697ab93b2e5603ddc5ba5556a7f3954c"
+
+
+def test_calculate_directory_checksum_omits_an_empty_subdirectory(tmp_path: Path) -> None:
+    """Verifies that an empty subdirectory inside a populated tree is omitted rather than rejected."""
+    directory = tmp_path / "populated"
+    directory.mkdir()
+    (directory / "file.txt").write_text("content")
+
+    without_subdirectory = calculate_directory_checksum(directory=directory, save_checksum=False)
+    (directory / "empty_subdirectory").mkdir()
+    with_subdirectory = calculate_directory_checksum(directory=directory, save_checksum=False)
+
+    assert with_subdirectory == without_subdirectory
 
 
 def test_calculate_directory_checksum_content_sensitivity(tmp_path: Path) -> None:
