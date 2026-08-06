@@ -38,7 +38,6 @@ def test_calculate_directory_checksum_basic(sample_directory_structure: Path) ->
     """Verifies basic checksum calculation functionality."""
     checksum = calculate_directory_checksum(directory=sample_directory_structure, save_checksum=False)
 
-    # Verifies checksum is a valid hex string.
     assert isinstance(checksum, str)
     assert len(checksum) == 32  # xxHash3-128 produces 128-bit = 32 hex characters.
     assert all(character in "0123456789abcdef" for character in checksum)
@@ -48,11 +47,9 @@ def test_calculate_directory_checksum_saves_file(sample_directory_structure: Pat
     """Verifies that the checksum file is saved when save_checksum=True."""
     checksum = calculate_directory_checksum(directory=sample_directory_structure, save_checksum=True)
 
-    # Verifies checksum file exists.
     checksum_file = sample_directory_structure / "ax_checksum.txt"
     assert checksum_file.exists()
 
-    # Verifies file content matches returned checksum.
     saved_checksum = checksum_file.read_text().strip()
     assert saved_checksum == checksum
 
@@ -75,7 +72,6 @@ def test_calculate_directory_checksum_multiprocessing(
         directory=sample_directory_structure, num_processes=num_processes, save_checksum=False
     )
 
-    # Verifies checksum is valid.
     assert isinstance(checksum, str)
     assert len(checksum) == 32
 
@@ -91,12 +87,11 @@ def test_calculate_directory_checksum_progress_mode(
     sample_directory_structure: Path,
     progress: bool,  # noqa: FBT001 - Parametrized pytest fixture value, not a positional boolean flag.
 ) -> None:
-    """Verifies that progress mode produces identical checksums (only affects progress display)."""
+    """Verifies that a checksum calculated with progress tracking enabled is a valid digest."""
     checksum = calculate_directory_checksum(
         directory=sample_directory_structure, progress=progress, save_checksum=False
     )
 
-    # Verifies checksum is valid.
     assert isinstance(checksum, str)
     assert len(checksum) == 32
 
@@ -111,7 +106,6 @@ def test_calculate_directory_checksum_excludes_default_service_files(tmp_path: P
 
     checksum_with_service = calculate_directory_checksum(directory=directory_with_service_file, save_checksum=False)
 
-    # Creates identical directory without service files.
     directory_without_service_file = tmp_path / "test_no_service"
     directory_without_service_file.mkdir()
     (directory_without_service_file / "regular_file.txt").write_text("content")
@@ -120,7 +114,6 @@ def test_calculate_directory_checksum_excludes_default_service_files(tmp_path: P
         directory=directory_without_service_file, save_checksum=False
     )
 
-    # Verifies checksums match (service files were excluded).
     assert checksum_with_service == checksum_without_service
 
 
@@ -133,12 +126,10 @@ def test_calculate_directory_checksum_custom_excluded_files(tmp_path: Path) -> N
     (directory_with_cache / "metadata.json").write_text("{}")
     (directory_with_cache / "cache.tmp").write_text("temporary")
 
-    # Checksum excluding cache.tmp.
     checksum_excluding = calculate_directory_checksum(
         directory=directory_with_cache, save_checksum=False, excluded_files={"cache.tmp", "ax_checksum.txt"}
     )
 
-    # Creates identical directory without the excluded file.
     directory_without_cache = tmp_path / "test_no_cache"
     directory_without_cache.mkdir()
     (directory_without_cache / "data.txt").write_text("content")
@@ -159,12 +150,10 @@ def test_calculate_directory_checksum_empty_excluded_files(tmp_path: Path) -> No
     (directory_with_checksum_file / "data.txt").write_text("content")
     (directory_with_checksum_file / "ax_checksum.txt").write_text("included_now")
 
-    # With empty excluded set, ax_checksum.txt is included.
     checksum_all = calculate_directory_checksum(
         directory=directory_with_checksum_file, save_checksum=False, excluded_files=set()
     )
 
-    # Without ax_checksum.txt file.
     directory_without_checksum_file = tmp_path / "test_no_checksum_file"
     directory_without_checksum_file.mkdir()
     (directory_without_checksum_file / "data.txt").write_text("content")
@@ -239,11 +228,9 @@ def test_calculate_directory_checksum_content_sensitivity(tmp_path: Path) -> Non
     (test_directory / "file.txt").write_text("original content")
     original_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
-    # Modifies content.
     (test_directory / "file.txt").write_text("modified content")
     modified_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
-    # Verifies checksums differ.
     assert original_checksum != modified_checksum
 
 
@@ -255,17 +242,14 @@ def test_calculate_directory_checksum_structure_sensitivity(tmp_path: Path) -> N
     (test_directory / "file.txt").write_text("content")
     original_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
-    # Adds a new file.
     (test_directory / "file2.txt").write_text("content")
     expanded_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
-    # Verifies checksums differ.
     assert original_checksum != expanded_checksum
 
 
 def test_calculate_directory_checksum_path_sensitivity(tmp_path: Path) -> None:
     """Verifies that the checksum reflects file paths in addition to file content."""
-    # Creates two directories with the same content but different paths.
     first_directory = tmp_path / "dir1"
     first_directory.mkdir()
     (first_directory / "path_a").mkdir()
@@ -279,7 +263,6 @@ def test_calculate_directory_checksum_path_sensitivity(tmp_path: Path) -> None:
     first_checksum = calculate_directory_checksum(directory=first_directory, save_checksum=False)
     second_checksum = calculate_directory_checksum(directory=second_directory, save_checksum=False)
 
-    # Verifies checksums differ due to different paths.
     assert first_checksum != second_checksum
 
 
@@ -294,11 +277,9 @@ def test_calculate_directory_checksum_large_files(tmp_path: Path) -> None:
 
     initial_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
-    # Verifies checksum is generated.
     assert isinstance(initial_checksum, str)
     assert len(initial_checksum) == 32
 
-    # Verifies consistency.
     repeated_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
     assert initial_checksum == repeated_checksum
 
@@ -314,7 +295,6 @@ def test_calculate_directory_checksum_nested_structure(tmp_path: Path) -> None:
 
     checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
-    # Verifies checksum is valid.
     assert isinstance(checksum, str)
     assert len(checksum) == 32
 
@@ -325,13 +305,10 @@ def test_calculate_directory_checksum_with_existing_checksum_file(tmp_path: Path
     test_directory.mkdir()
     (test_directory / "file.txt").write_text("content")
 
-    # Pre-creates a checksum file with wrong content.
     (test_directory / "ax_checksum.txt").write_text("old_checksum_value")
 
-    # Calculates new checksum with save enabled.
     new_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=True)
 
-    # Verifies a file is overwritten with correct checksum.
     saved_checksum = (test_directory / "ax_checksum.txt").read_text().strip()
     assert saved_checksum == new_checksum
     assert saved_checksum != "old_checksum_value"
@@ -344,18 +321,16 @@ def test_calculate_directory_checksum_different_structures(tmp_path: Path) -> No
     (flat_directory / "a.txt").write_text("content_a")
     (flat_directory / "b.txt").write_text("content_b")
 
-    # Creates second structure with same files in subdirectory.
     nested_directory = tmp_path / "struct2"
     nested_directory.mkdir()
-    subdir = nested_directory / "subdir"
-    subdir.mkdir()
-    (subdir / "a.txt").write_text("content_a")
-    (subdir / "b.txt").write_text("content_b")
+    subdirectory = nested_directory / "subdir"
+    subdirectory.mkdir()
+    (subdirectory / "a.txt").write_text("content_a")
+    (subdirectory / "b.txt").write_text("content_b")
 
     flat_checksum = calculate_directory_checksum(directory=flat_directory, save_checksum=False)
     nested_checksum = calculate_directory_checksum(directory=nested_directory, save_checksum=False)
 
-    # Verifies different structures produce different checksums.
     assert flat_checksum != nested_checksum
 
 
@@ -370,10 +345,8 @@ def test_calculate_directory_checksum_binary_files(tmp_path: Path) -> None:
 
     checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
 
-    # Verifies checksum is valid.
     assert isinstance(checksum, str)
     assert len(checksum) == 32
 
-    # Verifies consistency.
     repeated_checksum = calculate_directory_checksum(directory=test_directory, save_checksum=False)
     assert checksum == repeated_checksum

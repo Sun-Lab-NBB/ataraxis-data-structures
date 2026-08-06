@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from operator import itemgetter
 import platform
 from functools import partial
-from threading import Thread
+from threading import Lock, Thread
 from contextlib import contextmanager
 from collections import defaultdict
 from dataclasses import dataclass
@@ -78,10 +78,6 @@ entry."""
 class LogPackage:
     """Stores the data and ID information to be logged by the DataLogger class and exposes methods for packaging this
     data into the format expected by the logger.
-
-    Notes:
-        During runtime, the DataLogger class expects all data sent for logging via the input Queue object to be
-        packaged into an instance of this class.
     """
 
     source_id: np.uint8
@@ -124,10 +120,10 @@ class DataLogger:
     sources.
 
     The logger runs in a separate process and uses multiple concurrent threads to optimize the I/O operations
-    associated with saving the data to disk, achieving high throughput under a wide range of scenarios.
+    associated with saving the data to disk.
 
     Notes:
-        The start() method starts the logger process. It must complete before any data is submitted for logging.
+        The start() method must complete before any data is submitted for logging.
 
         Use the multiprocessing Queue exposed via the ``input_queue`` property to send the data to the logger. The data
         must be packaged into the LogPackage class instance before it is submitted to the queue.
@@ -151,6 +147,8 @@ class DataLogger:
 
     Attributes:
         _started: Tracks whether the logger process is running.
+        _shutdown_lock: Stores the lock that serializes the shutdown sequence between stop() and the watchdog thread,
+            so exactly one of the two retires the instance.
         _multiprocessing_context: Stores the spawn-based multiprocessing context used to create the manager and the
             logger process.
         _multiprocessing_manager: Stores the manager object used to instantiate and manage the multiprocessing Queue.
@@ -172,10 +170,16 @@ class DataLogger:
         poll_interval: int = 5,
     ) -> None:
         self._started: bool = False
+
+        # Serializes the shutdown sequence. stop() and the watchdog thread both clear the started flag and then
+        # release the terminator array, and the flag alone cannot separate them, since a thread reads it several
+        # statements before it touches the array. The array's own lock does not cover this, as it guards element
+        # access while disconnect() and destroy() take no lock at all.
+        self._shutdown_lock: Lock = Lock()
+
         self._multiprocessing_context: SpawnContext = get_context("spawn")
         self._multiprocessing_manager: SyncManager = self._multiprocessing_context.Manager()
 
-        # Clamps thread_count to a minimum of 1 and prevents a negative poll_interval.
         self._thread_count: int = max(1, thread_count)
         self._poll_interval: int = max(0, poll_interval)
         self._name: str = str(instance_name)
@@ -191,7 +195,6 @@ class DataLogger:
             self._multiprocessing_manager.Queue()  # type: ignore[assignment]
         )
 
-        # Creates the infrastructure for running the logger.
         self._terminator_array: SharedMemoryArray | None = None
         self._logger_process: BaseProcess | None = None
         self._watchdog_thread: Thread | None = None
@@ -210,7 +213,6 @@ class DataLogger:
 
     def start(self) -> None:
         """Starts the remote logger process and the assets used to control and monitor the logger's uptime."""
-        # Prevents re-starting an already started process.
         if self._started:
             return
 
@@ -238,7 +240,6 @@ class DataLogger:
             )
             self._logger_process.start()
 
-        # Creates and starts the watchdog thread.
         self._watchdog_thread = Thread(target=self._watchdog, daemon=True)
         self._watchdog_thread.start()
 
@@ -251,16 +252,23 @@ class DataLogger:
             A logger process that failed to save one of its buffered entries is reported through a warning rather than
             an exception. This method only reaches that check during the shutdown sequence, where raising would mask
             the shutdown work of the caller that is already unwinding, and where the data is lost either way.
+
+            The shutdown is claimed under a lock the watchdog thread takes as well, so exactly one of the two performs
+            the teardown. The lock is released before this method joins that thread, since the watchdog acquires the
+            same lock and holding it across the join would leave each side waiting on the other.
         """
-        if not self._started:
-            return
+        # Claims the shutdown. A watchdog that reached its own teardown first leaves the flag clear, which takes the
+        # early return below and keeps this method away from the terminator array that thread has already released.
+        with self._shutdown_lock:
+            if not self._started:
+                return
 
-        # Soft-inactivates the watchdog thread.
-        self._started = False
+            # Soft-inactivates the watchdog thread.
+            self._started = False
 
-        # Issues the shutdown command to the remote process and the watchdog thread.
-        if self._terminator_array is not None:
-            self._terminator_array[0] = 1
+            # Issues the shutdown command to the remote process and the watchdog thread.
+            if self._terminator_array is not None:
+                self._terminator_array[0] = 1
 
         logger_exit_code: int | None = None
         if self._logger_process is not None:
@@ -314,26 +322,30 @@ class DataLogger:
 
         # The watchdog function runs until the global shutdown command is issued.
         while self._terminator_array is not None and not self._terminator_array[0]:
-            # Repeats the check every 20 ms.
             timer.delay(delay=20, allow_sleep=True, block=False)
 
             if not self._started:
                 continue
 
-            # Only checks that the process is alive if it is started.
             if self._logger_process is not None and not self._logger_process.is_alive():
-                # Retires the instance in the same order stop() uses, clearing the started flag before releasing the
-                # terminator array. stop() reads that flag first and returns early once it is False, so a concurrent
-                # shutdown cannot reach the array after this thread has destroyed it.
-                self._started = False
+                # Claims the shutdown under the lock stop() takes as well, so exactly one of the two retires the
+                # instance. A concurrent stop() can claim it between the liveness check above and this acquisition,
+                # and the claimant owns every step below. Re-reading the flag here keeps this thread from tearing the
+                # instance down a second time and reporting a shutdown that already happened.
+                with self._shutdown_lock:
+                    if not self._started:
+                        return
 
-                # Cleans up all resources, similar to the stop() method.
-                self._terminator_array[0] = 1
-                self._logger_process.join()
-                self._terminator_array.disconnect()
-                self._terminator_array.destroy()
+                    # Retires the instance in the same order stop() uses, clearing the started flag before releasing
+                    # the terminator array.
+                    self._started = False
 
-                # Raises the error.
+                    # Cleans up all resources, similar to the stop() method.
+                    self._terminator_array[0] = 1
+                    self._logger_process.join()
+                    self._terminator_array.disconnect()
+                    self._terminator_array.destroy()
+
                 message = (
                     f"Remote logger process for the {self._name} DataLogger has been prematurely shut down. This "
                     f"likely indicates that the process has encountered a runtime error."
@@ -358,7 +370,7 @@ class DataLogger:
             pending_writes: The futures of the disk writes submitted to the logger process thread pool.
 
         Returns:
-            The futures of the disk writes that are still running.
+            The futures of the disk writes that have not finished yet.
 
         Raises:
             OSError: If saving one of the finished log entries to disk failed.
@@ -407,22 +419,17 @@ class DataLogger:
         # Initializes the timer instance to delay polling the queue during idle periods.
         sleep_timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
 
-        # Tracks the writes still in flight. Retiring each one as it completes keeps the list bounded by the pool's own
-        # width and surfaces a failed write while the logger is still running.
+        # Tracks the writes still in flight. Retiring each one as it completes bounds the list by the writes that have
+        # not finished yet, and surfaces a failed write while the logger is still running.
         pending_writes: list[Future[None]] = []
 
-        # Runs until both the terminator flag is set and the input queue is drained.
         try:
             while not terminator_array[0] or not input_queue.empty():
                 try:
-                    # Gets the data from the input queue. The data is expected to be packaged into the LogPackage
-                    # instance.
                     package: LogPackage = input_queue.get_nowait()
 
                     file_name, data = package.data
 
-                    # Generates the full name for the output log file by merging the name of the specific file with
-                    # the path to the output directory.
                     filename = output_directory.joinpath(file_name)
 
                     pending_writes.append(executor.submit(DataLogger._save_data, filename=filename, data=data))
@@ -477,7 +484,6 @@ def assemble_log_archives(
         verify_integrity: Determines whether to verify the integrity of the created archives against the original log
             entries before removing sources.
     """
-    # Resolves the number of threads and processes to use during runtime.
     max_workers = resolve_worker_count(requested_workers=max_workers or 0)
 
     # Windows does not release memory-mapped file handles reliably, so memory mapping is disabled on that platform.
@@ -553,7 +559,6 @@ def assemble_log_archives(
 
         # PHASE 3: Verifies archived data integrity against the original data if this is requested.
         if verify_integrity:
-            # Loads assembled archives into memory.
             archived_futures = {
                 source_id: process_executor.submit(_load_numpy_archive, file_path=path)
                 for source_id, path in archives.items()
@@ -569,7 +574,6 @@ def assemble_log_archives(
                     archive_data[source_id] = integrity_future.result()
                     progress_bar.update(n=1)
 
-            # Verifies the integrity of each archive data against the original data.
             verification_futures = [
                 thread_executor.submit(
                     _compare_arrays,
@@ -582,7 +586,6 @@ def assemble_log_archives(
                 for stem, original_array in source_data.items()
             ]
 
-            # Tracks verification progress.
             with console.progress(
                 total=len(verification_futures),
                 description="Verifying archived data integrity",
@@ -618,9 +621,6 @@ def _progress_display(*, enabled: bool) -> Generator[None, None, None]:
 
     Args:
         enabled: Determines whether the progress display is active inside the context.
-
-    Yields:
-        None.
     """
     previous_progress = console.progress_enabled
     if enabled:
@@ -663,7 +663,7 @@ def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]:
         file_path: The path to the .npz log archive to load.
 
     Returns:
-        A dictionary that uses log entry names as keys and serialized log entry data (stored in NumPy arrays) as values.
+        The data of every log entry in the archive, keyed by the entry name.
     """
     with np.load(file=file_path) as npz_data:
         return {key: npz_data[key] for key in npz_data.files}

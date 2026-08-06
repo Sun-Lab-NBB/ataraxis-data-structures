@@ -1,4 +1,4 @@
-"""Provides custom data structures used by other Ataraxis and Sollertia libraries."""
+"""Provides the YAML-serializable dataclass base and the file-locked processing pipeline state tracker."""
 
 from .yaml_config import YAML_EXCLUDE_METADATA, YamlConfig
 from .processing_tracker import JobState, TrackerStatus, ProcessingStatus, ProcessingTracker

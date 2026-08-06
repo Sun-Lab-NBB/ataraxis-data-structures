@@ -11,6 +11,14 @@ from ataraxis_data_structures import limit_worker_threads, initialize_worker_thr
 from ataraxis_data_structures.processing.parallel_tools import _THREAD_LIMIT_VARIABLES
 
 
+@pytest.fixture
+def restore_numba_threads() -> Iterator[None]:
+    """Restores the numba thread count the session was using, so a pinning test does not throttle its siblings."""
+    previous = numba.get_num_threads()
+    yield
+    numba.set_num_threads(previous)
+
+
 def test_limit_worker_threads_sets_and_clears_absent_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verifies that the context sets every threading variable and removes the ones that were absent on exit."""
     for variable in _THREAD_LIMIT_VARIABLES:
@@ -57,20 +65,6 @@ def test_limit_worker_threads_rejects_invalid_thread_count() -> None:
     )
     with pytest.raises(ValueError, match=error_format(message)), limit_worker_threads(thread_count=0):
         pass
-
-
-@pytest.fixture
-def restore_numba_threads() -> Iterator[None]:
-    """Restores the numba thread count the session was using, so a pinning test does not throttle its siblings."""
-    previous = numba.get_num_threads()
-    yield
-    numba.set_num_threads(previous)
-
-
-def _raise_probe_error() -> None:
-    """Raises an error so a test can observe how the surrounding context manager handles an exceptional exit."""
-    message = "simulated failure inside the wrapped block"
-    raise RuntimeError(message)
 
 
 def test_limit_worker_threads_covers_the_lazily_read_backends(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,3 +141,9 @@ def test_initialize_worker_threads_rejects_invalid_thread_count() -> None:
     )
     with pytest.raises(ValueError, match=error_format(message)):
         initialize_worker_threads(thread_count=0)
+
+
+def _raise_probe_error() -> None:
+    """Raises an error so a test can observe how the surrounding context manager handles an exceptional exit."""
+    message = "simulated failure inside the wrapped block"
+    raise RuntimeError(message)

@@ -61,7 +61,7 @@ class TestLogMessage:
         message = LogMessage(timestamp_us=timestamp, payload=payload)
 
         assert message.timestamp_us == timestamp
-        np.testing.assert_array_equal(message.payload, payload)
+        np.testing.assert_array_equal(actual=message.payload, desired=payload)
 
     def test_log_message_frozen(self) -> None:
         """Verifies that LogMessage is immutable."""
@@ -156,9 +156,7 @@ class TestLogArchiveReaderOnsetTimestamp:
 
     def test_onset_not_found_raises_error(self, tmp_path: Path) -> None:
         """Verifies that ValueError is raised when no onset message exists."""
-        # Creates an archive without an onset message (all non-zero timestamps).
         archive_path = tmp_path / "no_onset.npz"
-        # All messages have non-zero timestamps.
         arrays = {
             f"001_{(index + 1) * 1000:020d}": _create_log_message(
                 source_id=1, timestamp_us=(index + 1) * 1000, payload=np.array([index], dtype=np.uint8)
@@ -174,12 +172,12 @@ class TestLogArchiveReaderOnsetTimestamp:
 
 
 class TestLogArchiveReaderMessageKeys:
-    """Contains tests for the LogArchiveReader message_keys property."""
+    """Contains tests for the LogArchiveReader _get_message_keys() method."""
 
     def test_message_keys_triggers_onset_discovery(
         self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]
     ) -> None:
-        """Verifies that accessing message_keys triggers onset discovery."""
+        """Verifies that calling _get_message_keys() triggers onset discovery."""
         archive_path, _, _, payloads = sample_archive
         reader = LogArchiveReader(archive_path=archive_path)
 
@@ -190,13 +188,12 @@ class TestLogArchiveReaderMessageKeys:
         assert reader._onset_us is None
 
     def test_message_keys_excludes_onset(self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]) -> None:
-        """Verifies that message_keys does not include the onset message."""
+        """Verifies that _get_message_keys() does not include the onset message."""
         archive_path, source_id, _, payloads = sample_archive
         reader = LogArchiveReader(archive_path=archive_path)
 
         keys = reader._get_message_keys()
 
-        # The onset key should not be in the list.
         onset_key = f"{source_id:03d}_{0:020d}"
         assert onset_key not in keys
         assert len(keys) == len(payloads)
@@ -258,7 +255,6 @@ class TestLogArchiveReaderGetBatches:
 
     def test_get_batches_empty_archive(self, tmp_path: Path) -> None:
         """Verifies that empty archives return an empty list."""
-        # Creates an archive with only an onset message.
         archive_path = tmp_path / "empty.npz"
         onset_key = f"{1:03d}_{0:020d}"
         arrays = {onset_key: _create_onset_message(source_id=1, onset_us=1700000000000000)}
@@ -276,10 +272,8 @@ class TestLogArchiveReaderGetBatches:
 
         batches = reader.get_batches(workers=4, batch_multiplier=4)
 
-        # Verifies multiple batches were created.
         assert len(batches) > 1
 
-        # Verifies all messages are included.
         total_keys = sum(len(batch) for batch in batches)
         assert total_keys == message_count
 
@@ -301,7 +295,6 @@ class TestLogArchiveReaderGetBatches:
 
         batches = reader.get_batches()
 
-        # Verifies batches were created and all messages are included.
         assert len(batches) >= 1
         total_keys = sum(len(batch) for batch in batches)
         assert total_keys == message_count
@@ -322,14 +315,13 @@ class TestLogArchiveReaderIterMessages:
         for index, message in enumerate(messages):
             expected_timestamp = onset_us + (index + 1) * 1000
             assert message.timestamp_us == np.uint64(expected_timestamp)
-            np.testing.assert_array_equal(message.payload, payloads[index])
+            np.testing.assert_array_equal(actual=message.payload, desired=payloads[index])
 
     def test_iter_messages_subset(self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]) -> None:
         """Verifies iteration over a subset of messages."""
         archive_path, _, onset_us, payloads = sample_archive
         reader = LogArchiveReader(archive_path=archive_path)
 
-        # Gets first 3 keys only.
         all_keys = reader._get_message_keys()
         subset_keys = all_keys[:3]
 
@@ -340,7 +332,7 @@ class TestLogArchiveReaderIterMessages:
         for index, message in enumerate(messages):
             expected_timestamp = onset_us + (index + 1) * 1000
             assert message.timestamp_us == np.uint64(expected_timestamp)
-            np.testing.assert_array_equal(message.payload, payloads[index])
+            np.testing.assert_array_equal(actual=message.payload, desired=payloads[index])
 
     def test_iter_messages_with_pre_provided_onset(
         self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]
@@ -372,7 +364,7 @@ class TestLogArchiveReaderReadAllMessages:
             assert timestamp == np.uint64(expected_timestamp)
 
         for index, payload in enumerate(read_payloads):
-            np.testing.assert_array_equal(payload, payloads[index])
+            np.testing.assert_array_equal(actual=payload, desired=payloads[index])
 
     def test_read_all_messages_returns_correct_types(
         self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]
@@ -392,13 +384,12 @@ class TestLogArchiveReaderReadAllMessages:
 class TestLogArchiveReaderIntegration:
     """Contains integration tests for LogArchiveReader with DataLogger output."""
 
+    @pytest.mark.xdist_group(name="group1")
     def test_reader_with_data_logger_output(self, tmp_path: Path) -> None:
         """Verifies that LogArchiveReader works with actual DataLogger output."""
-        # Creates and runs a DataLogger.
         logger = DataLogger(output_directory=tmp_path, instance_name="test_reader")
         logger.start()
 
-        # Gets the current UTC timestamp for the onset message.
         onset_us = get_timestamp(output_format=TimestampFormats.INTEGER, precision=TimestampPrecisions.MICROSECOND)
 
         # Submits the onset message first (timestamp=0, payload contains UTC epoch as uint64).
@@ -424,87 +415,19 @@ class TestLogArchiveReaderIntegration:
 
         reader = LogArchiveReader(archive_path=archives[0])
 
-        # Verifies onset was discovered.
         onset = reader.onset_timestamp_us
         assert onset > 0
 
         # Verifies message count (5 data messages, excluding onset).
         assert reader.message_count == 5
 
-        # Verifies all messages can be read.
         messages = list(reader.iter_messages())
         assert len(messages) == 5
 
-        # Verifies payloads match (order may differ due to timing).
+        # Verifies payloads match. Entries are archived in acquisition-timestamp order, so the read order matches.
         read_payloads = [message.payload for message in messages]
         for payload in test_payloads:
-            assert any(np.array_equal(payload, read_payload) for read_payload in read_payloads)
-
-
-def _create_log_message(source_id: int, timestamp_us: int, payload: NDArray[np.uint8]) -> NDArray[np.uint8]:
-    """Creates a log message in the format expected by LogArchiveReader.
-
-    Args:
-        source_id: The source identifier (0-255).
-        timestamp_us: The elapsed timestamp in microseconds.
-        payload: The payload data.
-
-    Returns:
-        The serialized message bytes.
-    """
-    source_bytes = np.array([source_id], dtype=np.uint8)
-    timestamp_bytes = convert_scalar_to_bytes(value=timestamp_us, dtype=np.dtype(np.uint64))
-    return np.concatenate([source_bytes, timestamp_bytes, payload])
-
-
-def _create_onset_message(source_id: int, onset_us: int) -> NDArray[np.uint8]:
-    """Creates an onset message with timestamp=0 and the onset UTC epoch as payload.
-
-    Args:
-        source_id: The source identifier (0-255).
-        onset_us: The UTC epoch onset timestamp in microseconds.
-
-    Returns:
-        The serialized onset message bytes.
-    """
-    source_bytes = np.array([source_id], dtype=np.uint8)
-    timestamp_bytes = convert_scalar_to_bytes(value=0, dtype=np.dtype(np.uint64))
-    onset_bytes = convert_scalar_to_bytes(value=onset_us, dtype=np.dtype(np.uint64))
-    return np.concatenate([source_bytes, timestamp_bytes, onset_bytes])
-
-
-def _create_test_archive(
-    archive_path: Path, source_id: int, onset_us: int, message_count: int, payload_size: int = 4
-) -> list[NDArray[np.uint8]]:
-    """Creates a test .npz archive with the specified number of messages.
-
-    Args:
-        archive_path: The path where the archive will be saved.
-        source_id: The source identifier for all messages.
-        onset_us: The UTC epoch onset timestamp in microseconds.
-        message_count: The number of data messages to create (excluding onset).
-        payload_size: The size of each message payload in bytes.
-
-    Returns:
-        A list of the original payload arrays for verification.
-    """
-    arrays = {}
-
-    onset_key = f"{source_id:03d}_{0:020d}"
-    arrays[onset_key] = _create_onset_message(source_id=source_id, onset_us=onset_us)
-
-    payloads = []
-    for index in range(message_count):
-        elapsed_us = (index + 1) * 1000  # 1ms between messages
-        payload = np.array([(index + payload_index) % 256 for payload_index in range(payload_size)], dtype=np.uint8)
-        payloads.append(payload)
-
-        message_key = f"{source_id:03d}_{elapsed_us:020d}"
-        arrays[message_key] = _create_log_message(source_id=source_id, timestamp_us=elapsed_us, payload=payload)
-
-    np.savez(file=archive_path, **arrays)
-
-    return payloads
+            assert any(np.array_equal(a1=payload, a2=read_payload) for read_payload in read_payloads)
 
 
 class TestArchiveDiscovery:
@@ -627,6 +550,7 @@ class TestArchiveDiscovery:
         with pytest.raises(FileNotFoundError, match=error_format(message)):
             read_archive_message_count(archive_path=missing)
 
+    @pytest.mark.xdist_group(name="group1")
     def test_data_logger_output_uses_the_exported_naming_constants(self, tmp_path: Path) -> None:
         """Verifies that a logger names its output directory and its archives with the exported suffixes."""
         logger = DataLogger(output_directory=tmp_path, instance_name="behavior")
@@ -657,3 +581,69 @@ class TestArchiveDiscovery:
 
         assert archives == {"4": output_directory / f"4{LOG_ARCHIVE_SUFFIX}"}
         assert read_archive_message_count(archive_path=archives["4"]) == 1
+
+
+def _create_log_message(source_id: int, timestamp_us: int, payload: NDArray[np.uint8]) -> NDArray[np.uint8]:
+    """Creates a log message in the format expected by LogArchiveReader.
+
+    Args:
+        source_id: The source identifier (0-255).
+        timestamp_us: The elapsed timestamp in microseconds.
+        payload: The payload data.
+
+    Returns:
+        The serialized message bytes.
+    """
+    source_bytes = np.array([source_id], dtype=np.uint8)
+    timestamp_bytes = convert_scalar_to_bytes(value=timestamp_us, dtype=np.dtype(np.uint64))
+    return np.concatenate([source_bytes, timestamp_bytes, payload])
+
+
+def _create_onset_message(source_id: int, onset_us: int) -> NDArray[np.uint8]:
+    """Creates an onset message with timestamp=0 and the onset UTC epoch as payload.
+
+    Args:
+        source_id: The source identifier (0-255).
+        onset_us: The UTC epoch onset timestamp in microseconds.
+
+    Returns:
+        The serialized onset message bytes.
+    """
+    source_bytes = np.array([source_id], dtype=np.uint8)
+    timestamp_bytes = convert_scalar_to_bytes(value=0, dtype=np.dtype(np.uint64))
+    onset_bytes = convert_scalar_to_bytes(value=onset_us, dtype=np.dtype(np.uint64))
+    return np.concatenate([source_bytes, timestamp_bytes, onset_bytes])
+
+
+def _create_test_archive(
+    archive_path: Path, source_id: int, onset_us: int, message_count: int, payload_size: int = 4
+) -> list[NDArray[np.uint8]]:
+    """Creates a test .npz archive with the specified number of messages.
+
+    Args:
+        archive_path: The path where the archive will be saved.
+        source_id: The source identifier for all messages.
+        onset_us: The UTC epoch onset timestamp in microseconds.
+        message_count: The number of data messages to create (excluding onset).
+        payload_size: The size of each message payload in bytes.
+
+    Returns:
+        A list of the original payload arrays for verification.
+    """
+    arrays = {}
+
+    onset_key = f"{source_id:03d}_{0:020d}"
+    arrays[onset_key] = _create_onset_message(source_id=source_id, onset_us=onset_us)
+
+    payloads = []
+    for index in range(message_count):
+        elapsed_us = (index + 1) * 1000  # 1 ms between messages.
+        payload = np.array([(index + payload_index) % 256 for payload_index in range(payload_size)], dtype=np.uint8)
+        payloads.append(payload)
+
+        message_key = f"{source_id:03d}_{elapsed_us:020d}"
+        arrays[message_key] = _create_log_message(source_id=source_id, timestamp_us=elapsed_us, payload=payload)
+
+    np.savez(file=archive_path, **arrays)
+
+    return payloads

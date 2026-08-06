@@ -260,7 +260,7 @@ def test_transfer_directory_raises_for_an_unreadable_source_subdirectory(unreada
 def test_transfer_directory_rejects_an_unaccounted_file_under_an_unsearchable_destination_directory(
     tmp_path: Path,
 ) -> None:
-    """Verifies that a destination file the source does not account for is found even when it cannot be inspected."""
+    """Verifies that a transfer into a destination holding an unaccounted file it cannot inspect is refused."""
     source = tmp_path / "source"
     source.mkdir()
     (source / "data.txt").write_text("payload")
@@ -319,56 +319,6 @@ def test_transfer_directory_still_transfers_a_file_less_source_without_verificat
     transfer_directory(source=source, destination=destination, verify_integrity=False)
 
     assert (destination / "empty_subdirectory").is_dir()
-
-
-class _StubScan:
-    """Stands in for the scandir context manager, yielding the entries the test supplies.
-
-    Attributes:
-        _entries: Cached entries the context manager yields.
-    """
-
-    def __init__(self, entries: list[Any]) -> None:
-        self._entries = entries
-
-    def __enter__(self) -> Iterator[Any]:
-        return iter(self._entries)
-
-    def __exit__(self, *_arguments: object) -> bool:
-        return False
-
-
-class _WindowsLinkLoopError(OSError):
-    """Stands in for the failure Windows raises for a link chain that does not resolve.
-
-    Notes:
-        Windows carries the condition in the read-only 'winerror' attribute, which POSIX hosts do not define at all.
-        Shadowing it with a plain class attribute makes the injected failure read alike on every platform, so the
-        status the traversal reads is exercised wherever the suite runs.
-    """
-
-    winerror = 1921
-
-
-class _RefusingEntry:
-    """Stands in for a scan entry whose kind query fails with the error the test supplies.
-
-    Attributes:
-        path: The rendered path of the stand-in entry.
-        _error_number: Cached errno the kind query fails with.
-        _error_type: Cached exception class the kind query raises.
-    """
-
-    def __init__(self, path: Path, error_number: int, error_type: type[OSError] = PermissionError) -> None:
-        self.path = str(path)
-        self._error_number = error_number
-        self._error_type = error_type
-
-    def is_dir(self, *, follow_symlinks: bool = True) -> bool:  # noqa: ARG002 - The stub entry is never a directory.
-        return False
-
-    def is_file(self) -> bool:
-        raise self._error_type(self._error_number, "Injected failure", self.path)
 
 
 def test_discover_marker_files_reports_matches_at_any_depth(tmp_path: Path) -> None:
@@ -474,7 +424,7 @@ def test_resolve_unique_roots_resolves_a_lone_path_to_itself() -> None:
 
 
 def test_resolve_unique_roots_reports_one_entry_per_distinct_root() -> None:
-    """Verifies that two paths resolving to the same ancestor contribute a single entry."""
+    """Verifies that sibling paths distinguished by their own final components each resolve to themselves."""
     first = Path("/data/recording_1/logs/camera")
     second = Path("/data/recording_1/logs/microcontroller")
 
@@ -509,3 +459,53 @@ def test_resolve_unique_roots_stops_at_the_filesystem_root() -> None:
     relative = Path("relative/shared")
 
     assert resolve_unique_roots(paths=[absolute, relative]) == (Path(absolute.parts[0]), Path("relative"))
+
+
+class _StubScan:
+    """Stands in for the scandir context manager, yielding the entries the test supplies.
+
+    Attributes:
+        _entries: Cached entries the context manager yields.
+    """
+
+    def __init__(self, entries: list[Any]) -> None:
+        self._entries = entries
+
+    def __enter__(self) -> Iterator[Any]:
+        return iter(self._entries)
+
+    def __exit__(self, *_arguments: object) -> bool:
+        return False
+
+
+class _WindowsLinkLoopError(OSError):
+    """Stands in for the failure Windows raises for a link chain that does not resolve.
+
+    Notes:
+        Windows carries the condition in the read-only 'winerror' attribute, which POSIX hosts do not define at all.
+        Shadowing it with a plain class attribute makes the injected failure read alike on every platform, so the
+        status the traversal reads is exercised wherever the suite runs.
+    """
+
+    winerror = 1921
+
+
+class _RefusingEntry:
+    """Stands in for a scan entry whose kind query fails with the error the test supplies.
+
+    Attributes:
+        path: The rendered path of the stand-in entry.
+        _error_number: Cached errno the kind query fails with.
+        _error_type: Cached exception class the kind query raises.
+    """
+
+    def __init__(self, path: Path, error_number: int, error_type: type[OSError] = PermissionError) -> None:
+        self.path = str(path)
+        self._error_number = error_number
+        self._error_type = error_type
+
+    def is_dir(self, *, follow_symlinks: bool = True) -> bool:  # noqa: ARG002 - The stub entry is never a directory.
+        return False
+
+    def is_file(self) -> bool:
+        raise self._error_type(self._error_number, "Injected failure", self.path)

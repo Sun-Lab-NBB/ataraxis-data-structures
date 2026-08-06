@@ -31,7 +31,6 @@ def sample_data() -> tuple[int, int, NDArray[np.uint8]]:
 @pytest.mark.xdist_group(name="group1")
 def test_data_logger_initialization(tmp_path: Path) -> None:
     """Verifies the initialization of the DataLogger class with different parameters."""
-    # Tests default initialization.
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     assert logger._thread_count == 5
     assert logger._poll_interval == 5
@@ -44,8 +43,30 @@ def test_data_logger_initialization(tmp_path: Path) -> None:
     logger = DataLogger(output_directory=tmp_path, instance_name="custom_logger", thread_count=10, poll_interval=1000)
     assert logger._thread_count == 10
     assert logger._poll_interval == 1000
-    # Ensures __repr__ works as expected.
     assert repr(logger)
+
+
+@pytest.mark.xdist_group(name="group1")
+@pytest.mark.parametrize("thread_count, expected_thread_count", [(0, 1), (-3, 1), (1, 1), (5, 5)])
+def test_data_logger_clamps_the_thread_count(tmp_path: Path, thread_count: int, expected_thread_count: int) -> None:
+    """Verifies that the thread count is clamped to 1 from below, as the constructor documents.
+
+    An unclamped 0 reaches ThreadPoolExecutor(max_workers=0) inside the spawned logger process, which raises there and
+    kills the process before it consumes a single entry, so the clamp is what keeps a caller's typo from silently
+    discarding the whole log.
+    """
+    logger = DataLogger(output_directory=tmp_path, instance_name=f"clamped_{thread_count}", thread_count=thread_count)
+
+    assert logger._thread_count == expected_thread_count
+
+
+@pytest.mark.xdist_group(name="group1")
+@pytest.mark.parametrize("poll_interval, expected_poll_interval", [(-5, 0), (-1, 0), (0, 0), (5, 5)])
+def test_data_logger_clamps_the_poll_interval(tmp_path: Path, poll_interval: int, expected_poll_interval: int) -> None:
+    """Verifies that the poll interval is clamped to 0 from below, as the constructor documents."""
+    logger = DataLogger(output_directory=tmp_path, instance_name=f"polled_{poll_interval}", poll_interval=poll_interval)
+
+    assert logger._poll_interval == expected_poll_interval
 
 
 @pytest.mark.xdist_group(name="group1")
@@ -76,7 +97,6 @@ def test_data_logger_start_stop(tmp_path: Path) -> None:
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     assert not logger.alive
 
-    # Tests start.
     logger.start()
     assert logger.alive
     # Ensures that calling start() twice does nothing.
@@ -88,21 +108,19 @@ def test_data_logger_start_stop(tmp_path: Path) -> None:
     logger_2 = DataLogger(output_directory=tmp_path, instance_name="custom_name")
     logger_2.start()
 
-    # Tests stop.
     logger.stop()
     assert not logger.alive
     assert not logger._logger_process.is_alive()
     # Verifies that calling stop twice does nothing.
     logger.stop()
 
-    # Cleans up the second logger.
     logger_2.stop()
 
 
 @pytest.mark.xdist_group(name="group1")
 @pytest.mark.parametrize(
     "thread_count",
-    [5, 3, 10],  # Different thread configurations.
+    [5, 3, 10],
 )
 def test_data_logger_multithreading(
     tmp_path: Path, thread_count: int, sample_data: tuple[int, int, NDArray[np.uint8]]
@@ -111,7 +129,6 @@ def test_data_logger_multithreading(
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger", thread_count=thread_count)
     logger.start()
 
-    # Submits multiple data points.
     for index in range(5):
         source_id, timestamp, data = sample_data
         timestamp += index
@@ -123,7 +140,6 @@ def test_data_logger_multithreading(
     # Allows time for processing.
     logger.stop()
 
-    # Verifies files were created.
     log_directory = tmp_path / "test_logger_data_log"
     files = list(log_directory.glob("*.npy"))
     assert files
@@ -145,10 +161,8 @@ def test_data_logger_data_integrity(tmp_path: Path, sample_data: tuple[int, int,
     saved_files = list(logger.output_directory.glob("*.npy"))
     assert len(saved_files) == 1
 
-    # Loads and verifies the saved data.
     saved_data = np.load(file=saved_files[0])
 
-    # Extracts components from saved data.
     saved_source_id = int.from_bytes(saved_data[:1].tobytes(), byteorder="little")
     saved_timestamp = int.from_bytes(saved_data[1:9].tobytes(), byteorder="little")
     saved_content = saved_data[9:]
@@ -176,7 +190,6 @@ def test_data_logger_assembly(tmp_path: Path, sample_data: tuple[int, int, NDArr
 
     logger.stop()
 
-    # Tests log assembly using a standalone function.
     assemble_log_archives(log_directory=logger.output_directory, remove_sources=True, verbose=True)
 
     # Verifies log archives.
@@ -202,7 +215,6 @@ def test_data_logger_concurrent_access(tmp_path: Path, sample_data: tuple[int, i
         )
         logger.input_queue.put(packed_data)
 
-    # Submits data concurrently.
     with ThreadPoolExecutor(max_workers=5) as executor:
         executor.map(submit_data, range(20))
 
@@ -226,7 +238,6 @@ def test_data_logger_empty_queue_shutdown(tmp_path: Path) -> None:
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
 
-    # Stops without sending any data.
     logger.stop()
 
     # Verifies no files were created.
@@ -293,6 +304,49 @@ def test_data_logger_watchdog_reports_a_prematurely_shut_down_process(tmp_path: 
 
 
 @pytest.mark.xdist_group(name="group1")
+def test_data_logger_watchdog_stands_down_for_a_concurrent_shutdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that a watchdog losing the shutdown race leaves the teardown to the claimant.
+
+    stop() reads the started flag several statements before it writes the terminator array. Without the re-check the
+    watchdog performs under the shared lock, a watchdog that observed a dead process in that window would release the
+    array between those two statements, and the write stop() then performs would fail with a ConnectionError.
+    """
+    logger = DataLogger(output_directory=tmp_path, instance_name="watchdog_yield")
+
+    # Builds the monitored state by hand, for the reason given in the test above.
+    terminator_array = SharedMemoryArray.create_array(
+        name="watchdog_yield_terminator", prototype=np.zeros(shape=1, dtype=np.uint8), exists_ok=True
+    )
+    logger._terminator_array = terminator_array
+    process = _ExitedProcess()
+    logger._logger_process = process
+    logger._started = True
+
+    def claim_the_shutdown() -> bool:
+        """Reports the process as dead, after a concurrent stop() has taken the started flag.
+
+        The liveness check is the last statement before the lock acquisition, so clearing the flag here places the
+        concurrent claim in exactly the window the re-check exists to close.
+        """
+        logger._started = False
+        return False
+
+    monkeypatch.setattr(target=process, name="is_alive", value=claim_the_shutdown)
+
+    # The watchdog stands down rather than raising, since the claimant owns the report as well as the teardown.
+    logger._watchdog()
+
+    # Every resource is left for the claimant, so the array the claimant is about to write is still usable.
+    assert terminator_array.is_connected
+    assert terminator_array[0] == 0
+
+    terminator_array.disconnect()
+    terminator_array.destroy()
+
+
+@pytest.mark.xdist_group(name="group1")
 def test_data_logger_failed_write(
     tmp_path: Path, sample_data: tuple[int, int, NDArray[np.uint8]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -331,7 +385,6 @@ def test_assemble_log_archives_with_integrity_check(
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
     logger.start()
 
-    # Submits test data.
     for index in range(3):
         source_id, timestamp, data = sample_data
         timestamp += index
@@ -342,7 +395,6 @@ def test_assemble_log_archives_with_integrity_check(
 
     logger.stop()
 
-    # Tests archive assembly with integrity verification.
     assemble_log_archives(
         log_directory=logger.output_directory, remove_sources=False, verify_integrity=True, verbose=False
     )
@@ -357,7 +409,7 @@ def test_assemble_log_archives_with_integrity_check(
 def test_log_package_data_golden_bytes() -> None:
     """Verifies that LogPackage.data serializes the header and payload to the exact byte layout consumers depend on."""
     # The on-disk layout is a fixed contract shared with LogArchiveReader and downstream parsers:
-    # [source_id (1 byte)][acquisition_time (8 bytes, little-endian uint64)][payload (N bytes)].
+    # [source_id (1 byte)][acquisition_time (8 bytes, native-order uint64)][payload (N bytes)].
     source_id = np.uint8(7)
     acquisition_time = np.uint64(1234567890)
     payload = np.array([10, 20, 30, 255], dtype=np.uint8)
@@ -369,7 +421,6 @@ def test_log_package_data_golden_bytes() -> None:
     assert data.dtype == np.uint8
     assert data.tobytes() == expected
 
-    # Verifies the zero-padded filename format.
     assert log_name == "007_00000000001234567890.npy"
 
     # Verifies the layout round-trips exactly as LogArchiveReader reads it.
@@ -393,9 +444,7 @@ def test_log_package_data_large_timestamp() -> None:
 
 @pytest.mark.parametrize("payload_dtype", [np.int32, np.int64, np.float64])
 def test_log_package_data_rejects_a_payload_of_another_datatype_kind(payload_dtype: Any) -> None:
-    """Verifies that LogPackage.data raises instead of reinterpreting a payload whose datatype belongs to another
-    kind.
-    """
+    """Verifies that LogPackage.data raises for a payload whose datatype belongs to another kind."""
     package = LogPackage(
         source_id=np.uint8(3),
         acquisition_time=np.uint64(9),

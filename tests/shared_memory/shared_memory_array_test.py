@@ -1,46 +1,50 @@
 """Contains tests for the shared_memory_array module provided by the shared_memory package."""
 
+from __future__ import annotations
+
 import gc
 import pickle
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from multiprocessing import Process
 from multiprocessing.shared_memory import SharedMemory
 
 import numpy as np
 import pytest
-from numpy.typing import NDArray
 from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import SharedMemoryArray
 
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
+
 
 @pytest.fixture
 def int_array() -> NDArray[np.int32]:
-    """Returns an integer NumPy array prototype used by the tests below."""
+    """Returns an integer NumPy array prototype."""
     return np.array([1, 2, 3, 4, 5], dtype=np.int32)
 
 
 @pytest.fixture
 def float_array() -> NDArray[np.float64]:
-    """Returns a floating-point NumPy array prototype used by the tests below."""
+    """Returns a floating-point NumPy array prototype."""
     return np.array([1.1, 2.2, 3.3, 4.4, 5.5], dtype=np.float64)
 
 
 @pytest.fixture
 def bool_array() -> NDArray[np.bool_]:
-    """Returns a boolean NumPy array prototype used by the tests below."""
-    return np.array([True, False, True, False, True], dtype=bool)
+    """Returns a boolean NumPy array prototype."""
+    return np.array([True, False, True, False, True], dtype=np.bool_)
 
 
 @pytest.fixture
 def string_array() -> NDArray[np.str_]:
-    """Returns a string NumPy array prototype used by the tests below."""
+    """Returns a string NumPy array prototype."""
     return np.array(["a", "b", "c", "d", "e"], dtype="<U1")
 
 
 @pytest.fixture
 def multidimensional_array() -> NDArray[np.int32]:
-    """Returns a multidimensional NumPy array prototype used by the tests below."""
+    """Returns a multidimensional NumPy array prototype."""
     return np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int32)
 
 
@@ -64,14 +68,12 @@ def test_create_array(int_array: NDArray[np.int32]) -> None:
     Verifies creating an array from a valid NumPy prototype, checks its name, shape, datatype, and connection status,
     and confirms data integrity after creation.
     """
-    # Creates a SharedMemoryArray instance.
     shared_memory_array = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array)
     assert shared_memory_array.name == "test_create_array"
     assert shared_memory_array.shape == int_array.shape
     assert shared_memory_array.datatype == int_array.dtype
     assert shared_memory_array.is_connected
 
-    # Verifies data integrity using array context manager.
     with shared_memory_array.array(with_lock=False) as shared_array:
         np.testing.assert_array_equal(actual=shared_array, desired=int_array)
 
@@ -84,10 +86,10 @@ def test_create_array(int_array: NDArray[np.int32]) -> None:
     shared_memory_array = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array)
     shared_memory_array.destroy()
 
-    # Verifies that exist_ok flag works as expected by recreating an already existing buffer.
+    # Recreates the array over the freed buffer name with the 'exists_ok' flag enabled. The flag's own recreation
+    # path is covered by test_create_array_recreates_leftover_buffer.
     shared_memory_array = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array, exists_ok=True)
 
-    # Cleans up after the runtime.
     shared_memory_array.disconnect()
     shared_memory_array.destroy()
 
@@ -125,7 +127,6 @@ def test_create_array_recreates_leftover_buffer(int_array: NDArray[np.int32], mo
     with shared_memory_array.array(with_lock=False) as shared_array:
         np.testing.assert_array_equal(actual=shared_array, desired=int_array)
 
-    # Cleans up after the runtime.
     shared_memory_array.disconnect()
     shared_memory_array.destroy()
 
@@ -135,16 +136,13 @@ def test_create_array_multidimensional(multidimensional_array: NDArray[np.int32]
 
     Verifies creating an array from a 2D NumPy prototype and confirms its shape and data integrity.
     """
-    # Creates a SharedMemoryArray instance with a 2D array.
     shared_memory_array = SharedMemoryArray.create_array(name="test_multidim", prototype=multidimensional_array)
     assert shared_memory_array.shape == multidimensional_array.shape
     assert shared_memory_array.datatype == multidimensional_array.dtype
 
-    # Verifies data integrity.
     with shared_memory_array.array(with_lock=False) as shared_array:
         np.testing.assert_array_equal(actual=shared_array, desired=multidimensional_array)
 
-    # Cleans up.
     shared_memory_array.destroy()
 
 
@@ -153,14 +151,12 @@ def test_repr(int_array: NDArray[np.int32]) -> None:
 
     Verifies that the string representation reflects the array name, shape, datatype, and connection status.
     """
-    # Creates a SharedMemoryArray instance.
     shared_memory_array = SharedMemoryArray.create_array(name="test_repr", prototype=int_array)
     expected_repr = (
         f"SharedMemoryArray(name='test_repr', shape={int_array.shape}, datatype={int_array.dtype}, connected=True)"
     )
     assert repr(shared_memory_array) == expected_repr
 
-    # Cleans up.
     shared_memory_array.destroy()
 
 
@@ -205,22 +201,18 @@ def test_getitem(
         pytest-xdist runtime.
     """
     # Uses the test-specific fixture to get the prototype array and instantiate the SharedMemoryArray instance.
-    sample_array = request.getfixturevalue(array_fixture)
+    sample_array = request.getfixturevalue(argname=array_fixture)
     shared_memory_array = SharedMemoryArray.create_array(name=buffer_name, prototype=sample_array)
 
-    # Reads data using a test-specific index.
     result = shared_memory_array[index]
 
-    # Verifies that the value returned by the test matches expectation.
     if isinstance(expected, np.ndarray):
         np.testing.assert_array_equal(actual=result, desired=expected)
     else:
         assert result == expected
 
-    # Verifies that the type returned by the test matches expectation.
     assert isinstance(result, expected_type)
 
-    # Cleans up.
     shared_memory_array.destroy()
 
 
@@ -266,14 +258,13 @@ def test_setitem(
         pytest-xdist runtime.
     """
     # Uses the test-specific fixture to get the prototype array and instantiate the SharedMemoryArray instance.
-    sample_array = request.getfixturevalue(array_fixture)
+    sample_array = request.getfixturevalue(argname=array_fixture)
     shared_memory_array = SharedMemoryArray.create_array(name=buffer_name, prototype=sample_array)
 
     # Writes test data using the tested combination of index and input data.
     shared_memory_array[index] = data
-    result = shared_memory_array[index]  # Reads the (supposedly) modified data back.
+    result = shared_memory_array[index]
 
-    # Verifies that the value(s) were written correctly.
     if isinstance(expected, list):
         np.testing.assert_array_equal(actual=result, desired=expected)
     else:
@@ -285,7 +276,6 @@ def test_setitem(
     else:
         assert isinstance(result, type(sample_array[0]))
 
-    # Cleans up.
     shared_memory_array.destroy()
 
 
@@ -294,26 +284,20 @@ def test_array_context_manager(int_array: NDArray[np.int32]) -> None:
 
     Verifies accessing the array with and without locking, and modifying the array through the context manager.
     """
-    # Creates a SharedMemoryArray instance.
     shared_memory_array = SharedMemoryArray.create_array(name="test_array_cm", prototype=int_array)
 
-    # Tests reading with lock.
     with shared_memory_array.array(with_lock=True) as shared_array:
         np.testing.assert_array_equal(actual=shared_array, desired=int_array)
         assert isinstance(shared_array, np.ndarray)
 
-    # Tests reading without the lock.
     with shared_memory_array.array(with_lock=False) as shared_array:
         np.testing.assert_array_equal(actual=shared_array, desired=int_array)
 
-    # Tests modification through context manager.
     with shared_memory_array.array(with_lock=True) as shared_array:
         shared_array[0] = 100
 
-    # Verifies the modification persisted.
     assert shared_memory_array[0] == 100
 
-    # Cleans up.
     shared_memory_array.destroy()
 
 
@@ -333,19 +317,15 @@ def test_disconnect_connect(int_array: NDArray[np.int32], spawning: None) -> Non
     holder.__setstate__(shared_memory_array.__getstate__())
     holder.connect()
 
-    # Tests disconnection.
     shared_memory_array.disconnect()
     assert not shared_memory_array.is_connected
 
-    # Tests reconnection.
     shared_memory_array.connect()
     assert shared_memory_array.is_connected
 
-    # Verifies data integrity after reconnection.
     with shared_memory_array.array(with_lock=False) as shared_array:
         np.testing.assert_array_equal(actual=shared_array, desired=int_array)
 
-    # Cleans up.
     holder.disconnect()
     shared_memory_array.destroy()
 
@@ -396,7 +376,7 @@ def test_creating_process_arms_buffer_destruction(int_array: NDArray[np.int32]) 
     # The creating process arms the destruction without any call of its own.
     assert shared_memory_array._destroy_buffer
 
-    # Dropping the only reference runs __del__, which destroys the buffer rather than merely disconnecting from it.
+    # Dropping the only reference runs __del__, which destroys the buffer.
     del shared_memory_array
     gc.collect()
 
@@ -567,7 +547,7 @@ def test_create_array_errors() -> None:
 
     # Tests with existing name.
     # Maintains reference to prevent Windows garbage collection.
-    _existing = SharedMemoryArray.create_array(name="existing_array", prototype=np.array([1, 2, 3]))
+    _existing = SharedMemoryArray.create_array(name="existing_array", prototype=np.array([1, 2, 3], dtype=np.int32))
     message = (
         "Unable to create the 'existing_array' SharedMemoryArray object, as an object with this name already "
         "exists. If this method is called from a child process, use the connect() method instead "
@@ -575,7 +555,7 @@ def test_create_array_errors() -> None:
         "runtime, run this method with the 'exists_ok' flag set to True."
     )
     with pytest.raises(FileExistsError, match=error_format(message)):
-        SharedMemoryArray.create_array(name="existing_array", prototype=np.array([4, 5, 6]))
+        SharedMemoryArray.create_array(name="existing_array", prototype=np.array([4, 5, 6], dtype=np.int32))
 
 
 def test_getitem_errors(int_array: NDArray[np.int32]) -> None:
@@ -634,96 +614,25 @@ def test_array_context_manager_errors(int_array: NDArray[np.int32]) -> None:
         pass
 
 
-def read_write_worker(shared_memory_array: SharedMemoryArray) -> None:
-    """Connects to a shared array, writes a test value, verifies the write, and disconnects.
-
-    Args:
-        shared_memory_array: The SharedMemoryArray instance to test.
-    """
-    # Connects to the input array.
-    shared_memory_array.connect()
-
-    # Writes and verifies that the test payload has been written.
-    shared_memory_array[2] = 42
-    assert shared_memory_array[2] == 42
-
-    # Disconnects from the array and terminates the process.
-    shared_memory_array.disconnect()
-
-
-def auto_connect_worker(shared_memory_array: SharedMemoryArray) -> None:
-    """Writes a test value through an instance that connected itself while it was transferred to this process.
-
-    Args:
-        shared_memory_array: The SharedMemoryArray instance to test.
-    """
-    # Records whether the instance arrived connected, so the parent is able to tell an auto-connected instance from
-    # one this worker connected itself.
-    shared_memory_array[1] = 1 if shared_memory_array.is_connected else 0
-    shared_memory_array[2] = 42
-
-    shared_memory_array.disconnect()
-
-
-def manual_connect_probe_worker(shared_memory_array: SharedMemoryArray) -> None:
-    """Reports whether an instance created without the 'auto_connect' flag arrives disconnected.
-
-    Args:
-        shared_memory_array: The SharedMemoryArray instance to test.
-    """
-    arrived_connected = shared_memory_array.is_connected
-
-    # Connects manually, which is the path every process takes when 'auto_connect' is disabled.
-    shared_memory_array.connect()
-    shared_memory_array[1] = 1 if arrived_connected else 0
-
-    shared_memory_array.disconnect()
-
-
-def concurrent_worker(shared_memory_array: SharedMemoryArray, index: int) -> None:
-    """Repeatedly reads, increments, and writes back the value at a specific array index.
-
-    Args:
-        shared_memory_array: The SharedMemoryArray instance to test.
-        index: The array index to repeatedly increment.
-    """
-    # Connects to the array.
-    shared_memory_array.connect()
-
-    # Performs repeated increment operations.
-    for _ in range(100):
-        # Reads data from the input index.
-        value = shared_memory_array[index]
-        # Increments the value by one and writes it back to the array.
-        shared_memory_array[index] = value + 1
-
-    # Disconnects and terminates the process.
-    shared_memory_array.disconnect()
-
-
 @pytest.mark.xdist_group(name="cross_process")
 def test_cross_process_read_write() -> None:
     """Verifies the ability of the SharedMemoryArray class to share data across processes.
 
     Verifies writing data from a child process and reading it back from the parent process.
     """
-    # Instantiates the SharedMemoryArray instance.
     prototype = np.array([1, 2, 3, 4, 5], dtype=np.int32)
     shared_memory_array = SharedMemoryArray.create_array(name="test_cross_process", prototype=prototype)
 
     # Writes (and reads) to the SMA from a different process.
-    process = Process(target=read_write_worker, args=(shared_memory_array,))
+    process = Process(target=_read_write_worker, args=(shared_memory_array,))
     process.start()
     process.join()
 
     assert process.exitcode == 0
 
-    # Finishes setting up the array in the local process, which is connected to the buffer since its creation.
-
     # Verifies that the data written by the other process is accessible from the main process.
     assert shared_memory_array[2] == 42
 
-    # Cleans up.
     shared_memory_array.destroy()
 
 
@@ -736,7 +645,7 @@ def test_cross_process_auto_connect() -> None:
     )
 
     # The worker writes through the instance without calling connect() itself.
-    process = Process(target=auto_connect_worker, args=(shared_memory_array,))
+    process = Process(target=_auto_connect_worker, args=(shared_memory_array,))
     process.start()
     process.join()
 
@@ -757,7 +666,7 @@ def test_cross_process_manual_connect_when_disabled() -> None:
         name="test_manual_connect", prototype=prototype, auto_connect=False
     )
 
-    process = Process(target=manual_connect_probe_worker, args=(shared_memory_array,))
+    process = Process(target=_manual_connect_probe_worker, args=(shared_memory_array,))
     process.start()
     process.join()
 
@@ -775,11 +684,12 @@ def test_cross_process_concurrent_access() -> None:
 
     Verifies that five processes incrementing different array elements concurrently produce the expected final values.
     """
-    # Instantiates the SharedMemoryArray instance.
-    shared_memory_array = SharedMemoryArray.create_array(name="test_concurrent", prototype=np.zeros(5, dtype=np.int32))
+    shared_memory_array = SharedMemoryArray.create_array(
+        name="test_concurrent", prototype=np.zeros(shape=5, dtype=np.int32)
+    )
 
     # Generates multiple processes and uses each to repeatedly increment different indices.
-    processes = [Process(target=concurrent_worker, args=(shared_memory_array, index)) for index in range(5)]
+    processes = [Process(target=_concurrent_worker, args=(shared_memory_array, index)) for index in range(5)]
     for process in processes:
         process.start()
     for process in processes:
@@ -790,13 +700,10 @@ def test_cross_process_concurrent_access() -> None:
     for process in processes:
         assert process.exitcode == 0
 
-    # Finishes setting up the array in the local process, which is connected to the buffer since its creation.
-
     # Verifies all indices were incremented to the expected value.
     with shared_memory_array.array(with_lock=False) as shared_array:
         assert np.all(shared_array == 100)
 
-    # Cleans up.
     shared_memory_array.destroy()
 
 
@@ -850,3 +757,65 @@ def test_create_array_reports_a_buffer_that_survives_unlinking(monkeypatch: pyte
         SharedMemoryArray.create_array(
             name="test_persistent_buffer", prototype=np.array([1, 2, 3], dtype=np.uint8), exists_ok=True
         )
+
+
+def _read_write_worker(shared_memory_array: SharedMemoryArray) -> None:
+    """Connects to a shared array, writes a test value, verifies the write, and disconnects.
+
+    Args:
+        shared_memory_array: The SharedMemoryArray instance to test.
+    """
+    shared_memory_array.connect()
+
+    # Writes and verifies that the test payload has been written.
+    shared_memory_array[2] = 42
+    assert shared_memory_array[2] == 42
+
+    # Disconnects from the array and terminates the process.
+    shared_memory_array.disconnect()
+
+
+def _auto_connect_worker(shared_memory_array: SharedMemoryArray) -> None:
+    """Writes a test value through an instance that connected itself while it was transferred to this process.
+
+    Args:
+        shared_memory_array: The SharedMemoryArray instance to test.
+    """
+    # Records whether the instance arrived connected, so the parent is able to tell an auto-connected instance from
+    # one this worker connected itself.
+    shared_memory_array[1] = 1 if shared_memory_array.is_connected else 0
+    shared_memory_array[2] = 42
+
+    shared_memory_array.disconnect()
+
+
+def _manual_connect_probe_worker(shared_memory_array: SharedMemoryArray) -> None:
+    """Reports whether an instance created without the 'auto_connect' flag arrives disconnected.
+
+    Args:
+        shared_memory_array: The SharedMemoryArray instance to test.
+    """
+    arrived_connected = shared_memory_array.is_connected
+
+    # Connects manually, which is the path every process takes when 'auto_connect' is disabled.
+    shared_memory_array.connect()
+    shared_memory_array[1] = 1 if arrived_connected else 0
+
+    shared_memory_array.disconnect()
+
+
+def _concurrent_worker(shared_memory_array: SharedMemoryArray, index: int) -> None:
+    """Repeatedly reads, increments, and writes back the value at a specific array index.
+
+    Args:
+        shared_memory_array: The SharedMemoryArray instance to test.
+        index: The array index to repeatedly increment.
+    """
+    shared_memory_array.connect()
+
+    for _ in range(100):
+        value = shared_memory_array[index]
+        shared_memory_array[index] = value + 1
+
+    # Disconnects and terminates the process.
+    shared_memory_array.disconnect()

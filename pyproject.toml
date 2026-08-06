@@ -194,7 +194,7 @@ extra_checks = true
 pretty = true
 
 exclude = [
-    "ataraxis[-_]data[-_]structures-\\d+",  # The temporary folder created while building the sdist
+    "ataraxis-data-structures-\\d+",        # The temporary folder created while building the sdist
     "venv.*/",
     "build/",
     "dist/",

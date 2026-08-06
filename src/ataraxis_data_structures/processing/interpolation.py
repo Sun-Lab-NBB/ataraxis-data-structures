@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from ataraxis_base_utilities import console
 
 if TYPE_CHECKING:
     from numpy.typing import NDArray
@@ -20,8 +21,8 @@ def interpolate_data(
     """Interpolates the data values at the requested coordinates using the source coordinate-value distribution.
 
     Notes:
-        This function expects ``source_coordinates`` and ``target_coordinates`` arrays to be one-dimensional and
-        monotonically increasing.
+        Expects the ``source_coordinates`` and ``target_coordinates`` arrays to be one-dimensional and monotonically
+        increasing.
 
         Discrete interpolated data is returned as an array with the same datatype as the input data. Continuous
         interpolated data is returned as a float64 datatype array.
@@ -37,9 +38,22 @@ def interpolate_data(
         is_discrete: Determines whether the interpolated data is discrete or continuous.
 
     Returns:
-        A one-dimensional NumPy array with the same length as the ``target_coordinates`` array that stores the
-        interpolated data values.
+        The interpolated data value at each target coordinate, in the order the target coordinates were supplied.
+
+    Raises:
+        ValueError: If the source coordinate array or the source value array holds no element.
     """
+    # A source distribution holding no point defines no value to interpolate to. Refusing here keeps that case from
+    # reaching the two backends below, which fail it differently: the discrete path inverts its clip bounds and indexes
+    # an empty array, while the continuous path raises out of np.interp.
+    if source_coordinates.size == 0 or source_values.size == 0:
+        message = (
+            f"Unable to interpolate the data values at the requested coordinates. The 'source_coordinates' and "
+            f"'source_values' arguments must each hold at least one element, but got {source_coordinates.size} "
+            f"coordinate(s) and {source_values.size} value(s)."
+        )
+        console.error(message=message, error=ValueError)
+
     if is_discrete:
         # Locates the last source coordinate at or to the left of each target coordinate. The subtraction lands a
         # target above the source range on the final index, and a target below it on -1, which the lower clip raises

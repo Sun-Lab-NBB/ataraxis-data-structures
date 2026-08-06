@@ -109,7 +109,7 @@ class JobState:
 @dataclass
 class ProcessingTracker(YamlConfig):
     """Tracks the state of a data processing pipeline and provides tools for communicating this state between multiple
-    processes and host-machines.
+    processes and host machines.
 
     Notes:
         All modifications to the tracker file require the acquisition of the .lock file, which ensures exclusive
@@ -258,6 +258,7 @@ class ProcessingTracker(YamlConfig):
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+            ValueError: If any job name or specifier contains a colon.
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
@@ -354,7 +355,6 @@ class ProcessingTracker(YamlConfig):
                 for foreign_id in foreign_ids:
                     del self.jobs[foreign_id]
 
-            # Registers the requested jobs that are absent, preserving the state of every job already tracked.
             for job_id, job_name, specifier in requested:
                 if job_id not in self.jobs:
                     self.jobs[job_id] = JobState(job_name=job_name, specifier=specifier)
@@ -430,7 +430,7 @@ class ProcessingTracker(YamlConfig):
 
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
 
             # Copies each state so the caller cannot mutate the instance's registry. Every JobState field is an
             # immutable scalar, so a per-entry replace() is a complete copy and is cheaper than a deep copy.
@@ -496,16 +496,14 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
 
-            matches: dict[str, tuple[str, str]] = {}
-            for job_id, job_state in self.jobs.items():
-                name_match = job_name is None or job_name in job_state.job_name
-                specifier_match = specifier is None or specifier in job_state.specifier
-                if name_match and specifier_match:
-                    matches[job_id] = (job_state.job_name, job_state.specifier)
-
-            return matches
+            return {
+                job_id: (job_state.job_name, job_state.specifier)
+                for job_id, job_state in self.jobs.items()
+                if (job_name is None or job_name in job_state.job_name)
+                and (specifier is None or specifier in job_state.specifier)
+            }
 
     @contextmanager
     def run_job(self, job_id: str, executor_id: str | None = None) -> Iterator[None]:
@@ -567,8 +565,6 @@ class ProcessingTracker(YamlConfig):
                 )
                 console.error(message=message, error=ValueError)
 
-            # Resolves the executor identifier from the runtime environment (a recognized scheduler's job ID, falling
-            # back to the process ID) when the caller does not provide one explicitly.
             job_info = self.jobs[job_id]
             job_info.status = ProcessingStatus.RUNNING
             job_info.error_message = None
@@ -662,7 +658,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
 
             if job_id not in self.jobs:
                 message = (
@@ -697,7 +693,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
             if not self.jobs:
                 return False
             return all(job.status == ProcessingStatus.SUCCEEDED for job in self.jobs.values())
@@ -711,7 +707,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
             return any(job.status == ProcessingStatus.FAILED for job in self.jobs.values())
 
     def get_jobs_by_status(self, status: ProcessingStatus | str) -> list[str]:
@@ -729,7 +725,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
             target_status = ProcessingStatus[status] if isinstance(status, str) else status
             return [job_id for job_id, job_state in self.jobs.items() if job_state.status == target_status]
 
@@ -745,7 +741,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
             summary: dict[ProcessingStatus, int] = dict.fromkeys(ProcessingStatus, 0)
             for job_state in self.jobs.values():
                 summary[job_state.status] += 1
@@ -770,7 +766,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
 
             if job_id not in self.jobs:
                 message = (
@@ -873,7 +869,7 @@ class ProcessingTracker(YamlConfig):
         first scheduler job ID found, tagged with its scheme as ``"<scheme>:<id>"``. The tag lets a stale tracker
         entry be correlated with the scheduler's own record of the job. Falls back to ``"pid:<process id>"`` when the
         process runs under no recognized scheduler, so a locally executed job still records a meaningful executor
-        identifier. The scheme prefix lets a consumer select the liveness query that matches the executor.
+        identifier.
 
         Returns:
             The scheme-tagged scheduler job ID when the process runs under a recognized scheduler, otherwise the
@@ -888,14 +884,18 @@ class ProcessingTracker(YamlConfig):
                     return f"{scheme}:{job_id}"
         return f"pid:{os.getpid()}"
 
-    def _load_state(self) -> None:
-        """Reads the processing pipeline's runtime state from the cached .YAML file, creating the file with the
-        instance's current state when it does not yet exist.
+    def _load_state(self, *, create_missing: bool = True) -> None:
+        """Reads the processing pipeline's runtime state from the cached .YAML file, optionally creating the file with
+        the instance's current state when it does not yet exist.
+
+        Args:
+            create_missing: Determines whether a tracker file that does not exist is created with the instance's
+                current state.
         """
         if self.file_path.exists():
             loaded = ProcessingTracker.from_yaml(file_path=self.file_path)
             self.jobs = loaded.jobs
-        else:
+        elif create_missing:
             self._save_state()
 
     def _save_state(self) -> None:

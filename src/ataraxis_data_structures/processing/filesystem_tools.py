@@ -52,8 +52,8 @@ def walk_directory(directory: Path) -> list[Path]:
         Every subdirectory, file, and link found anywhere under the root directory, in an unspecified order.
 
     Raises:
-        OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
-            beneath it cannot be read.
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
     """
     return [Path(entry.path) for entry in _scan_tree(directory=directory)]
 
@@ -99,8 +99,8 @@ def discover_marker_files(directory: Path, marker_name: str) -> list[Path]:
         The paths to every matching file found anywhere under the root directory, sorted by path.
 
     Raises:
-        OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
-            beneath it cannot be read.
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
     """
     return sorted(
         Path(entry.path)
@@ -129,8 +129,8 @@ def discover_marker_roots(directory: Path, marker_name: str, levels_up: int = 0)
         The paths to every directory owning a matching marker, sorted by path.
 
     Raises:
-        OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
-            beneath it cannot be read.
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
         ValueError: If the requested level count is negative, or if a discovered marker sits too close to the
             filesystem root to have an ancestor at that level.
     """
@@ -202,8 +202,62 @@ def reports_absent_entry(error: OSError) -> bool:
         True when the failure names an entry that does not resolve, and False when the entry exists while its kind
         stays unknown.
     """
-    # The Windows status is read through getattr, since OSError carries the attribute on that platform alone.
+    # Reads the Windows status through getattr, since OSError carries the attribute on that platform alone.
     return error.errno in _ABSENT_ENTRY_ERRNOS or getattr(error, "winerror", None) in _ABSENT_ENTRY_WINERRORS
+
+
+def _scan_tree(directory: Path) -> Iterator[os.DirEntry[str]]:
+    """Scans the target directory and every directory beneath it, collecting the entries each scan returns.
+
+    Notes:
+        A directory the process is unable to read raises instead of contributing nothing to the result. The pathlib
+        globbing helpers suppress that failure, which silently narrows the tree to the part the process happens to be
+        able to read, and leaves every caller believing it covered the whole tree.
+
+        Each returned entry carries the kind its own scan reported, so a caller testing whether an entry is a
+        directory pays no additional metadata call on the platforms that supply that record.
+
+        Entries are yielded as each scan produces them, so a caller keeping only the entries it selects never holds
+        the whole tree at once.
+
+    Args:
+        directory: The root directory whose tree is scanned.
+
+    Yields:
+        The scan entry for everything found anywhere under the root directory, in an unspecified order.
+
+    Raises:
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
+    """
+    pending: list[Path] = [directory]
+
+    while pending:
+        with os.scandir(pending.pop()) as scan:
+            for entry in scan:
+                yield entry
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(Path(entry.path))
+
+
+def _resolves_to_file(entry: os.DirEntry[str]) -> bool:
+    """Determines whether the target scan entry resolves to a file, following it when it is a link.
+
+    Args:
+        entry: The scan entry whose kind is determined.
+
+    Returns:
+        True when the entry resolves to a file, and False when it resolves to anything else or resolves to nothing.
+
+    Raises:
+        OSError: If the entry's kind cannot be determined for any reason other than the entry being absent.
+    """
+    try:
+        return entry.is_file()
+    except OSError as error:
+        if not reports_absent_entry(error=error):
+            raise
+        return False
 
 
 def _extract_unique_components(paths: list[Path]) -> tuple[str, ...]:
@@ -236,57 +290,3 @@ def _extract_unique_components(paths: list[Path]) -> tuple[str, ...]:
         components.append(unique_component)
 
     return tuple(components)
-
-
-def _scan_tree(directory: Path) -> Iterator[os.DirEntry[str]]:
-    """Scans the target directory and every directory beneath it, collecting the entries each scan returns.
-
-    Notes:
-        A directory the process is unable to read raises instead of contributing nothing to the result. The pathlib
-        globbing helpers suppress that failure, which silently narrows the tree to the part the process happens to be
-        able to read, and leaves every caller believing it covered the whole tree.
-
-        Each returned entry carries the kind its own scan reported, so a caller testing whether an entry is a
-        directory pays no additional metadata call on the platforms that supply that record.
-
-        Entries are yielded as each scan produces them, so a caller keeping only the entries it selects never holds
-        the whole tree at once.
-
-    Args:
-        directory: The root directory whose tree is scanned.
-
-    Yields:
-        The scan entry for everything found anywhere under the root directory, in an unspecified order.
-
-    Raises:
-        OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
-            beneath it cannot be read.
-    """
-    pending: list[Path] = [directory]
-
-    while pending:
-        with os.scandir(pending.pop()) as scan:
-            for entry in scan:
-                yield entry
-                if entry.is_dir(follow_symlinks=False):
-                    pending.append(Path(entry.path))
-
-
-def _resolves_to_file(entry: os.DirEntry[str]) -> bool:
-    """Determines whether the target scan entry resolves to a file, following it when it is a link.
-
-    Args:
-        entry: The scan entry whose kind is determined.
-
-    Returns:
-        True when the entry resolves to a file, and False when it resolves to anything else or resolves to nothing.
-
-    Raises:
-        OSError: If the entry's kind cannot be determined for any reason other than the entry being absent.
-    """
-    try:
-        return entry.is_file()
-    except OSError as error:
-        if not reports_absent_entry(error=error):
-            raise
-        return False

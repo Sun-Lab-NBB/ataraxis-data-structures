@@ -2,7 +2,7 @@
 
 ## Session start behavior
 
-At the beginning of each coding session, before making any code changes, you should build a comprehensive
+At the beginning of each coding session, before making any code changes, you MUST build a comprehensive
 understanding of the codebase by invoking the `/explore-codebase` skill.
 
 This builds an accurate model of the project architecture before changes are made, preventing inconsistencies with
@@ -13,7 +13,7 @@ the patterns that downstream Ataraxis framework projects depend on.
 Before writing, modifying, or reviewing any code or documentation, you MUST invoke the appropriate skill to load
 Ataraxis framework conventions. This applies to ALL file types:
 
-| Task                                | Skill to Invoke    |
+| Task                                | Skill to invoke    |
 |-------------------------------------|--------------------|
 | Writing or modifying Python code    | `/python-style`    |
 | Writing or modifying README files   | `/readme-style`    |
@@ -21,18 +21,10 @@ Ataraxis framework conventions. This applies to ALL file types:
 | Writing or modifying pyproject.toml | `/pyproject-style` |
 | Configuring tox.ini                 | `/tox-config`      |
 
-All contributions must strictly follow these conventions. Key conventions include:
-- Google-style docstrings with proper sections
-- Full type annotations with explicit array dtypes
-- Keyword arguments for function calls
-- Third person imperative mood for comments and documentation
-- Proper error handling with `console.error()`
-- 120 character line limit
-
 ## Cross-referenced library verification
 
-Ataraxis framework projects often depend on other `ataraxis-*` libraries. These libraries may be
-stored locally in the same parent directory as this project (`/home/cyberaxolotl/Desktop/GitHubRepos/`).
+Ataraxis framework projects often depend on other `ataraxis-*` libraries. These libraries may be stored locally in the
+same parent directory as this project, reachable as `../` from the repository root.
 
 **Before writing code that interacts with a cross-referenced library, you MUST:**
 
@@ -58,25 +50,25 @@ state to prevent integration errors.
 
 ## Available skills
 
-| Skill                   | Description                                                                    |
-|-------------------------|--------------------------------------------------------------------------------|
-| `/explore-codebase`     | Perform in-depth codebase exploration at session start                         |
-| `/python-style`         | Apply Ataraxis framework Python coding conventions (REQUIRED for code changes) |
-| `/readme-style`         | Apply Ataraxis framework README conventions                                    |
-| `/commit`               | Draft Ataraxis framework style-compliant git commit messages                   |
-| `/pyproject-style`      | Apply Ataraxis framework pyproject.toml conventions                            |
-| `/tox-config`           | Apply Ataraxis framework tox.ini conventions                                   |
-| `/api-docs`             | Apply Ataraxis framework Sphinx API documentation conventions                  |
-| `/audit-correctness`    | Audit source code for bugs, edge cases, races, and leaks                       |
-| `/audit-facts`          | Fact-check documentation against authoritative source code                     |
-| `/audit-performance`    | Audit source code for cost, speed, memory use, and dtype predictability        |
-| `/audit-project`        | Orchestrate the four audits and merge their findings into one report           |
-| `/audit-style`          | Audit files for style and convention compliance                                |
-| `/explore-dependencies` | Build an API snapshot of installed ataraxis dependencies                       |
-| `/pr`                   | Draft a style-compliant pull request summary                                   |
-| `/project-layout`       | Apply Ataraxis framework project structure conventions                         |
-| `/release`              | Draft style-compliant release notes from merged PRs                            |
-| `/skill-design`         | Generate and verify skill files and CLAUDE.md instructions                     |
+| Skill                   | Description                                                                      |
+|-------------------------|----------------------------------------------------------------------------------|
+| `/explore-codebase`     | Performs in-depth codebase exploration at session start                          |
+| `/python-style`         | Applies Ataraxis framework Python coding conventions (REQUIRED for code changes) |
+| `/readme-style`         | Applies Ataraxis framework README conventions                                    |
+| `/commit`               | Stages all local changes and creates a style-compliant git commit                |
+| `/pyproject-style`      | Applies Ataraxis framework pyproject.toml conventions                            |
+| `/tox-config`           | Applies Ataraxis framework tox.ini conventions                                   |
+| `/api-docs`             | Applies Ataraxis framework Sphinx API documentation conventions                  |
+| `/audit-correctness`    | Audits source code for bugs, edge cases, races, and leaks                        |
+| `/audit-facts`          | Fact-checks documentation against authoritative source code                      |
+| `/audit-performance`    | Audits source code for cost, speed, memory use, and dtype predictability         |
+| `/audit-project`        | Orchestrates the four audits and merges their findings into one report           |
+| `/audit-style`          | Audits files for style and convention compliance                                 |
+| `/explore-dependencies` | Builds an API snapshot of installed ataraxis dependencies                        |
+| `/pr`                   | Drafts a style-compliant pull request summary                                    |
+| `/project-layout`       | Applies Ataraxis framework project structure conventions                         |
+| `/release`              | Drafts style-compliant release notes from merged PRs                             |
+| `/skill-design`         | Generates and verifies skill files and CLAUDE.md instructions                    |
 
 ## Project context
 
@@ -86,15 +78,15 @@ dependency for other Ataraxis framework projects.
 
 ### Key areas
 
-| Directory                                | Purpose                                                  |
-|------------------------------------------|----------------------------------------------------------|
-| `src/ataraxis_data_structures/`          | Main library source code                                 |
-| `src/.../shared_memory/`                 | SharedMemoryArray for process-safe data sharing          |
-| `src/.../data_structures/`               | YamlConfig and ProcessingTracker classes                 |
-| `src/.../data_loggers/`                  | DataLogger and LogArchiveReader for serialized logging   |
-| `src/.../processing/`                    | Checksum, transfer, interpolation, and thread tools      |
-| `tests/`                                 | Test suite (mirrors source structure)                    |
-| `docs/`                                  | Sphinx API documentation source                          |
+| Directory                       | Purpose                                                        |
+|---------------------------------|----------------------------------------------------------------|
+| `src/ataraxis_data_structures/` | Main library source code                                       |
+| `src/.../shared_memory/`        | SharedMemoryArray for process-safe data sharing                |
+| `src/.../data_structures/`      | YamlConfig and ProcessingTracker classes                       |
+| `src/.../data_loggers/`         | DataLogger and LogArchiveReader for serialized logging         |
+| `src/.../processing/`           | Checksum, transfer, discovery, interpolation, and thread tools |
+| `tests/`                        | Test suite (mirrors source structure)                          |
+| `docs/`                         | Sphinx API documentation source                                |
 
 ### Architecture
 
@@ -112,29 +104,41 @@ dependency for other Ataraxis framework projects.
 - **ProcessingTracker**: File-based pipeline state tracker using FileLock for multi-process coordination. Manages job
   states (SCHEDULED, RUNNING, SUCCEEDED, FAILED) with search and lifecycle features.
 - **Processing Utilities**: Directory checksums (xxHash3-128), parallel directory transfer with integrity verification,
-  time-series interpolation (linear for continuous, last-known-value for discrete data), and a context manager that
-  constrains the thread pools the numeric backends open inside worker processes.
+  and data asset discovery that locates marker files and the directories owning them. Also covers time-series
+  interpolation (linear for continuous, last-known-value for discrete data) and a context manager that constrains the
+  thread pools the numeric backends open inside worker processes.
 
 ### Core components
 
-| Component                    | File                                     | Purpose                                                    |
-|------------------------------|------------------------------------------|------------------------------------------------------------|
-| SharedMemoryArray            | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory                  |
-| YamlConfig                   | `data_structures/yaml_config.py`         | Dataclass with YAML serialization                          |
-| YAML_EXCLUDE_METADATA        | `data_structures/yaml_config.py`         | Field metadata that excludes a field from YAML             |
-| ProcessingTracker            | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking                  |
-| JobState                     | `data_structures/processing_tracker.py`  | Dataclass for job metadata                                 |
-| ProcessingStatus             | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED)            |
-| DataLogger                   | `data_loggers/serialized_data_logger.py` | Process-based serialized data logging                      |
-| LogPackage                   | `data_loggers/serialized_data_logger.py` | Container for source_id, acquisition_time, serialized_data |
-| LogArchiveReader             | `data_loggers/log_archive_reader.py`     | Batch reader for .npz archives                             |
-| LogMessage                   | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload                     |
-| assemble_log_archives        | `data_loggers/serialized_data_logger.py` | Aggregates .npy files into .npz archives                   |
-| calculate_directory_checksum | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                            |
-| transfer_directory           | `processing/transfer_tools.py`           | Parallel directory copy with verification                  |
-| delete_directory             | `processing/transfer_tools.py`           | Parallel directory deletion                                |
-| interpolate_data             | `processing/interpolation.py`            | Time-series interpolation                                  |
-| limit_worker_threads         | `processing/parallel_tools.py`           | Thread-count limiter for parallel worker processes         |
+| Component                       | File                                     | Purpose                                                     |
+|---------------------------------|------------------------------------------|-------------------------------------------------------------|
+| `SharedMemoryArray`             | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory                   |
+| `YamlConfig`                    | `data_structures/yaml_config.py`         | Dataclass with YAML serialization                           |
+| `YAML_EXCLUDE_METADATA`         | `data_structures/yaml_config.py`         | Field metadata that excludes a field from YAML              |
+| `ProcessingTracker`             | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking                   |
+| `JobState`                      | `data_structures/processing_tracker.py`  | Dataclass for job metadata                                  |
+| `ProcessingStatus`              | `data_structures/processing_tracker.py`  | `IntEnum` (SCHEDULED, RUNNING, SUCCEEDED, FAILED)           |
+| `TrackerStatus`                 | `data_structures/processing_tracker.py`  | Aggregate progress label for the whole job registry         |
+| `DataLogger`                    | `data_loggers/serialized_data_logger.py` | Process-based serialized data logging                       |
+| `LogPackage`                    | `data_loggers/serialized_data_logger.py` | Container for source_id, acquisition_time, serialized_data  |
+| `LOG_DIRECTORY_SUFFIX`          | `data_loggers/serialized_data_logger.py` | Name suffix of each logger's output directory               |
+| `LOG_ARCHIVE_SUFFIX`            | `data_loggers/serialized_data_logger.py` | Filename suffix of the assembled `.npz` archives            |
+| `assemble_log_archives`         | `data_loggers/serialized_data_logger.py` | Aggregates `.npy` files into `.npz` archives                |
+| `LogArchiveReader`              | `data_loggers/log_archive_reader.py`     | Batch reader for `.npz` archives                            |
+| `LogMessage`                    | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload                      |
+| `PARALLEL_PROCESSING_THRESHOLD` | `data_loggers/log_archive_reader.py`     | Message count below which `get_batches()` returns one batch |
+| `find_log_archive`              | `data_loggers/log_archive_reader.py`     | Resolves one source's archive anywhere under a tree         |
+| `discover_log_archives`         | `data_loggers/log_archive_reader.py`     | Maps source IDs to archives in one logger directory         |
+| `read_archive_message_count`    | `data_loggers/log_archive_reader.py`     | Counts archive messages without decoding                    |
+| `calculate_directory_checksum`  | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                             |
+| `transfer_directory`            | `processing/transfer_tools.py`           | Parallel directory copy with verification                   |
+| `delete_directory`              | `processing/transfer_tools.py`           | Parallel directory deletion                                 |
+| `discover_marker_files`         | `processing/filesystem_tools.py`         | Finds every marker file with a given name                   |
+| `discover_marker_roots`         | `processing/filesystem_tools.py`         | Finds the directories owning discovered markers             |
+| `resolve_unique_roots`          | `processing/filesystem_tools.py`         | Truncates paths at their distinguishing component           |
+| `interpolate_data`              | `processing/interpolation.py`            | Time-series interpolation                                   |
+| `limit_worker_threads`          | `processing/parallel_tools.py`           | Thread-count limiter for parallel worker processes          |
+| `initialize_worker_threads`     | `processing/parallel_tools.py`           | Thread-count pin run inside a pool worker                   |
 
 ### Code standards
 
@@ -191,4 +195,4 @@ component-specific steps.
 - Use `ataraxis-time` for precision timestamps in logging contexts
 - Every multiprocessing primitive uses an explicit spawn context (`get_context("spawn")`) for identical cross-platform
   behavior, covering SharedMemoryArray, the DataLogger process, and the `ProcessPoolExecutor` pools in
-  `calculate_directory_checksum` and `assemble_log_archives`. Pass `mp_context` whenever adding a pool
+  `calculate_directory_checksum` and `assemble_log_archives`. Pass `mp_context` whenever adding a pool.

@@ -46,9 +46,6 @@ def calculate_directory_checksum(
     """Calculates the xxHash3-128 checksum for the input directory.
 
     Notes:
-        The function can be configured to write the generated checksum as a hexadecimal string to the ax_checksum.txt
-        file stored at the highest level of the input directory.
-
         The xxHash3 checksum is not suitable for security purposes and is only used to ensure data integrity.
 
         The returned checksum accounts for the contents of each file and for each file's path relative to the input
@@ -132,39 +129,6 @@ def calculate_directory_checksum(
     return checksum_hexstring
 
 
-def _calculate_file_checksum(base_directory: Path, file_path: Path) -> tuple[str, bytes]:
-    """Calculates the xxHash3-128 checksum for the target file and its path relative to the base directory.
-
-    Args:
-        base_directory: The path to the directory that contains the target file and anchors its relative path.
-        file_path: The full path to the target file located inside the base directory.
-
-    Returns:
-        The first element is the file path relative to the base directory. The second is the xxHash3-128 checksum
-        reflecting the file's path and data.
-    """
-    checksum = xxhash.xxh3_128()
-
-    # Encodes the relative path and appends it to the checksum. This ensures that the hashsum reflects both the state
-    # of individual files and the layout of the overall encoded directory structure.
-    relative_path = str(file_path.relative_to(base_directory))
-    checksum.update(relative_path.encode())
-
-    # Extends the checksum to reflect the file data state. Uses 8 MB chunks to avoid excessive RAM hogging at the cost
-    # of slightly reduced throughput. Reads into one reusable buffer, so a large file costs a single allocation
-    # instead of one per chunk.
-    chunk_buffer = bytearray(_CHECKSUM_CHUNK_SIZE)
-    chunk_view = memoryview(chunk_buffer)
-    with file_path.open("rb") as file:
-        while (read_byte_count := file.readinto(chunk_buffer)) > 0:
-            checksum.update(chunk_view[:read_byte_count])
-
-    # Returns both path and file checksum. Although the relative path information is already encoded in the hashsum, the
-    # relative path information is re-encoded at the directory level to protect against future changes to the per-file
-    # hashsum calculation logic. It is extra work, but it improves the overall checksum security.
-    return relative_path, checksum.digest()
-
-
 def _discover_checksum_files(directory: Path, excluded_files: set[str]) -> list[Path]:
     """Discovers the files to include in a directory checksum, sorted for order-independent hashing.
 
@@ -180,6 +144,38 @@ def _discover_checksum_files(directory: Path, excluded_files: set[str]) -> list[
             cannot be read, or if the kind of an entry beneath it cannot be determined.
     """
     return sorted(path for path in walk_files(directory=directory) if path.name not in excluded_files)
+
+
+def _calculate_file_checksum(base_directory: Path, file_path: Path) -> tuple[str, bytes]:
+    """Calculates the xxHash3-128 checksum for the target file and its path relative to the base directory.
+
+    Args:
+        base_directory: The path to the directory that contains the target file and anchors its relative path.
+        file_path: The full path to the target file located inside the base directory.
+
+    Returns:
+        The first element is the file path relative to the base directory. The second is the xxHash3-128 checksum
+        reflecting the file's path and data.
+    """
+    checksum = xxhash.xxh3_128()
+
+    # Encoding the relative path into the digest makes the hashsum reflect both the state of individual files and the
+    # layout of the overall encoded directory structure.
+    relative_path = str(file_path.relative_to(base_directory))
+    checksum.update(relative_path.encode())
+
+    # Uses 8 MB chunks to bound resident memory at the cost of slightly reduced throughput. Reads into one reusable
+    # buffer, so a large file costs a single allocation instead of one per chunk.
+    chunk_buffer = bytearray(_CHECKSUM_CHUNK_SIZE)
+    chunk_view = memoryview(chunk_buffer)
+    with file_path.open("rb") as file:
+        while (read_byte_count := file.readinto(chunk_buffer)) > 0:
+            checksum.update(chunk_view[:read_byte_count])
+
+    # Although the relative path information is already encoded in the hashsum, the relative path information is
+    # re-encoded at the directory level to protect against future changes to the per-file hashsum calculation logic.
+    # It is extra work, but it improves the overall checksum security.
+    return relative_path, checksum.digest()
 
 
 def _write_checksum_file(directory: Path, checksum: str) -> None:

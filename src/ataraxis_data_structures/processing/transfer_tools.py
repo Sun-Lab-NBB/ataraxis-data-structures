@@ -13,7 +13,7 @@ from .checksum_tools import CHECKSUM_FILENAME, calculate_directory_checksum
 from .filesystem_tools import walk_files, walk_directory, reports_absent_entry
 
 _MAXIMUM_DELETION_ATTEMPTS: int = 5
-"""The maximum number of times directory deletion is retried before giving up."""
+"""The maximum number of times directory removal is attempted before giving up."""
 
 _DELETION_RETRY_DELAY_MILLISECONDS: int = 500
 """The delay in milliseconds between failed directory-deletion attempts."""
@@ -24,21 +24,31 @@ def delete_directory(directory_path: Path) -> None:
 
     Notes:
         A symlink is removed as a link, whatever it points at, so the tree behind a symlinked subdirectory is left
-        untouched and only entries living inside the target directory are deleted. Every entry that is not a real
-        directory is unlinked in place, which additionally covers the sockets and FIFOs that a file check skips.
+        untouched and only entries living inside the target directory are deleted. The rule covers the target itself,
+        so a link passed as ``directory_path`` is unlinked in place and the tree it names is left whole. Every entry
+        that is not a real directory is unlinked in place, which additionally covers the sockets and FIFOs that a file
+        check skips.
 
         Removal of each emptied directory is attempted up to five times, with a 500 millisecond delay between
-        attempts, as some Operating Systems are slow to release file handles. If every attempt fails, the function
-        reports a warning and returns, leaving the directory in place. Check the path with Path.exists() when the
-        removal has to be guaranteed.
+        attempts, as some operating systems are slow to release file handles. If every attempt fails, the function
+        reports a warning and returns, leaving the directory in place. The path is verifiable with Path.exists() when
+        the removal has to be guaranteed.
 
     Args:
         directory_path: The path to the directory to delete.
 
     Raises:
-        OSError: If the directory, or any directory beneath it, cannot be read, or if an entry inside it cannot be
-            unlinked.
+        OSError: If the directory, or any directory beneath it, cannot be read, if the metadata of an entry inside it
+            cannot be read, or if an entry inside it cannot be unlinked.
     """
+    # Classifies the target itself before descending into it. Both exists() and iterdir() resolve a link, so a link
+    # passed as the target would otherwise have the contents of the tree it points at read as its own and deleted.
+    # Unlinking it here applies the rule to the argument that the classification below applies to every entry inside it.
+    is_symlink, _ = _classify_entry(path=directory_path)
+    if is_symlink:
+        directory_path.unlink()
+        return
+
     if not directory_path.exists():
         return
 
@@ -94,25 +104,25 @@ def transfer_directory(
     directory hierarchy.
 
     Notes:
-        This function recreates the moved directory hierarchy on the destination if the hierarchy does not exist. This
-        is done before copying the files.
+        Recreates the source hierarchy on the destination before copying any file, and copies with a thread pool when
+        ``num_threads`` is greater than 1.
 
-        The function performs a multithreaded copy operation when ``num_threads`` is greater than 1 and a sequential
-        copy otherwise. The source data is removed after the copy only when ``remove_source`` is enabled.
+        When integrity verification is enabled, reuses the xxHash3-128 checksum stored in the source directory's
+        ax_checksum.txt file when that file exists. Otherwise, generates the checksum before the transfer and writes it
+        to the source directory as the ax_checksum.txt file. After the transfer, recomputes the checksum for the
+        destination directory and compares it against the source checksum to detect data corruption. A reused checksum
+        that predates the source's current contents fails that comparison even though every transferred byte is
+        correct, so the failure report names it alongside corruption as a possible cause.
 
-        If the function is configured to verify the transferred data's integrity, it reuses the xxHash3-128 checksum
-        stored in the source directory's ax_checksum.txt file when that file exists. Otherwise, it generates the
-        checksum before the transfer and writes it to the source directory as the ax_checksum.txt file. After the
-        transfer, it recomputes the checksum for the destination directory and compares it against the source
-        checksum to detect data corruption.
+        A symlink is rejected, whether it stands for the source root itself or sits anywhere inside the source tree. A
+        link is meaningful only relative to the filesystem that holds it, so moving one is either a silent omission or
+        a dangling entry at the destination. A link standing for the root is refused for a second reason. Removing the
+        source afterwards would remove the link rather than the tree it names, which leaves the caller told the source
+        is gone while every byte of it is still on disk. Every link has to resolve into real data before the tree is
+        transferred.
 
-        A source tree containing a symlink of any kind is rejected. A link is meaningful only relative to the
-        filesystem that holds it, so moving one is either a silent omission or a dangling entry at the destination.
-        Resolve every link into real data before transferring the tree.
-
-        A destination holding files the source does not account for is also rejected, since the integrity check
-        covers the whole destination and those files would fail it while every transferred byte is correct. Enabling
-        ``reset_dirty_destination`` deletes exactly those files instead of rejecting the transfer. The checksum file
+        A destination holding files the source does not account for is also rejected, since the integrity check covers
+        the whole destination and those files would fail it while every transferred byte is correct. The checksum file
         never counts as unaccounted, because the transfer overwrites it.
 
     Args:
@@ -131,19 +141,30 @@ def transfer_directory(
         FileNotFoundError: If the source directory does not exist.
         OSError: If any directory inside the source or the destination tree cannot be read, or if the destination
             path already exists as a file rather than as a directory. Also raised if a copied file cannot be read or
-            written, or if the source cannot be removed once ``remove_source`` is enabled. A discovery failure leaves
-            the destination untouched, since both trees are discovered before anything is written.
-        RuntimeError: If the source directory contains a symlink, if ``verify_integrity`` is enabled while the
-            source holds no file the checksum can cover, if the destination holds unaccounted files while
-            ``reset_dirty_destination`` is disabled, or if the transferred files do not pass the xxHash3-128 checksum
-            integrity verification.
+            written, or if the source cannot be removed once ``remove_source`` is enabled. A source discovery failure
+            leaves the destination untouched, since the source tree is discovered before anything is written.
+        RuntimeError: If the source path is itself a symlink or the source directory contains one, or if
+            ``verify_integrity`` is enabled while the source holds no file the checksum can cover. Also raised if the
+            destination holds unaccounted files while ``reset_dirty_destination`` is disabled, or if the transferred
+            files do not pass the xxHash3-128 checksum integrity verification.
     """
     if not source.exists():
         message = f"Unable to transfer the source directory {source}, as it does not exist."
         console.error(message=message, error=FileNotFoundError)
 
-    # If the number of threads is less than 1, uses all available CPU cores minus a small number reserved for the
-    # host system.
+    # Rejects a link standing for the source root, for the reason the tree-level check below rejects a link inside the
+    # tree, and for one more. Removing the source afterwards removes the link rather than the tree it names, since
+    # delete_directory applies the same link rule to its argument, so the transfer would report a removal that left
+    # every byte of the source on disk.
+    if source.is_symlink():
+        message = (
+            f"Unable to transfer the source directory {source}, as the path is a symbolic link rather than a real "
+            f"directory. A link resolves only against the filesystem that holds it, and removing the source after the "
+            f"transfer would remove the link while leaving the tree it names in place. Pass the directory the link "
+            f"resolves to."
+        )
+        console.error(message=message, error=RuntimeError)
+
     if num_threads < 1:
         num_threads = resolve_worker_count()
 
@@ -192,16 +213,16 @@ def transfer_directory(
     for unaccounted_file in unaccounted_files:
         unaccounted_file.unlink()
 
-    # If transfer integrity verification is enabled, but the source directory does not contain the 'ax_checksum.txt'
-    # file, checksums the directory before the transfer operation. A checksum written here postdates the discovery
-    # above, so it is added to the transfer set explicitly and travels to the destination with the data it covers.
+    # A checksum written here postdates the discovery above, so it is added to the transfer set explicitly and travels
+    # to the destination with the data it covers.
+    reused_source_checksum = False
     if verify_integrity:
         source_checksum_path = source.joinpath(CHECKSUM_FILENAME)
-        if not source_checksum_path.exists():
+        reused_source_checksum = source_checksum_path.exists()
+        if not reused_source_checksum:
             calculate_directory_checksum(directory=source, progress=False, save_checksum=True)
             file_list.append(source_checksum_path)
 
-    # Recreates the source subdirectory hierarchy inside the destination before copying any files.
     for destination_directory_path in _plan_destination_directories(
         source=source,
         destination=destination,
@@ -209,8 +230,7 @@ def transfer_directory(
     ):
         destination_directory_path.mkdir(parents=True, exist_ok=True)
 
-    # Copies the data to the destination. For parallel workflows, uses the ThreadPoolExecutor to move multiple
-    # files at the same time. I/O operations release the GIL, so threads suffice and Processes are unnecessary.
+    # I/O operations release the GIL, so a thread pool suffices for the parallel copy and processes are unnecessary.
     if num_threads > 1:
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = [
@@ -245,19 +265,28 @@ def transfer_directory(
         for file in file_list:
             _transfer_file(source_file=file, source_directory=source, destination_directory=destination)
 
-    # Verifies the integrity of the transferred directory by rerunning xxHash3-128 calculation.
     if verify_integrity:
         destination_checksum = calculate_directory_checksum(directory=destination, progress=False, save_checksum=False)
         with source.joinpath(CHECKSUM_FILENAME).open("r") as local_checksum:
             if destination_checksum != local_checksum.readline().strip():
+                # A reused digest describes the source as it stood when that digest was written, so it fails this
+                # comparison whenever the source changed since. Naming corruption alone there would send the caller
+                # after a transmission fault that did not happen.
+                if reused_source_checksum:
+                    cause = (
+                        f"Either the data was corrupted in transmission, or the reused '{CHECKSUM_FILENAME}' file "
+                        f"predates the current contents of the source. Remove that file to have this function "
+                        f"regenerate it from the data actually being transferred."
+                    )
+                else:
+                    cause = "This indicates that the data was corrupted in transmission."
                 message = (
                     f"Unable to verify the integrity of the directory transferred from {Path(*source.parts[-6:])} to "
                     f"{Path(*destination.parts[-6:])}. The destination checksum must match the source checksum, but "
-                    f"the two differ, which indicates that the data was corrupted in transmission."
+                    f"the two differ. {cause}"
                 )
                 console.error(message=message, error=RuntimeError)
 
-    # If necessary, removes the transferred directory from the original location.
     if remove_source:
         message = (
             f"Removing the now-redundant source directory {source} and all of its contents following the successful "
