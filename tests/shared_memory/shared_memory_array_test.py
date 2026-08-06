@@ -405,18 +405,48 @@ def test_creating_process_arms_buffer_destruction(int_array: NDArray[np.int32]) 
     recreated.destroy()
 
 
-def test_recreating_a_name_revokes_the_previous_owner(int_array: NDArray[np.int32], spawning: None) -> None:
+def test_recreating_a_name_revokes_the_previous_owner(
+    int_array: NDArray[np.int32], monkeypatch: pytest.MonkeyPatch, spawning: None
+) -> None:
     """Verifies that recreating a buffer name strips the destruction right from the instance that held it.
 
     Unlinking addresses a buffer by name, so a superseded instance that kept its destruction right would unlink the
-    replacement buffer rather than its own once garbage collection reached it.
+    replacement buffer rather than its own once garbage collection reached it. Unix is where a lost right corrupts the
+    replacement, since unlink() is a no-op on Windows, so the assertions below detect the regression on Unix and
+    exercise the revocation itself on every platform.
     """
     buffer_name = "test_ownership_transfer"
     superseded = SharedMemoryArray.create_array(name=buffer_name, prototype=int_array)
 
+    # Hands the superseded instance to the patched unlink through a container the collection below does not reach.
+    # Referencing the test's own local would fail instead, since deleting it clears the closure the patch reads.
+    pending_release = [superseded]
+
+    class OwnerReleasingSharedMemory(SharedMemory):
+        """Releases the superseded instance's buffer handle whenever a shared memory buffer is unlinked."""
+
+        def unlink(self) -> None:
+            """Unlinks the shared memory buffer and releases the handle held by the superseded instance."""
+            super().unlink()
+            # Unix frees the buffer name through unlink() alone, while Windows keeps it claimed until the last handle
+            # to the buffer closes. Releasing the superseded instance's handle brings both platforms to the same
+            # post-unlink state, so the recreation below runs identically on each. Draining the container also drops
+            # this reference, which leaves the test's own local as the instance's last one.
+            while pending_release:
+                pending_release.pop().disconnect()
+
+    monkeypatch.setattr(
+        target="ataraxis_data_structures.shared_memory.shared_memory_array.SharedMemory",
+        name=OwnerReleasingSharedMemory,
+    )
+
     # Rebinds the name onto a new buffer while the first instance is still alive.
     replacement = SharedMemoryArray.create_array(name=buffer_name, prototype=int_array, exists_ok=True)
     replacement[0] = 123
+
+    # Asserting the revocation directly is what fails on Windows, where unlink() is a no-op and the observer check
+    # below therefore cannot detect a superseded instance that kept its right.
+    assert not superseded._destroy_buffer
 
     # Collecting the superseded instance runs the destruction path that would unlink the replacement's buffer.
     del superseded

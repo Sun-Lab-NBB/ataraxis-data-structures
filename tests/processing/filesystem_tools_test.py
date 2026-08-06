@@ -176,6 +176,27 @@ def test_walk_files_tolerates_a_kind_failure_that_means_absence(
     assert walk_files(directory=tmp_path) == []
 
 
+def test_walk_files_tolerates_the_windows_link_loop_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that walk_files omits an entry whose kind query reports the Windows link-loop status."""
+    # Windows files the condition under the generic EINVAL, which every other caller has to keep propagating, so the
+    # status code is the only part of the failure that marks the entry as unresolvable.
+    entry = _RefusingEntry(path=tmp_path / "loop_a", error_number=errno.EINVAL, error_type=_WindowsLinkLoopError)
+    monkeypatch.setattr(target=os, name="scandir", value=lambda _path: _StubScan(entries=[entry]))
+
+    assert walk_files(directory=tmp_path) == []
+
+
+def test_walk_files_propagates_an_invalid_argument_failure_without_the_link_loop_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that walk_files raises for an EINVAL kind query that does not carry the link-loop status."""
+    entry = _RefusingEntry(path=tmp_path / "entry.bin", error_number=errno.EINVAL, error_type=OSError)
+    monkeypatch.setattr(target=os, name="scandir", value=lambda _path: _StubScan(entries=[entry]))
+
+    with pytest.raises(OSError, match="Injected failure"):
+        walk_files(directory=tmp_path)
+
+
 def test_walk_files_raises_for_an_unreadable_subdirectory(unreadable_tree: Path) -> None:
     """Verifies that walk_files raises instead of silently omitting a subdirectory it cannot read."""
     with pytest.raises(PermissionError):
@@ -317,23 +338,37 @@ class _StubScan:
         return False
 
 
+class _WindowsLinkLoopError(OSError):
+    """Stands in for the failure Windows raises for a link chain that does not resolve.
+
+    Notes:
+        Windows carries the condition in the read-only 'winerror' attribute, which POSIX hosts do not define at all.
+        Shadowing it with a plain class attribute makes the injected failure read alike on every platform, so the
+        status the traversal reads is exercised wherever the suite runs.
+    """
+
+    winerror = 1921
+
+
 class _RefusingEntry:
-    """Stands in for a scan entry whose kind query fails with the errno the test supplies.
+    """Stands in for a scan entry whose kind query fails with the error the test supplies.
 
     Attributes:
         path: The rendered path of the stand-in entry.
         _error_number: Cached errno the kind query fails with.
+        _error_type: Cached exception class the kind query raises.
     """
 
-    def __init__(self, path: Path, error_number: int) -> None:
+    def __init__(self, path: Path, error_number: int, error_type: type[OSError] = PermissionError) -> None:
         self.path = str(path)
         self._error_number = error_number
+        self._error_type = error_type
 
     def is_dir(self, *, follow_symlinks: bool = True) -> bool:  # noqa: ARG002 - The stub entry is never a directory.
         return False
 
     def is_file(self) -> bool:
-        raise PermissionError(self._error_number, "Injected failure", self.path)
+        raise self._error_type(self._error_number, "Injected failure", self.path)
 
 
 def test_discover_marker_files_reports_matches_at_any_depth(tmp_path: Path) -> None:
