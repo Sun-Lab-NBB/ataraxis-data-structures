@@ -7,7 +7,7 @@ import yaml
 import pytest
 from ataraxis_base_utilities import error_format
 
-from ataraxis_data_structures import JobState, ProcessingStatus, ProcessingTracker
+from ataraxis_data_structures import JobState, TrackerStatus, ProcessingStatus, ProcessingTracker
 
 
 def test_processing_tracker_initialization(tmp_path: Path) -> None:
@@ -964,3 +964,220 @@ def _clear_scheduler_environment(monkeypatch: pytest.MonkeyPatch) -> None:
         "AWS_BATCH_JOB_ID",
     ):
         monkeypatch.delenv(variable, raising=False)
+
+
+def test_processing_tracker_discover_finds_every_tracker(tmp_path: Path) -> None:
+    """Verifies that discovery binds a tracker to every matching file found at any depth, sorted by path."""
+    first_path = tmp_path / "animal_1" / "session_a" / "pipeline_tracker.yaml"
+    second_path = tmp_path / "animal_2" / "session_b" / "pipeline_tracker.yaml"
+    first_path.parent.mkdir(parents=True)
+    second_path.parent.mkdir(parents=True)
+    ProcessingTracker(file_path=first_path).initialize_jobs(jobs=[("extract", "a"), ("extract", "b")])
+    ProcessingTracker(file_path=second_path).initialize_jobs(jobs=[("extract", "z")])
+    (tmp_path / "animal_1" / "other_tracker.yaml").write_text("jobs: {}")
+
+    discovered = ProcessingTracker.discover(root_directory=tmp_path, tracker_name="pipeline_tracker.yaml")
+
+    assert [tracker.file_path for tracker in discovered] == [first_path, second_path]
+    assert all(isinstance(tracker, ProcessingTracker) for tracker in discovered)
+    assert [len(tracker.snapshot()) for tracker in discovered] == [2, 1]
+
+
+def test_processing_tracker_discover_reports_nothing_for_an_empty_tree(tmp_path: Path) -> None:
+    """Verifies that a tree holding no matching tracker yields an empty result."""
+    assert ProcessingTracker.discover(root_directory=tmp_path, tracker_name="pipeline_tracker.yaml") == []
+
+
+def test_processing_tracker_resolve_status_prioritizes_a_failure() -> None:
+    """Verifies that a summary counting a failed job resolves to FAILED whatever else it counts."""
+    summary = {"total": 4, "succeeded": 1, "failed": 1, "running": 1, "scheduled": 1}
+
+    assert ProcessingTracker.resolve_status(summary=summary) is TrackerStatus.FAILED
+
+
+def test_processing_tracker_resolve_status_reports_completion() -> None:
+    """Verifies that a summary whose every job succeeded resolves to COMPLETED."""
+    summary = {"total": 3, "succeeded": 3, "failed": 0, "running": 0, "scheduled": 0}
+
+    assert ProcessingTracker.resolve_status(summary=summary) is TrackerStatus.COMPLETED
+
+
+def test_processing_tracker_resolve_status_reports_a_running_job() -> None:
+    """Verifies that a summary counting a running job resolves to PROCESSING."""
+    summary = {"total": 3, "succeeded": 1, "failed": 0, "running": 1, "scheduled": 1}
+
+    assert ProcessingTracker.resolve_status(summary=summary) is TrackerStatus.PROCESSING
+
+
+def test_processing_tracker_resolve_status_reports_an_untouched_pipeline() -> None:
+    """Verifies that a summary whose every job is still scheduled resolves to NOT_STARTED."""
+    summary = {"total": 2, "succeeded": 0, "failed": 0, "running": 0, "scheduled": 2}
+
+    assert ProcessingTracker.resolve_status(summary=summary) is TrackerStatus.NOT_STARTED
+
+
+def test_processing_tracker_resolve_status_falls_back_to_partial_progress() -> None:
+    """Verifies that a mixed summary and a summary counting no job at all both resolve to IN_PROGRESS."""
+    mixed = {"total": 3, "succeeded": 2, "failed": 0, "running": 0, "scheduled": 1}
+
+    assert ProcessingTracker.resolve_status(summary=mixed) is TrackerStatus.IN_PROGRESS
+    # An absent key counts as zero, so an empty summary resolves without the COMPLETED or NOT_STARTED branches firing.
+    assert ProcessingTracker.resolve_status(summary={}) is TrackerStatus.IN_PROGRESS
+
+
+def test_processing_tracker_summarize_reports_details_counts_and_status(tmp_path: Path) -> None:
+    """Verifies that the summary carries every JobState field alongside the counts and the resolved label."""
+    tracker = ProcessingTracker(file_path=tmp_path / "tracker.yaml")
+    tracker.initialize_jobs(jobs=[("extract", "a"), ("combine", "")])
+    target = ProcessingTracker.generate_job_id(job_name="extract", specifier="a")
+    tracker.start_job(job_id=target)
+
+    summary = tracker.summarize()
+
+    assert summary["summary"] == {"total": 2, "succeeded": 0, "failed": 0, "running": 1, "scheduled": 1}
+    assert summary["status"] is TrackerStatus.PROCESSING
+    running_entry = next(entry for entry in summary["jobs"] if entry["job_id"] == target)
+    assert running_entry["job_name"] == "extract"
+    assert running_entry["specifier"] == "a"
+    assert running_entry["status"] == "RUNNING"
+    assert running_entry["executor_id"] is not None
+    assert running_entry["started_at"] is not None
+    assert running_entry["completed_at"] is None
+    # A job that recorded no failure reason omits the key rather than carrying it as an empty value.
+    assert "error_message" not in running_entry
+
+
+def test_processing_tracker_summarize_reports_a_recorded_failure_reason(tmp_path: Path) -> None:
+    """Verifies that a failed job carries its recorded reason in the summary."""
+    tracker = ProcessingTracker(file_path=tmp_path / "tracker.yaml")
+    tracker.initialize_jobs(jobs=[("extract", "a")])
+    target = ProcessingTracker.generate_job_id(job_name="extract", specifier="a")
+    tracker.start_job(job_id=target)
+    tracker.fail_job(job_id=target, error_message="disk full")
+
+    summary = tracker.summarize()
+
+    assert summary["status"] is TrackerStatus.FAILED
+    assert summary["jobs"][0]["error_message"] == "disk full"
+
+
+def test_processing_tracker_summarize_reports_an_empty_registry(tmp_path: Path) -> None:
+    """Verifies that a tracker holding no job summarizes without failing."""
+    summary = ProcessingTracker(file_path=tmp_path / "tracker.yaml").summarize()
+
+    assert summary["jobs"] == []
+    assert summary["summary"]["total"] == 0
+    assert summary["status"] is TrackerStatus.IN_PROGRESS
+
+
+def test_processing_tracker_resolve_job_recovers_the_name_and_specifier(tmp_path: Path) -> None:
+    """Verifies that an identifier resolves to the job it names within the declared universe."""
+    tracker = ProcessingTracker(file_path=tmp_path / "tracker.yaml")
+    universe = [("extract", "a"), ("extract", "b"), ("combine", "")]
+    target = ProcessingTracker.generate_job_id(job_name="extract", specifier="b")
+
+    assert tracker.resolve_job(job_id=target, universe=universe) == ("extract", "b")
+
+
+def test_processing_tracker_resolve_job_precedes_registration(tmp_path: Path) -> None:
+    """Verifies that resolution reads the universe alone, so it answers before the tracker holds any entry."""
+    tracker_path = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_path)
+    target = ProcessingTracker.generate_job_id(job_name="extract", specifier="a")
+
+    assert tracker.resolve_job(job_id=target, universe=[("extract", "a")]) == ("extract", "a")
+    assert not tracker_path.exists()
+
+
+def test_processing_tracker_resolve_job_rejects_an_empty_universe(tmp_path: Path) -> None:
+    """Verifies that resolving against a universe naming no job is rejected."""
+    tracker_path = tmp_path / "tracker.yaml"
+    message = (
+        f"Unable to resolve the job with ID 'abc123' against the job universe of the processing tracker at "
+        f"'{tracker_path}'. The 'universe' argument must name at least one job, but an empty list was provided."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        ProcessingTracker(file_path=tracker_path).resolve_job(job_id="abc123", universe=[])
+
+
+def test_processing_tracker_resolve_job_rejects_an_unknown_identifier(tmp_path: Path) -> None:
+    """Verifies that an identifier naming no job in the universe is rejected."""
+    tracker_path = tmp_path / "tracker.yaml"
+    universe = [("extract", "a")]
+    known_id = ProcessingTracker.generate_job_id(job_name="extract", specifier="a")
+    message = (
+        f"Unable to resolve the job with ID 'deadbeefdeadbeef' against the job universe of the processing tracker at "
+        f"'{tracker_path}'. The identifier must name a job the pipeline could produce, but the universe holds only "
+        f"the jobs with IDs: {known_id}."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        ProcessingTracker(file_path=tracker_path).resolve_job(job_id="deadbeefdeadbeef", universe=universe)
+
+
+def test_processing_tracker_run_job_records_a_successful_run(tmp_path: Path) -> None:
+    """Verifies that the context marks the job running for the block and succeeded once the block returns."""
+    tracker = ProcessingTracker(file_path=tmp_path / "tracker.yaml")
+    tracker.initialize_jobs(jobs=[("extract", "a")])
+    target = ProcessingTracker.generate_job_id(job_name="extract", specifier="a")
+
+    with tracker.run_job(job_id=target):
+        assert tracker.get_job_status(job_id=target) == ProcessingStatus.RUNNING
+
+    assert tracker.get_job_status(job_id=target) == ProcessingStatus.SUCCEEDED
+    assert tracker.get_job_info(job_id=target).error_message is None
+
+
+def test_processing_tracker_run_job_records_a_failed_run(tmp_path: Path) -> None:
+    """Verifies that an exception from the block marks the job failed, records its message, and re-raises it."""
+    tracker = ProcessingTracker(file_path=tmp_path / "tracker.yaml")
+    tracker.initialize_jobs(jobs=[("extract", "a")])
+    target = ProcessingTracker.generate_job_id(job_name="extract", specifier="a")
+
+    with pytest.raises(RuntimeError, match="simulated job failure"), tracker.run_job(job_id=target):
+        _raise_job_error()
+
+    assert tracker.get_job_status(job_id=target) == ProcessingStatus.FAILED
+    assert tracker.get_job_info(job_id=target).error_message == "simulated job failure"
+
+
+def test_processing_tracker_run_job_leaves_an_interrupted_job_running(tmp_path: Path) -> None:
+    """Verifies that a BaseException propagates with the job left running rather than marked failed."""
+    tracker = ProcessingTracker(file_path=tmp_path / "tracker.yaml")
+    tracker.initialize_jobs(jobs=[("extract", "a")])
+    target = ProcessingTracker.generate_job_id(job_name="extract", specifier="a")
+
+    with pytest.raises(KeyboardInterrupt), tracker.run_job(job_id=target):
+        raise KeyboardInterrupt
+
+    assert tracker.get_job_status(job_id=target) == ProcessingStatus.RUNNING
+
+
+def test_processing_tracker_run_job_forwards_an_explicit_executor_id(tmp_path: Path) -> None:
+    """Verifies that the context records the executor identifier the caller supplies."""
+    tracker = ProcessingTracker(file_path=tmp_path / "tracker.yaml")
+    tracker.initialize_jobs(jobs=[("extract", "a")])
+    target = ProcessingTracker.generate_job_id(job_name="extract", specifier="a")
+
+    with tracker.run_job(job_id=target, executor_id="custom:42"):
+        pass
+
+    assert tracker.get_job_info(job_id=target).executor_id == "custom:42"
+
+
+def test_tracker_status_members_compare_as_plain_strings() -> None:
+    """Verifies that the labels serialize and compare as the strings a report carries."""
+    assert TrackerStatus.COMPLETED == "completed"
+    assert TrackerStatus.NOT_STARTED == "not_started"
+    assert {status.value for status in TrackerStatus} == {
+        "not_started",
+        "in_progress",
+        "processing",
+        "completed",
+        "failed",
+    }
+
+
+def _raise_job_error() -> None:
+    """Raises an error so a test can observe how the surrounding job context records it."""
+    message = "simulated job failure"
+    raise RuntimeError(message)

@@ -57,6 +57,7 @@ dependencies = [
 
     # Data Processing
     "dacite>=1,<2",
+    "numba>=0.64,<1",
     "numpy>=2,<3",
     "pyyaml>=6,<7",
 
@@ -202,6 +203,14 @@ exclude = [
     "recipe/",                              # grayskull output target
     "tests/",
 ]
+
+# Numba ships a py.typed marker, but its bundled annotations leave 'set_num_threads' untyped and do not expose the
+# runtime config attributes, of which this library reads 'NUMBA_NUM_THREADS'. Treats the package as untyped so the
+# worker thread initializer type-checks against numba's actual runtime behavior rather than those annotations.
+[[tool.mypy.overrides]]
+module = ["numba"]
+follow_imports = "skip"        # Treats all symbols imported from numba as untyped (Any)
+ignore_missing_imports = true  # Suppresses missing-stub errors for the skipped package
 
 # Pytest configuration. The import mode is declared here so that a bare 'pytest' invocation resolves test modules the
 # same way the '{py}-test' tox task does. Since that mode keeps the project root off 'sys.path', the 'pythonpath' entry
