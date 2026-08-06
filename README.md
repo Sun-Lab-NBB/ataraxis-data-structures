@@ -32,8 +32,8 @@ ___
   non-volatile memory.
 - Offers efficient batch processing of log archives with support for parallel workflows.
 - Includes a file-based processing pipeline tracker for coordinating multi-process and multi-host data processing jobs.
-- Provides utilities for data integrity verification, directory transfer, time-series interpolation, and worker thread
-  limiting.
+- Provides utilities for data integrity verification, directory transfer, data asset discovery, time-series
+  interpolation, and worker thread limiting.
 - Apache 2.0 License.
 
 ___
@@ -87,8 +87,8 @@ ___
 
 ## Usage
 
-This section provides an overview of each component exposed by the library. For detailed information about method
-signatures and parameters, consult the [API documentation](#api-documentation).
+This section provides an overview of the primary components exposed by the library. For detailed information about
+method signatures and parameters, consult the [API documentation](#api-documentation).
 
 ### YamlConfig
 
@@ -874,10 +874,11 @@ print(f"Discrete: {interpolated_discrete}")  # [1, 2, 3, 4]
 
 #### Worker Thread Limiting
 
-The `limit_worker_threads()` context manager constrains the thread pools that NumPy's numeric backends open inside
-worker processes. Each backend reads its threading environment variable once, while it is being imported, so the value
-a spawned worker inherits from its parent is the only value that reaches it. Without the limit, a pool running one
-worker per core holds the square of the core count in threads while using one of them.
+The `limit_worker_threads()` context manager constrains the thread pools that the numeric backends bundled with NumPy,
+the polars query engine, and the OpenCV and tifffile decoders open inside worker processes. The NumPy-bundled backends
+and polars read their threading environment variable once, while they are being imported, so the value a spawned worker
+inherits from its parent is the only value that reaches them. Without the limit, a pool running one worker per core
+holds the square of the core count in threads while using one of them.
 
 The context has to enclose the pool's entire lifetime rather than its construction alone, because a pool creates each
 worker when work is first submitted to it. The previous values are restored on exit, including when the wrapped block

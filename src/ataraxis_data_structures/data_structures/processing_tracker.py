@@ -258,6 +258,7 @@ class ProcessingTracker(YamlConfig):
 
         Raises:
             TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+            ValueError: If any job name or specifier contains a colon.
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):

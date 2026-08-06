@@ -31,8 +31,8 @@ All contributions must strictly follow these conventions. Key conventions includ
 
 ## Cross-referenced library verification
 
-Ataraxis framework projects often depend on other `ataraxis-*` libraries. These libraries may be
-stored locally in the same parent directory as this project (`/home/cyberaxolotl/Desktop/GitHubRepos/`).
+Ataraxis framework projects often depend on other `ataraxis-*` libraries. These libraries may be stored locally in the
+same parent directory as this project, reachable as `../` from the repository root.
 
 **Before writing code that interacts with a cross-referenced library, you MUST:**
 
@@ -63,7 +63,7 @@ state to prevent integration errors.
 | `/explore-codebase`     | Perform in-depth codebase exploration at session start                         |
 | `/python-style`         | Apply Ataraxis framework Python coding conventions (REQUIRED for code changes) |
 | `/readme-style`         | Apply Ataraxis framework README conventions                                    |
-| `/commit`               | Draft Ataraxis framework style-compliant git commit messages                   |
+| `/commit`               | Stage all local changes and create a style-compliant git commit                |
 | `/pyproject-style`      | Apply Ataraxis framework pyproject.toml conventions                            |
 | `/tox-config`           | Apply Ataraxis framework tox.ini conventions                                   |
 | `/api-docs`             | Apply Ataraxis framework Sphinx API documentation conventions                  |
@@ -86,15 +86,15 @@ dependency for other Ataraxis framework projects.
 
 ### Key areas
 
-| Directory                                | Purpose                                                  |
-|------------------------------------------|----------------------------------------------------------|
-| `src/ataraxis_data_structures/`          | Main library source code                                 |
-| `src/.../shared_memory/`                 | SharedMemoryArray for process-safe data sharing          |
-| `src/.../data_structures/`               | YamlConfig and ProcessingTracker classes                 |
-| `src/.../data_loggers/`                  | DataLogger and LogArchiveReader for serialized logging   |
-| `src/.../processing/`                    | Checksum, transfer, interpolation, and thread tools      |
-| `tests/`                                 | Test suite (mirrors source structure)                    |
-| `docs/`                                  | Sphinx API documentation source                          |
+| Directory                                | Purpose                                                        |
+|------------------------------------------|----------------------------------------------------------------|
+| `src/ataraxis_data_structures/`          | Main library source code                                       |
+| `src/.../shared_memory/`                 | SharedMemoryArray for process-safe data sharing                |
+| `src/.../data_structures/`               | YamlConfig and ProcessingTracker classes                       |
+| `src/.../data_loggers/`                  | DataLogger and LogArchiveReader for serialized logging         |
+| `src/.../processing/`                    | Checksum, transfer, discovery, interpolation, and thread tools |
+| `tests/`                                 | Test suite (mirrors source structure)                          |
+| `docs/`                                  | Sphinx API documentation source                                |
 
 ### Architecture
 
@@ -112,29 +112,41 @@ dependency for other Ataraxis framework projects.
 - **ProcessingTracker**: File-based pipeline state tracker using FileLock for multi-process coordination. Manages job
   states (SCHEDULED, RUNNING, SUCCEEDED, FAILED) with search and lifecycle features.
 - **Processing Utilities**: Directory checksums (xxHash3-128), parallel directory transfer with integrity verification,
-  time-series interpolation (linear for continuous, last-known-value for discrete data), and a context manager that
-  constrains the thread pools the numeric backends open inside worker processes.
+  data asset discovery that locates marker files and the directories owning them, time-series interpolation (linear for
+  continuous, last-known-value for discrete data), and a context manager that constrains the thread pools the numeric
+  backends open inside worker processes.
 
 ### Core components
 
-| Component                    | File                                     | Purpose                                                    |
-|------------------------------|------------------------------------------|------------------------------------------------------------|
-| SharedMemoryArray            | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory                  |
-| YamlConfig                   | `data_structures/yaml_config.py`         | Dataclass with YAML serialization                          |
-| YAML_EXCLUDE_METADATA        | `data_structures/yaml_config.py`         | Field metadata that excludes a field from YAML             |
-| ProcessingTracker            | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking                  |
-| JobState                     | `data_structures/processing_tracker.py`  | Dataclass for job metadata                                 |
-| ProcessingStatus             | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED)            |
-| DataLogger                   | `data_loggers/serialized_data_logger.py` | Process-based serialized data logging                      |
-| LogPackage                   | `data_loggers/serialized_data_logger.py` | Container for source_id, acquisition_time, serialized_data |
-| LogArchiveReader             | `data_loggers/log_archive_reader.py`     | Batch reader for .npz archives                             |
-| LogMessage                   | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload                     |
-| assemble_log_archives        | `data_loggers/serialized_data_logger.py` | Aggregates .npy files into .npz archives                   |
-| calculate_directory_checksum | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                            |
-| transfer_directory           | `processing/transfer_tools.py`           | Parallel directory copy with verification                  |
-| delete_directory             | `processing/transfer_tools.py`           | Parallel directory deletion                                |
-| interpolate_data             | `processing/interpolation.py`            | Time-series interpolation                                  |
-| limit_worker_threads         | `processing/parallel_tools.py`           | Thread-count limiter for parallel worker processes         |
+| Component                     | File                                     | Purpose                                                    |
+|-------------------------------|------------------------------------------|------------------------------------------------------------|
+| SharedMemoryArray             | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory                  |
+| YamlConfig                    | `data_structures/yaml_config.py`         | Dataclass with YAML serialization                          |
+| YAML_EXCLUDE_METADATA         | `data_structures/yaml_config.py`         | Field metadata that excludes a field from YAML             |
+| ProcessingTracker             | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking                  |
+| JobState                      | `data_structures/processing_tracker.py`  | Dataclass for job metadata                                 |
+| ProcessingStatus              | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED)            |
+| TrackerStatus                 | `data_structures/processing_tracker.py`  | Aggregate progress label for the whole job registry        |
+| DataLogger                    | `data_loggers/serialized_data_logger.py` | Process-based serialized data logging                      |
+| LogPackage                    | `data_loggers/serialized_data_logger.py` | Container for source_id, acquisition_time, serialized_data |
+| LOG_DIRECTORY_SUFFIX          | `data_loggers/serialized_data_logger.py` | Name suffix of each logger's output directory              |
+| LOG_ARCHIVE_SUFFIX            | `data_loggers/serialized_data_logger.py` | Filename suffix of the assembled .npz archives             |
+| assemble_log_archives         | `data_loggers/serialized_data_logger.py` | Aggregates .npy files into .npz archives                   |
+| LogArchiveReader              | `data_loggers/log_archive_reader.py`     | Batch reader for .npz archives                             |
+| LogMessage                    | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload                     |
+| PARALLEL_PROCESSING_THRESHOLD | `data_loggers/log_archive_reader.py`     | Message count below which get_batches() returns one batch  |
+| find_log_archive              | `data_loggers/log_archive_reader.py`     | Resolves one source's archive anywhere under a tree        |
+| discover_log_archives         | `data_loggers/log_archive_reader.py`     | Maps source IDs to archives in one logger directory        |
+| read_archive_message_count    | `data_loggers/log_archive_reader.py`     | Counts archive messages without decoding                   |
+| calculate_directory_checksum  | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                            |
+| transfer_directory            | `processing/transfer_tools.py`           | Parallel directory copy with verification                  |
+| delete_directory              | `processing/transfer_tools.py`           | Parallel directory deletion                                |
+| discover_marker_files         | `processing/filesystem_tools.py`         | Finds every marker file with a given name                  |
+| discover_marker_roots         | `processing/filesystem_tools.py`         | Finds the directories owning discovered markers            |
+| resolve_unique_roots          | `processing/filesystem_tools.py`         | Truncates paths at their distinguishing component          |
+| interpolate_data              | `processing/interpolation.py`            | Time-series interpolation                                  |
+| limit_worker_threads          | `processing/parallel_tools.py`           | Thread-count limiter for parallel worker processes         |
+| initialize_worker_threads     | `processing/parallel_tools.py`           | Thread-count pin run inside a pool worker                  |
 
 ### Code standards
 

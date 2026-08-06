@@ -52,8 +52,8 @@ def walk_directory(directory: Path) -> list[Path]:
         Every subdirectory, file, and link found anywhere under the root directory, in an unspecified order.
 
     Raises:
-        OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
-            beneath it cannot be read.
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
     """
     return [Path(entry.path) for entry in _scan_tree(directory=directory)]
 
@@ -99,8 +99,8 @@ def discover_marker_files(directory: Path, marker_name: str) -> list[Path]:
         The paths to every matching file found anywhere under the root directory, sorted by path.
 
     Raises:
-        OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
-            beneath it cannot be read.
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
     """
     return sorted(
         Path(entry.path)
@@ -129,8 +129,8 @@ def discover_marker_roots(directory: Path, marker_name: str, levels_up: int = 0)
         The paths to every directory owning a matching marker, sorted by path.
 
     Raises:
-        OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
-            beneath it cannot be read.
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
         ValueError: If the requested level count is negative, or if a discovered marker sits too close to the
             filesystem root to have an ancestor at that level.
     """
@@ -259,8 +259,8 @@ def _scan_tree(directory: Path) -> Iterator[os.DirEntry[str]]:
         The scan entry for everything found anywhere under the root directory, in an unspecified order.
 
     Raises:
-        OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
-            beneath it cannot be read.
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
     """
     pending: list[Path] = [directory]
 

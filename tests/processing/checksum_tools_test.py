@@ -91,7 +91,7 @@ def test_calculate_directory_checksum_progress_mode(
     sample_directory_structure: Path,
     progress: bool,  # noqa: FBT001 - Parametrized pytest fixture value, not a positional boolean flag.
 ) -> None:
-    """Verifies that progress mode produces identical checksums (only affects progress display)."""
+    """Verifies that a checksum calculated with progress tracking enabled is a valid digest."""
     checksum = calculate_directory_checksum(
         directory=sample_directory_structure, progress=progress, save_checksum=False
     )

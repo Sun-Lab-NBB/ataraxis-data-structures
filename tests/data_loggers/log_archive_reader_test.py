@@ -174,12 +174,12 @@ class TestLogArchiveReaderOnsetTimestamp:
 
 
 class TestLogArchiveReaderMessageKeys:
-    """Contains tests for the LogArchiveReader message_keys property."""
+    """Contains tests for the LogArchiveReader _get_message_keys() method."""
 
     def test_message_keys_triggers_onset_discovery(
         self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]
     ) -> None:
-        """Verifies that accessing message_keys triggers onset discovery."""
+        """Verifies that calling _get_message_keys() triggers onset discovery."""
         archive_path, _, _, payloads = sample_archive
         reader = LogArchiveReader(archive_path=archive_path)
 
@@ -190,7 +190,7 @@ class TestLogArchiveReaderMessageKeys:
         assert reader._onset_us is None
 
     def test_message_keys_excludes_onset(self, sample_archive: tuple[Path, int, int, list[NDArray[np.uint8]]]) -> None:
-        """Verifies that message_keys does not include the onset message."""
+        """Verifies that _get_message_keys() does not include the onset message."""
         archive_path, source_id, _, payloads = sample_archive
         reader = LogArchiveReader(archive_path=archive_path)
 
@@ -435,7 +435,7 @@ class TestLogArchiveReaderIntegration:
         messages = list(reader.iter_messages())
         assert len(messages) == 5
 
-        # Verifies payloads match (order may differ due to timing).
+        # Verifies payloads match. Entries are archived in acquisition-timestamp order, so the read order matches.
         read_payloads = [message.payload for message in messages]
         for payload in test_payloads:
             assert any(np.array_equal(payload, read_payload) for read_payload in read_payloads)

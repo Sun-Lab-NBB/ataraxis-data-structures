@@ -260,7 +260,7 @@ def test_transfer_directory_raises_for_an_unreadable_source_subdirectory(unreada
 def test_transfer_directory_rejects_an_unaccounted_file_under_an_unsearchable_destination_directory(
     tmp_path: Path,
 ) -> None:
-    """Verifies that a destination file the source does not account for is found even when it cannot be inspected."""
+    """Verifies that a transfer into a destination holding an unaccounted file it cannot inspect is refused."""
     source = tmp_path / "source"
     source.mkdir()
     (source / "data.txt").write_text("payload")
@@ -474,7 +474,7 @@ def test_resolve_unique_roots_resolves_a_lone_path_to_itself() -> None:
 
 
 def test_resolve_unique_roots_reports_one_entry_per_distinct_root() -> None:
-    """Verifies that two paths resolving to the same ancestor contribute a single entry."""
+    """Verifies that sibling paths distinguished by their own final components each resolve to themselves."""
     first = Path("/data/recording_1/logs/camera")
     second = Path("/data/recording_1/logs/microcontroller")
 

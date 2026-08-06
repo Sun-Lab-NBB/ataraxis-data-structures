@@ -549,7 +549,7 @@ def test_transfer_directory_checksum_path_truncation(tmp_path: Path, monkeypatch
     error_message = str(exception_info.value)
     assert "Unable to verify the integrity of the directory transferred" in error_message
 
-    # Verifies the paths show the last 6 parts (e/f/source and v/u/dest).
+    # Verifies the rendered paths keep the deepest components (the last 6 are b/c/d/e/f/source and y/z/w/v/u/dest).
     assert "e/f/source" in error_message or "e\\f\\source" in error_message  # Unix or Windows path separator.
     assert "v/u/dest" in error_message or "v\\u\\dest" in error_message
 

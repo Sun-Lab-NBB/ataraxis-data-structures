@@ -1,4 +1,4 @@
-"""Contains tests for the ProcessingTracker, ProcessingStatus, and JobState classes."""
+"""Contains tests for the ProcessingTracker, ProcessingStatus, TrackerStatus, and JobState classes."""
 
 import os
 from pathlib import Path
@@ -488,7 +488,7 @@ def test_processing_tracker_encountered_error_property(tmp_path: Path) -> None:
 
 
 def test_processing_tracker_concurrent_access(tmp_path: Path) -> None:
-    """Verifies that file locks prevent race conditions."""
+    """Verifies that a second tracker instance bound to the same file observes the updates the first one persists."""
     tracker_file = tmp_path / "tracker.yaml"
 
     # Simulates two processes.

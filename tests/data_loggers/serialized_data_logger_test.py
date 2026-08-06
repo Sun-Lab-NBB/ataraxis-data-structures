@@ -357,7 +357,7 @@ def test_assemble_log_archives_with_integrity_check(
 def test_log_package_data_golden_bytes() -> None:
     """Verifies that LogPackage.data serializes the header and payload to the exact byte layout consumers depend on."""
     # The on-disk layout is a fixed contract shared with LogArchiveReader and downstream parsers:
-    # [source_id (1 byte)][acquisition_time (8 bytes, little-endian uint64)][payload (N bytes)].
+    # [source_id (1 byte)][acquisition_time (8 bytes, native-order uint64)][payload (N bytes)].
     source_id = np.uint8(7)
     acquisition_time = np.uint64(1234567890)
     payload = np.array([10, 20, 30, 255], dtype=np.uint8)

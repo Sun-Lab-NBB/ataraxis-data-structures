@@ -358,7 +358,7 @@ class DataLogger:
             pending_writes: The futures of the disk writes submitted to the logger process thread pool.
 
         Returns:
-            The futures of the disk writes that are still running.
+            The futures of the disk writes that have not finished yet.
 
         Raises:
             OSError: If saving one of the finished log entries to disk failed.
@@ -407,8 +407,8 @@ class DataLogger:
         # Initializes the timer instance to delay polling the queue during idle periods.
         sleep_timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
 
-        # Tracks the writes still in flight. Retiring each one as it completes keeps the list bounded by the pool's own
-        # width and surfaces a failed write while the logger is still running.
+        # Tracks the writes still in flight. Retiring each one as it completes bounds the list by the writes that have
+        # not finished yet, and surfaces a failed write while the logger is still running.
         pending_writes: list[Future[None]] = []
 
         # Runs until both the terminator flag is set and the input queue is drained.

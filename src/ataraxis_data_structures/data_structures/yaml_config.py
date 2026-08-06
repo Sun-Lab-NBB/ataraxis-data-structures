@@ -1,5 +1,6 @@
 """Provides the YamlConfig class, which extends the standard Python 'dataclass' class with methods to cache and retrieve
-its data from a .yaml (YAML) file.
+its data from a .yaml (YAML) file, together with the YAML_EXCLUDE_METADATA field metadata that keeps a field out of the
+serialized document.
 """
 
 import os
@@ -176,8 +177,9 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
 
     Returns:
         A dictionary mapping types (concrete or union) to callables that dacite uses as type hooks during
-        deserialization. Concrete Path and Enum types map to their own constructors, while union types containing
-        Enum subclasses map to discriminating hook functions.
+        deserialization. Concrete Path and Enum types map to their own constructors, union types containing Enum
+        subclasses map to discriminating hook functions, and mapping annotations whose key type is a Path or Enum
+        subclass map to key-converting hook functions.
     """
     hooks: dict[Any, Callable[[Any], Any]] = {}
     visited: set[type] = set()
@@ -297,8 +299,8 @@ class YamlConfig:
         Notes:
             Path fields are serialized as strings, Enum fields as their raw values, and tuples as lists. This keeps
             YAML files human-readable while preserving type fidelity on round-trip via ``from_yaml()`` for concretely
-            annotated fields. A field whose annotation unions ``Path`` with ``str`` cannot be discriminated on load
-            and is restored as a string.
+            annotated fields. A field whose annotation unions ``Path`` with ``str`` is not reliably discriminated on
+            load, so annotate such a field concretely when the restored type matters.
 
             The file is written through a temporary file and renamed into place, so a process killed mid-write leaves
             the previously saved file intact. Both reading and writing use UTF-8 regardless of the host locale.
@@ -403,6 +405,9 @@ class YamlConfig:
             ValueError: If the provided file path does not point to a .yaml or .yml file, or if the file does not
                 contain a top-level mapping.
             FileNotFoundError: If no file exists at the provided file path.
+            YAMLError: If the file does not contain a well-formed YAML document.
+            MissingValueError: If the document omits a field the class requires and the class supplies no default for
+                it.
         """
         # Ensures that file_path points to a .yaml / .yml file.
         if file_path.suffix not in {".yaml", ".yml"}:
@@ -413,9 +418,10 @@ class YamlConfig:
             console.error(message=message, error=ValueError)
 
         # Resolves the type_hooks for the class hierarchy to auto-convert str -> Path, raw value -> Enum, etc. The
-        # cast list converts YAML lists back to tuples at the field level. check_types=False allows union annotations
-        # such as ``Enum | str`` to accept either member. The classmethod's Self-bound 'cls' is widened to a plain
-        # type first, which is what the collector's hashable parameter declaration accepts.
+        # cast list converts YAML lists back to tuples at the field level. check_types=False skips dacite's per-field
+        # type validation, so a document whose value matches no annotated type loads as written instead of raising.
+        # The classmethod's Self-bound 'cls' is widened to a plain type first, which is what the collector's hashable
+        # parameter declaration accepts.
         config_class: type = cls
         type_hooks = _collect_type_hooks(cls=config_class)
         class_config = Config(type_hooks=type_hooks, cast=[tuple], check_types=False)

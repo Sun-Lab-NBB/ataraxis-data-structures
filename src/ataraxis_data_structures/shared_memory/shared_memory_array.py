@@ -91,7 +91,8 @@ class SharedMemoryArray:
         auto_connect: bool = True,
     ) -> None:
         """Initializes the SharedMemoryArray instance from data prepared by the create_array() method."""
-        # The create_array() class method is the actual constructor. __init__ only stores the precomputed values.
+        # The create_array() class method is the actual constructor. __init__ stores the precomputed values, creates
+        # the instance's lock, claims the buffer name, and binds the array view.
         self._name: str = name
         self._shape: tuple[int, ...] = shape
         self._datatype: np.dtype[Any] = datatype
@@ -294,8 +295,12 @@ class SharedMemoryArray:
 
         Raises:
             TypeError: If the input prototype is not a NumPy array.
+            ValueError: If the input prototype is an empty NumPy array, as a shared memory buffer cannot be created
+                with a size of zero bytes.
             FileExistsError: If a shared memory object with the same name as the input ``name`` argument value already
-                exists and the ``exists_ok`` flag is False.
+                exists and the ``exists_ok`` flag is False. Also raised if the ``exists_ok`` flag is True and the
+                buffer name is still claimed by an open handle after the existing buffer is unlinked, which is the
+                state Windows leaves behind while any handle to the buffer remains open.
             IndexError: If the input prototype is a zero-dimensional NumPy array, which passes the type check above
                 and then fails the slice assignment that fills the buffer. The buffer is released before the error
                 propagates, so the buffer name is left free for a later call to claim.

@@ -529,11 +529,11 @@ def test_collect_type_hooks_union_enum() -> None:
 
 
 def test_collect_type_hooks_skips_a_generic_union_member() -> None:
-    """Verifies that _collect_type_hooks registers the enum of a union whose other member is a generic alias."""
+    """Verifies that _collect_type_hooks steps over a generic union member while registering a sibling enum union."""
 
     @dataclass
     class GenericUnionConfig(YamlConfig):
-        # 'list[str]' is a generic alias rather than a class, so the union walk steps over it to reach the enum.
+        # 'list[str]' is a generic alias rather than a class, so the union walk steps over it instead of failing.
         items: list[str] | None = None
         tint: Color | None = None
 
@@ -563,7 +563,7 @@ class _ImportProxy:
         return type
 
     def __call__(self, *arguments: object, **keywords: object) -> None:
-        """Accepts the construction call that typing performs when it validates a union member."""
+        """Accepts the callability check that typing performs when it validates a union member."""
 
 
 def test_collect_type_hooks_skips_a_union_member_that_is_not_a_real_class() -> None:

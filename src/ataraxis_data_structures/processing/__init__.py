@@ -1,5 +1,5 @@
-"""Provides utilities for data integrity verification, directory transfer, data asset discovery, data interpolation,
-and worker thread limiting.
+"""Provides utilities for data integrity verification, directory transfer and deletion, data asset discovery, data
+interpolation, and worker thread limiting.
 """
 
 from .interpolation import interpolate_data

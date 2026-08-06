@@ -84,7 +84,8 @@ def test_create_array(int_array: NDArray[np.int32]) -> None:
     shared_memory_array = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array)
     shared_memory_array.destroy()
 
-    # Verifies that exist_ok flag works as expected by recreating an already existing buffer.
+    # Recreates the array over the freed buffer name with the 'exists_ok' flag enabled. The flag's own recreation
+    # path is covered by test_create_array_recreates_leftover_buffer.
     shared_memory_array = SharedMemoryArray.create_array(name="test_create_array", prototype=int_array, exists_ok=True)
 
     # Cleans up after the runtime.
@@ -718,8 +719,6 @@ def test_cross_process_read_write() -> None:
 
     assert process.exitcode == 0
 
-    # Finishes setting up the array in the local process, which is connected to the buffer since its creation.
-
     # Verifies that the data written by the other process is accessible from the main process.
     assert shared_memory_array[2] == 42
 
@@ -789,8 +788,6 @@ def test_cross_process_concurrent_access() -> None:
     # unjoined.
     for process in processes:
         assert process.exitcode == 0
-
-    # Finishes setting up the array in the local process, which is connected to the buffer since its creation.
 
     # Verifies all indices were incremented to the expected value.
     with shared_memory_array.array(with_lock=False) as shared_array:

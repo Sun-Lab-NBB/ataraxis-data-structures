@@ -71,6 +71,7 @@ def find_log_archive(log_directory: Path, source_id: str) -> Path:
     Raises:
         FileNotFoundError: If the log directory does not exist, is not a directory, or holds no archive for the
             requested source.
+        OSError: If any directory beneath the log directory cannot be read.
         ValueError: If the log directory holds more than one archive for the requested source.
     """
     if not log_directory.is_dir():

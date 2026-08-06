@@ -31,6 +31,11 @@ Data Loggers
    :undoc-members:
    :show-inheritance:
 
+.. Documents the module constants explicitly, for the reason given above the Data Structures autodata directive.
+.. autodata:: ataraxis_data_structures.data_loggers.serialized_data_logger.LOG_DIRECTORY_SUFFIX
+.. autodata:: ataraxis_data_structures.data_loggers.serialized_data_logger.LOG_ARCHIVE_SUFFIX
+.. autodata:: ataraxis_data_structures.data_loggers.log_archive_reader.PARALLEL_PROCESSING_THRESHOLD
+
 Processing
 ==========
 

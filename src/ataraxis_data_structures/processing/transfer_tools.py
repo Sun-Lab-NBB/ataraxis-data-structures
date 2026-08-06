@@ -13,7 +13,7 @@ from .checksum_tools import CHECKSUM_FILENAME, calculate_directory_checksum
 from .filesystem_tools import walk_files, walk_directory, reports_absent_entry
 
 _MAXIMUM_DELETION_ATTEMPTS: int = 5
-"""The maximum number of times directory deletion is retried before giving up."""
+"""The maximum number of times directory removal is attempted before giving up."""
 
 _DELETION_RETRY_DELAY_MILLISECONDS: int = 500
 """The delay in milliseconds between failed directory-deletion attempts."""
@@ -36,8 +36,8 @@ def delete_directory(directory_path: Path) -> None:
         directory_path: The path to the directory to delete.
 
     Raises:
-        OSError: If the directory, or any directory beneath it, cannot be read, or if an entry inside it cannot be
-            unlinked.
+        OSError: If the directory, or any directory beneath it, cannot be read, if the metadata of an entry inside it
+            cannot be read, or if an entry inside it cannot be unlinked.
     """
     if not directory_path.exists():
         return
@@ -131,8 +131,8 @@ def transfer_directory(
         FileNotFoundError: If the source directory does not exist.
         OSError: If any directory inside the source or the destination tree cannot be read, or if the destination
             path already exists as a file rather than as a directory. Also raised if a copied file cannot be read or
-            written, or if the source cannot be removed once ``remove_source`` is enabled. A discovery failure leaves
-            the destination untouched, since both trees are discovered before anything is written.
+            written, or if the source cannot be removed once ``remove_source`` is enabled. A source discovery failure
+            leaves the destination untouched, since the source tree is discovered before anything is written.
         RuntimeError: If the source directory contains a symlink, if ``verify_integrity`` is enabled while the
             source holds no file the checksum can cover, if the destination holds unaccounted files while
             ``reset_dirty_destination`` is disabled, or if the transferred files do not pass the xxHash3-128 checksum
