@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from contextlib import suppress
 
 import yaml
 import pytest
@@ -1134,6 +1135,64 @@ def test_tracker_status_members_compare_as_plain_strings() -> None:
         "completed",
         "failed",
     }
+
+
+@pytest.mark.parametrize(
+    "accessor",
+    [
+        "snapshot",
+        "summarize",
+        "complete",
+        "encountered_error",
+        "find_jobs",
+        "get_jobs_by_status",
+        "get_summary",
+        "get_job_status",
+        "get_job_info",
+    ],
+)
+def test_processing_tracker_read_accessors_do_not_create_the_tracker(tmp_path: Path, accessor: str) -> None:
+    """Verifies that no read-only accessor writes the tracker file, so probing a never-run pipeline changes nothing.
+
+    The assertion covers the tracker file alone. The accessors that reach the lock still leave the empty .LOCK file
+    FileLock creates on acquisition, which snapshot() and summarize() avoid by returning before they acquire it.
+    """
+    tracker_file = tmp_path / "absent_tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+
+    arguments: dict[str, dict[str, str]] = {
+        "get_job_status": {"job_id": "unknown"},
+        "get_job_info": {"job_id": "unknown"},
+        "get_jobs_by_status": {"status": "SCHEDULED"},
+    }
+    target = getattr(tracker, accessor)
+    if callable(target):
+        # The two job-scoped accessors reject an unknown identifier, which is the outcome under test for them. The
+        # file must stay absent whether the accessor returns or raises.
+        with suppress(ValueError):
+            target(**arguments.get(accessor, {}))
+
+    assert not tracker_file.exists()
+
+
+def test_processing_tracker_read_accessors_still_report_recorded_state(tmp_path: Path) -> None:
+    """Verifies that every read-only accessor reports the recorded state of a tracker file that exists."""
+    tracker_file = tmp_path / "tracker.yaml"
+    tracker = ProcessingTracker(file_path=tracker_file)
+    job_ids = tracker.initialize_jobs(jobs=[("job_a", ""), ("job_b", "")])
+    tracker.complete_job(job_id=job_ids[0])
+    tracker.fail_job(job_id=job_ids[1], error_message="boom")
+
+    # A second instance reads the file the first one wrote, which is the cross-process path these accessors serve.
+    reader = ProcessingTracker(file_path=tracker_file)
+
+    assert not reader.complete
+    assert reader.encountered_error
+    assert reader.get_job_status(job_id=job_ids[0]) == ProcessingStatus.SUCCEEDED
+    assert reader.get_job_info(job_id=job_ids[1]).error_message == "boom"
+    assert reader.get_jobs_by_status(status="FAILED") == [job_ids[1]]
+    assert reader.get_summary()[ProcessingStatus.SUCCEEDED] == 1
+    assert set(reader.find_jobs()) == set(job_ids)
 
 
 def _clear_scheduler_environment(monkeypatch: pytest.MonkeyPatch) -> None:

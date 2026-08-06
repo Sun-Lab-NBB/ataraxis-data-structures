@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from operator import itemgetter
 import platform
 from functools import partial
-from threading import Thread
+from threading import Lock, Thread
 from contextlib import contextmanager
 from collections import defaultdict
 from dataclasses import dataclass
@@ -147,6 +147,8 @@ class DataLogger:
 
     Attributes:
         _started: Tracks whether the logger process is running.
+        _shutdown_lock: Stores the lock that serializes the shutdown sequence between stop() and the watchdog thread,
+            so exactly one of the two retires the instance.
         _multiprocessing_context: Stores the spawn-based multiprocessing context used to create the manager and the
             logger process.
         _multiprocessing_manager: Stores the manager object used to instantiate and manage the multiprocessing Queue.
@@ -168,6 +170,13 @@ class DataLogger:
         poll_interval: int = 5,
     ) -> None:
         self._started: bool = False
+
+        # Serializes the shutdown sequence. stop() and the watchdog thread both clear the started flag and then
+        # release the terminator array, and the flag alone cannot separate them, since a thread reads it several
+        # statements before it touches the array. The array's own lock does not cover this, as it guards element
+        # access while disconnect() and destroy() take no lock at all.
+        self._shutdown_lock: Lock = Lock()
+
         self._multiprocessing_context: SpawnContext = get_context("spawn")
         self._multiprocessing_manager: SyncManager = self._multiprocessing_context.Manager()
 
@@ -243,16 +252,23 @@ class DataLogger:
             A logger process that failed to save one of its buffered entries is reported through a warning rather than
             an exception. This method only reaches that check during the shutdown sequence, where raising would mask
             the shutdown work of the caller that is already unwinding, and where the data is lost either way.
+
+            The shutdown is claimed under a lock the watchdog thread takes as well, so exactly one of the two performs
+            the teardown. The lock is released before this method joins that thread, since the watchdog acquires the
+            same lock and holding it across the join would leave each side waiting on the other.
         """
-        if not self._started:
-            return
+        # Claims the shutdown. A watchdog that reached its own teardown first leaves the flag clear, which takes the
+        # early return below and keeps this method away from the terminator array that thread has already released.
+        with self._shutdown_lock:
+            if not self._started:
+                return
 
-        # Soft-inactivates the watchdog thread.
-        self._started = False
+            # Soft-inactivates the watchdog thread.
+            self._started = False
 
-        # Issues the shutdown command to the remote process and the watchdog thread.
-        if self._terminator_array is not None:
-            self._terminator_array[0] = 1
+            # Issues the shutdown command to the remote process and the watchdog thread.
+            if self._terminator_array is not None:
+                self._terminator_array[0] = 1
 
         logger_exit_code: int | None = None
         if self._logger_process is not None:
@@ -312,16 +328,23 @@ class DataLogger:
                 continue
 
             if self._logger_process is not None and not self._logger_process.is_alive():
-                # Retires the instance in the same order stop() uses, clearing the started flag before releasing the
-                # terminator array. stop() reads that flag first and returns early once it is False, so a concurrent
-                # shutdown cannot reach the array after this thread has destroyed it.
-                self._started = False
+                # Claims the shutdown under the lock stop() takes as well, so exactly one of the two retires the
+                # instance. A concurrent stop() can claim it between the liveness check above and this acquisition,
+                # and the claimant owns every step below. Re-reading the flag here keeps this thread from tearing the
+                # instance down a second time and reporting a shutdown that already happened.
+                with self._shutdown_lock:
+                    if not self._started:
+                        return
 
-                # Cleans up all resources, similar to the stop() method.
-                self._terminator_array[0] = 1
-                self._logger_process.join()
-                self._terminator_array.disconnect()
-                self._terminator_array.destroy()
+                    # Retires the instance in the same order stop() uses, clearing the started flag before releasing
+                    # the terminator array.
+                    self._started = False
+
+                    # Cleans up all resources, similar to the stop() method.
+                    self._terminator_array[0] = 1
+                    self._logger_process.join()
+                    self._terminator_array.disconnect()
+                    self._terminator_array.destroy()
 
                 message = (
                     f"Remote logger process for the {self._name} DataLogger has been prematurely shut down. This "

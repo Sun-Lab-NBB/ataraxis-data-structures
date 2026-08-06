@@ -1,6 +1,7 @@
 """Contains tests for the interpolation module provided by the processing package."""
 
 import numpy as np
+import pytest
 
 from ataraxis_data_structures import interpolate_data
 
@@ -226,6 +227,48 @@ class TestInterpolateData:
 
         assert result_discrete.size == 0
         assert result_continuous.size == 0
+
+    @pytest.mark.parametrize("is_discrete", [True, False])
+    def test_empty_source_distribution_is_rejected(self, *, is_discrete: bool) -> None:
+        """Verifies that a source distribution holding no point is refused with one message on both paths.
+
+        Left to the backends, the two paths fail this input differently: the discrete path inverts its clip bounds and
+        raises IndexError out of the value lookup, while the continuous path raises ValueError out of np.interp.
+        """
+        with pytest.raises(ValueError, match="must each hold at least one element"):
+            interpolate_data(
+                source_coordinates=np.array([]),
+                source_values=np.array([]),
+                target_coordinates=np.array([1.0]),
+                is_discrete=is_discrete,
+            )
+
+    def test_empty_source_values_are_rejected(self) -> None:
+        """Verifies that an empty value array is refused even when the coordinate array holds points."""
+        with pytest.raises(ValueError, match="must each hold at least one element"):
+            interpolate_data(
+                source_coordinates=np.array([0.0, 1.0]),
+                source_values=np.array([]),
+                target_coordinates=np.array([0.5]),
+                is_discrete=True,
+            )
+
+    @pytest.mark.parametrize("is_discrete", [True, False])
+    def test_empty_source_coordinates_are_rejected(self, *, is_discrete: bool) -> None:
+        """Verifies that an empty coordinate array is refused even when the value array holds points.
+
+        This half of the guard is the one that fails silently without it. With no coordinate to search, searchsorted
+        returns zeros, and the subtraction and the lower clip land every target on index 0. The discrete path then
+        returns the first source value broadcast across every target coordinate rather than reporting that it had
+        nothing to interpolate against.
+        """
+        with pytest.raises(ValueError, match="must each hold at least one element"):
+            interpolate_data(
+                source_coordinates=np.array([]),
+                source_values=np.array([7.0, 8.0]),
+                target_coordinates=np.array([0.5, 3.0]),
+                is_discrete=is_discrete,
+            )
 
     def test_discrete_interpolation_uint8_values(self) -> None:
         """Verifies discrete interpolation works with uint8 dtype values."""

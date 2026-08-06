@@ -47,6 +47,29 @@ def test_data_logger_initialization(tmp_path: Path) -> None:
 
 
 @pytest.mark.xdist_group(name="group1")
+@pytest.mark.parametrize("thread_count, expected_thread_count", [(0, 1), (-3, 1), (1, 1), (5, 5)])
+def test_data_logger_clamps_the_thread_count(tmp_path: Path, thread_count: int, expected_thread_count: int) -> None:
+    """Verifies that the thread count is clamped to 1 from below, as the constructor documents.
+
+    An unclamped 0 reaches ThreadPoolExecutor(max_workers=0) inside the spawned logger process, which raises there and
+    kills the process before it consumes a single entry, so the clamp is what keeps a caller's typo from silently
+    discarding the whole log.
+    """
+    logger = DataLogger(output_directory=tmp_path, instance_name=f"clamped_{thread_count}", thread_count=thread_count)
+
+    assert logger._thread_count == expected_thread_count
+
+
+@pytest.mark.xdist_group(name="group1")
+@pytest.mark.parametrize("poll_interval, expected_poll_interval", [(-5, 0), (-1, 0), (0, 0), (5, 5)])
+def test_data_logger_clamps_the_poll_interval(tmp_path: Path, poll_interval: int, expected_poll_interval: int) -> None:
+    """Verifies that the poll interval is clamped to 0 from below, as the constructor documents."""
+    logger = DataLogger(output_directory=tmp_path, instance_name=f"polled_{poll_interval}", poll_interval=poll_interval)
+
+    assert logger._poll_interval == expected_poll_interval
+
+
+@pytest.mark.xdist_group(name="group1")
 def test_data_logger_directory_creation(tmp_path: Path) -> None:
     """Verifies that the DataLogger creates the necessary output directory."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
@@ -278,6 +301,49 @@ def test_data_logger_watchdog_reports_a_prematurely_shut_down_process(tmp_path: 
     # shutdown work left to repeat.
     assert not logger._started
     assert not logger.alive
+
+
+@pytest.mark.xdist_group(name="group1")
+def test_data_logger_watchdog_stands_down_for_a_concurrent_shutdown(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that a watchdog losing the shutdown race leaves the teardown to the claimant.
+
+    stop() reads the started flag several statements before it writes the terminator array. Without the re-check the
+    watchdog performs under the shared lock, a watchdog that observed a dead process in that window would release the
+    array between those two statements, and the write stop() then performs would fail with a ConnectionError.
+    """
+    logger = DataLogger(output_directory=tmp_path, instance_name="watchdog_yield")
+
+    # Builds the monitored state by hand, for the reason given in the test above.
+    terminator_array = SharedMemoryArray.create_array(
+        name="watchdog_yield_terminator", prototype=np.zeros(shape=1, dtype=np.uint8), exists_ok=True
+    )
+    logger._terminator_array = terminator_array
+    process = _ExitedProcess()
+    logger._logger_process = process
+    logger._started = True
+
+    def claim_the_shutdown() -> bool:
+        """Reports the process as dead, after a concurrent stop() has taken the started flag.
+
+        The liveness check is the last statement before the lock acquisition, so clearing the flag here places the
+        concurrent claim in exactly the window the re-check exists to close.
+        """
+        logger._started = False
+        return False
+
+    monkeypatch.setattr(target=process, name="is_alive", value=claim_the_shutdown)
+
+    # The watchdog stands down rather than raising, since the claimant owns the report as well as the teardown.
+    logger._watchdog()
+
+    # Every resource is left for the claimant, so the array the claimant is about to write is still usable.
+    assert terminator_array.is_connected
+    assert terminator_array[0] == 0
+
+    terminator_array.disconnect()
+    terminator_array.destroy()
 
 
 @pytest.mark.xdist_group(name="group1")

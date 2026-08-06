@@ -780,6 +780,123 @@ def test_delete_directory_unlinks_a_directory_symlink_without_following_it(tmp_p
     assert (outside / "nested" / "also_precious.txt").read_text() == "keep me too"
 
 
+def test_transfer_directory_rejects_a_symlinked_source_root(tmp_path: Path) -> None:
+    """Verifies that a link standing for the source root is refused before anything is written.
+
+    The link rejection inside the tree never sees the root, since the walk resolves it. Accepting the link would have
+    the removal step unlink the link and leave the tree it names on disk, after the transfer already reported the
+    source as removed.
+    """
+    real_source = tmp_path / "real_source"
+    real_source.mkdir()
+    (real_source / "data.txt").write_text("payload")
+
+    source_link = tmp_path / "source_link"
+    source_link.symlink_to(real_source, target_is_directory=True)
+    destination = tmp_path / "destination"
+
+    with pytest.raises(RuntimeError) as exception_info:
+        transfer_directory(source=source_link, destination=destination, remove_source=True)
+
+    # Normalizes whitespace, since the console wraps a long message across lines.
+    assert "symbolic link rather than a real directory" in str(exception_info.value).replace("\n", " ")
+
+    # The refusal precedes every write, so neither side of the transfer was touched.
+    assert (real_source / "data.txt").read_text() == "payload"
+    assert not (destination / "data.txt").exists()
+    assert not (real_source / "ax_checksum.txt").exists()
+
+
+def test_transfer_directory_names_a_stale_reused_checksum_as_a_possible_cause(
+    sample_directory_structure: Path, tmp_path: Path
+) -> None:
+    """Verifies that a mismatch against a reused checksum reports the stale-checksum cause alongside corruption.
+
+    A checksum written before the source grew describes an earlier state of the source, so it fails the comparison
+    while every transferred byte is correct.
+    """
+    source = sample_directory_structure
+    destination = tmp_path / "dest_stale_checksum"
+
+    # Writes the checksum, then grows the source, which is what makes the stored digest stale.
+    calculate_directory_checksum(directory=source, progress=False, save_checksum=True)
+    (source / "added_after_the_checksum.txt").write_text("late arrival")
+
+    with pytest.raises(RuntimeError) as exception_info:
+        transfer_directory(source=source, destination=destination, verify_integrity=True)
+
+    error_message = str(exception_info.value).replace("\n", " ")
+    assert "predates the current contents of the source" in error_message
+    assert "Remove that file" in error_message
+
+    # Every byte reached the destination, which is what makes the corruption-only report wrong here.
+    assert (destination / "added_after_the_checksum.txt").read_text() == "late arrival"
+    assert (destination / "file1.txt").read_text() == "content1"
+
+
+def test_transfer_directory_names_corruption_alone_for_a_freshly_generated_checksum(
+    sample_directory_structure: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verifies that a mismatch against a checksum this call generated reports corruption without the stale cause."""
+    source = sample_directory_structure
+    destination = tmp_path / "dest_fresh_checksum"
+    assert not (source / "ax_checksum.txt").exists()
+
+    original_calculate_checksum = calculate_directory_checksum
+
+    def mock_calculate_checksum(directory: Path, **kwargs: Any) -> str:
+        """Returns a mismatching digest for the destination alone, standing in for a corrupted transfer."""
+        if directory == destination:
+            return "corrupted_checksum_00000000000000"
+        return original_calculate_checksum(directory=directory, **kwargs)
+
+    monkeypatch.setattr(
+        target="ataraxis_data_structures.processing.transfer_tools.calculate_directory_checksum",
+        name=mock_calculate_checksum,
+    )
+
+    with pytest.raises(RuntimeError) as exception_info:
+        transfer_directory(source=source, destination=destination, verify_integrity=True)
+
+    error_message = str(exception_info.value).replace("\n", " ")
+    assert "This indicates that the data was corrupted in transmission" in error_message
+    assert "predates the current contents of the source" not in error_message
+
+
+def test_delete_directory_unlinks_a_symlink_passed_as_the_target(tmp_path: Path) -> None:
+    """Verifies that a link passed as the target is removed as a link, leaving the tree it points at whole.
+
+    Both Path.exists() and Path.iterdir() resolve a link, so without the link check the call would read the contents of
+    the tree behind the link as the target's own and delete data the caller never named.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "precious.txt").write_text("keep me")
+    (outside / "nested").mkdir()
+    (outside / "nested" / "also_precious.txt").write_text("keep me too")
+
+    link = tmp_path / "link_to_outside"
+    link.symlink_to(outside, target_is_directory=True)
+
+    delete_directory(directory_path=link)
+
+    # The link is gone, and every entry behind it survives.
+    assert not link.is_symlink()
+    assert not link.exists()
+    assert (outside / "precious.txt").read_text() == "keep me"
+    assert (outside / "nested" / "also_precious.txt").read_text() == "keep me too"
+
+
+def test_delete_directory_unlinks_a_dangling_symlink_passed_as_the_target(tmp_path: Path) -> None:
+    """Verifies that a dangling link passed as the target is removed rather than silently left in place."""
+    link = tmp_path / "dangling_target"
+    link.symlink_to(tmp_path / "missing_target")
+
+    delete_directory(directory_path=link)
+
+    assert not link.is_symlink()
+
+
 def test_delete_directory_removes_entries_that_are_neither_files_nor_directories(tmp_path: Path) -> None:
     """Verifies that a dangling symlink is removed, since it reports as neither a file nor a directory."""
     root = tmp_path / "with_dangling_link"

@@ -430,7 +430,7 @@ class ProcessingTracker(YamlConfig):
 
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
 
             # Copies each state so the caller cannot mutate the instance's registry. Every JobState field is an
             # immutable scalar, so a per-entry replace() is a complete copy and is cheaper than a deep copy.
@@ -496,7 +496,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
 
             return {
                 job_id: (job_state.job_name, job_state.specifier)
@@ -658,7 +658,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
 
             if job_id not in self.jobs:
                 message = (
@@ -693,7 +693,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
             if not self.jobs:
                 return False
             return all(job.status == ProcessingStatus.SUCCEEDED for job in self.jobs.values())
@@ -707,7 +707,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
             return any(job.status == ProcessingStatus.FAILED for job in self.jobs.values())
 
     def get_jobs_by_status(self, status: ProcessingStatus | str) -> list[str]:
@@ -725,7 +725,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
             target_status = ProcessingStatus[status] if isinstance(status, str) else status
             return [job_id for job_id, job_state in self.jobs.items() if job_state.status == target_status]
 
@@ -741,7 +741,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
             summary: dict[ProcessingStatus, int] = dict.fromkeys(ProcessingStatus, 0)
             for job_state in self.jobs.values():
                 summary[job_state.status] += 1
@@ -766,7 +766,7 @@ class ProcessingTracker(YamlConfig):
         """
         lock = FileLock(lock_file=self.lock_path)
         with lock.acquire(timeout=_LOCK_ACQUISITION_TIMEOUT):
-            self._load_state()
+            self._load_state(create_missing=False)
 
             if job_id not in self.jobs:
                 message = (
@@ -884,14 +884,18 @@ class ProcessingTracker(YamlConfig):
                     return f"{scheme}:{job_id}"
         return f"pid:{os.getpid()}"
 
-    def _load_state(self) -> None:
-        """Reads the processing pipeline's runtime state from the cached .YAML file, creating the file with the
-        instance's current state when it does not yet exist.
+    def _load_state(self, *, create_missing: bool = True) -> None:
+        """Reads the processing pipeline's runtime state from the cached .YAML file, optionally creating the file with
+        the instance's current state when it does not yet exist.
+
+        Args:
+            create_missing: Determines whether a tracker file that does not exist is created with the instance's
+                current state.
         """
         if self.file_path.exists():
             loaded = ProcessingTracker.from_yaml(file_path=self.file_path)
             self.jobs = loaded.jobs
-        else:
+        elif create_missing:
             self._save_state()
 
     def _save_state(self) -> None:
