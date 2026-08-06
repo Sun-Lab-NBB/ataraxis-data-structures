@@ -168,7 +168,7 @@ class SharedMemoryArray:
         """Restores the instance state after it is transferred to another Python process.
 
         Raises:
-            FileNotFoundError: If the instance was created with the 'auto_connect' flag and the shared memory buffer
+            FileNotFoundError: If the instance was created with the ``auto_connect`` flag and the shared memory buffer
                 with the instance's name does not exist.
         """
         self.__dict__.update(state)
@@ -294,14 +294,17 @@ class SharedMemoryArray:
 
         Raises:
             TypeError: If the input prototype is not a NumPy array.
-            FileExistsError: If a shared memory object with the same name as the input 'name' argument value already
-                exists and the 'exists_ok' flag is False.
+            FileExistsError: If a shared memory object with the same name as the input ``name`` argument value already
+                exists and the ``exists_ok`` flag is False.
+            IndexError: If the input prototype is a zero-dimensional NumPy array, which passes the type check above
+                and then fails the slice assignment that fills the buffer. The buffer is released before the error
+                propagates, so the buffer name is left free for a later call to claim.
         """
         # Ensures prototype is a NumPy ndarray.
         if not isinstance(prototype, np.ndarray):
             message = (
-                f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object '{name}'. "
-                f"Expected a NumPy array but instead encountered {type(prototype).__name__}."
+                f"Unable to create the '{name}' SharedMemoryArray object using the provided prototype. The "
+                f"'prototype' argument must be a NumPy array, but got {type(prototype).__name__}."
             )
             console.error(message=message, error=TypeError)
 
@@ -372,7 +375,7 @@ class SharedMemoryArray:
         instance that called disconnect().
 
         Notes:
-            An array created with the 'auto_connect' flag disabled relies on each receiving process calling this
+            An array created with the ``auto_connect`` flag disabled relies on each receiving process calling this
             method before it accesses the array data.
 
         Raises:
@@ -417,7 +420,7 @@ class SharedMemoryArray:
             releases its local handle on all platforms, so the instance cannot access the array data until connect()
             is called again.
 
-            Unlinking addresses the buffer by name. Recreating a name through the 'exists_ok' flag therefore strips
+            Unlinking addresses the buffer by name. Recreating a name through the ``exists_ok`` flag therefore strips
             the destruction right from the instance that held it, which confines this method to the buffer the
             instance created. Two processes creating the same name concurrently fall outside that protection, so
             buffer names have to stay unique across every process that runs at the same time.
@@ -443,9 +446,9 @@ class SharedMemoryArray:
         the proper lock acquisition and release.
 
         Notes:
-            When with_lock=True (default), the lock is held for the entire duration of the context. Keep operations
-            concise to avoid blocking other processes. When with_lock=False, ensure no other processes are writing to
-            avoid race conditions and data corruption.
+            When ``with_lock`` is True (default), the lock is held for the entire duration of the context. Keep
+            operations concise to avoid blocking other processes. When ``with_lock`` is False, ensure no other
+            processes are writing to avoid race conditions and data corruption.
 
             The returned array is the actual shared array, not a copy. All modifications to the array are immediately
             visible to other processes.
@@ -506,7 +509,7 @@ class SharedMemoryArray:
         """
         owner = _BUFFER_OWNERS.pop(name, None)
         if owner is not None:
-            owner._destroy_buffer = False  # noqa: SLF001
+            owner._destroy_buffer = False  # noqa: SLF001 - Revokes the right on a sibling instance of this class.
 
     def _bind_array(self) -> None:
         """Binds the internal NumPy view to the data stored in the instance's open shared memory buffer and marks the

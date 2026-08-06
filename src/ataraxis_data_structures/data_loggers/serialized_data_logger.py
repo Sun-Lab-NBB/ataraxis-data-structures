@@ -26,7 +26,6 @@ from ataraxis_base_utilities import (
     LogLevel,
     console,
     resolve_worker_count,
-    convert_scalar_to_bytes,
     ensure_directory_exists,
 )
 
@@ -50,6 +49,13 @@ identical cross-platform behavior on all supported platforms."""
 
 _BATCH_OVERSCALE_FACTOR: int = 4
 """The multiplier applied to the per-worker share of log entries when sizing the batches used for parallel loading."""
+
+_SOURCE_ID_BYTE_SIZE: int = 1
+"""The number of bytes the source ID occupies at the start of each serialized log entry."""
+
+_HEADER_BYTE_SIZE: int = 9
+"""The number of bytes the source ID and the acquisition timestamp occupy together at the start of each serialized log
+entry."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,17 +82,19 @@ class LogPackage:
     @property
     def data(self) -> tuple[str, NDArray[np.uint8]]:
         """Returns the filename and the serialized data package to be processed by a DataLogger instance."""
-        # Serializes the scalar header fields to bytes, then concatenates them with the payload into one array.
-        serialized_acquisition_time = convert_scalar_to_bytes(value=self.acquisition_time, dtype=np.dtype(np.uint64))
-        serialized_source = convert_scalar_to_bytes(value=self.source_id, dtype=np.dtype(np.uint8))
-
-        # Assumes that each source produces the data sequentially and that timestamps are acquired with high enough
-        # resolution to resolve the order of data acquisition. np.concatenate allocates a fresh array that owns its
-        # buffer and aliases none of its inputs, so the result needs no defensive copy.
-        data = np.concatenate(
-            [serialized_source, serialized_acquisition_time, self.serialized_data],
-            dtype=np.uint8,
+        # Fills one preallocated buffer, so an entry costs a single allocation. The timestamp is serialized through
+        # its own native-order bytes, which is the layout LogArchiveReader reads back. The buffer owns its memory and
+        # aliases none of its inputs, so the result needs no defensive copy.
+        data: NDArray[np.uint8] = np.empty(shape=_HEADER_BYTE_SIZE + self.serialized_data.size, dtype=np.uint8)
+        data[0] = self.source_id
+        data[_SOURCE_ID_BYTE_SIZE:_HEADER_BYTE_SIZE] = np.frombuffer(
+            buffer=np.uint64(self.acquisition_time).tobytes(), dtype=np.uint8
         )
+
+        # Copies the payload under same-kind casting, which rejects a signed, floating point, or complex payload
+        # rather than reinterpreting its elements as bytes. A wider unsigned payload is narrowed element by element,
+        # which is the rule np.concatenate applies to the same dtypes.
+        np.copyto(dst=data[_HEADER_BYTE_SIZE:], src=self.serialized_data, casting="same_kind")
 
         # Zero-pads ID and timestamp. Uses the correct number of zeroes to represent the number of digits that
         # fit into each datatype (uint8 and uint64).
@@ -105,7 +113,7 @@ class DataLogger:
     Notes:
         The start() method starts the logger process. It must complete before any data is submitted for logging.
 
-        Use the multiprocessing Queue exposed via the 'input_queue' property to send the data to the logger. The data
+        Use the multiprocessing Queue exposed via the ``input_queue`` property to send the data to the logger. The data
         must be packaged into the LogPackage class instance before it is submitted to the queue.
 
         Submitting data to the input queue does not confirm that the data reached the disk, since the logger process
@@ -156,9 +164,11 @@ class DataLogger:
         self._poll_interval: int = max(0, poll_interval)
         self._name: str = str(instance_name)
 
-        # If necessary, ensures that the output directory tree exists.
+        # If necessary, ensures that the output directory tree exists. The path is declared as a directory, since an
+        # instance name carrying a dot would otherwise leave the final component reading as a file suffix, which would
+        # create the parent alone and leave the logger writing into a directory that does not exist.
         self._output_directory: Path = output_directory.joinpath(f"{self._name}_data_log")
-        ensure_directory_exists(path=self._output_directory)
+        ensure_directory_exists(path=self._output_directory, is_file=False)
 
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
         self._input_queue: MultiprocessingQueue = (  # type: ignore[type-arg]
@@ -439,9 +449,9 @@ def assemble_log_archives(
 
     Args:
         log_directory: The path to the directory that stores the log entries of one DataLogger instance as .npy
-            files, which is the directory the instance exposes through its output_directory property.
+            files, which is the directory the instance exposes through its ``output_directory`` property.
         max_workers: Determines the number of worker processes and threads used to process the data in parallel. A
-            positive value is honored exactly, capped at the physical core count. If set to None, 0, or a negative
+            positive value is honored exactly, capped at the logical core count. If set to None, 0, or a negative
             value, the function uses the number of CPU cores minus 2, clamped to at least 1.
         remove_sources: Determines whether to remove the .npy files after consolidating their data into .npz archives.
         memory_mapping: Determines whether to memory-map or load the processed data into RAM during processing. Due to
@@ -454,8 +464,8 @@ def assemble_log_archives(
     # Resolves the number of threads and processes to use during runtime.
     max_workers = resolve_worker_count(requested_workers=max_workers or 0)
 
-    # Due to erratic interaction between memory mapping and Windows (as always), disables memory mapping on
-    # Windows. Callers cap RAM usage on Windows through the max_workers argument.
+    # Windows does not release memory-mapped file handles reliably, so memory mapping is disabled on that platform.
+    # Callers cap RAM usage on Windows through the max_workers argument.
     memory_mapping = memory_mapping and platform.system() != "Windows"
 
     # Collects all .npy files and groups them by source_id, parsing each stem once into its source and timestamp
@@ -504,7 +514,7 @@ def assemble_log_archives(
                 stems, arrays = load_future.result()
                 for stem, array in zip(stems, arrays, strict=False):
                     loaded_data[source_id][stem] = array
-                    progress_bar.update(1)
+                    progress_bar.update(n=1)
 
         # PHASE 2: Assembles archives. Here, each archive is processed in parallel, but all archive log entries for
         # each archive are processed sequentially.
@@ -523,7 +533,7 @@ def assemble_log_archives(
             for archive_future in as_completed(archive_futures):
                 archive_id, archive_path = archive_future.result()
                 archives[archive_id] = archive_path
-                progress_bar.update(1)
+                progress_bar.update(n=1)
 
         # PHASE 3: Verifies archived data integrity against the original data if this is requested.
         if verify_integrity:
@@ -541,7 +551,7 @@ def assemble_log_archives(
             ) as progress_bar:
                 for source_id, integrity_future in archived_futures.items():
                     archive_data[source_id] = integrity_future.result()
-                    progress_bar.update(1)
+                    progress_bar.update(n=1)
 
             # Verifies the integrity of each archive data against the original data.
             verification_futures = [
@@ -564,7 +574,7 @@ def assemble_log_archives(
             ) as progress_bar:
                 for verify_future in as_completed(verification_futures):
                     verify_future.result()  # Propagates errors if comparison fails.
-                    progress_bar.update(1)
+                    progress_bar.update(n=1)
 
         # PHASE 4: Removes source files if requested.
         if remove_sources:
@@ -578,7 +588,7 @@ def assemble_log_archives(
             ) as progress_bar:
                 for remove_future in as_completed(removal_futures):
                     remove_future.result()
-                    progress_bar.update(1)
+                    progress_bar.update(n=1)
 
 
 @contextmanager
@@ -622,8 +632,8 @@ def _load_numpy_files(
         memory_map: Determines whether to memory-map the files or load them into memory (RAM).
 
     Returns:
-        A tuple of two elements. The first element is a tuple of loaded file names (without extension). The second
-        element is a tuple of loaded or memory-mapped data arrays.
+        The first element is the tuple of loaded file names, without their extension. The second is the tuple of
+        loaded or memory-mapped data arrays.
     """
     mmap_mode: Literal["r"] | None = "r" if memory_map else None
     results = [(file_path.stem, np.load(file=file_path, mmap_mode=mmap_mode)) for file_path in file_paths]
@@ -657,8 +667,7 @@ def _assemble_archive(
             array values.
 
     Returns:
-        A tuple of two elements. The first element is the source ID code. The second element is the path to the
-        uncompressed .npz log archive.
+        The first element is the source ID code. The second is the path to the uncompressed .npz log archive.
     """
     output_path = output_directory.joinpath(f"{source_id}_log.npz")
 

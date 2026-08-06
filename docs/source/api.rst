@@ -17,6 +17,12 @@ Data Structures
    :undoc-members:
    :show-inheritance:
 
+.. Documents the module constant explicitly, since the automodule directive above discovers module-level data through
+   the source of the module it documents and therefore skips a constant this package re-exports. The directive names
+   the defining module rather than the package, because autodoc reads the attribute docstring from that module's
+   source and falls back to the docstring of the value's own type when it is pointed at the re-exporting package.
+.. autodata:: ataraxis_data_structures.data_structures.yaml_config.YAML_EXCLUDE_METADATA
+
 Data Loggers
 ============
 

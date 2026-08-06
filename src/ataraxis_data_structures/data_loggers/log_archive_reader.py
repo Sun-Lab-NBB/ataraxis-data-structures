@@ -49,7 +49,7 @@ class LogArchiveReader:
 
         For multiprocessing workflows, the main process should create a reader to discover the onset timestamp and
         generate batch assignments. Worker processes can then create lightweight reader instances by passing the
-        pre-discovered onset_us to skip redundant onset scanning.
+        pre-discovered ``onset_us`` to skip redundant onset scanning.
 
     Args:
         archive_path: The path to the .npz log archive file to read.
@@ -137,7 +137,7 @@ class LogArchiveReader:
 
         Notes:
             Uses over-batching (creating more batches than workers) to improve load balancing when message processing
-            times vary. The batch_multiplier parameter controls the degree of over-batching.
+            times vary. The ``batch_multiplier`` parameter controls the degree of over-batching.
 
             For archives with fewer messages than the parallel processing threshold (2000), returns a single batch
             containing all message keys, or an empty list when the archive contains no data messages.
@@ -149,7 +149,7 @@ class LogArchiveReader:
                 load distribution.
 
         Returns:
-            A list of message key batches. Each batch is a list of string keys that can be passed to iter_messages().
+            The message key batches, each of which is accepted as the keys argument of iter_messages().
         """
         keys = self._get_message_keys()
         total_messages = len(keys)
@@ -170,11 +170,11 @@ class LogArchiveReader:
             Opens the archive once and keeps it open for the duration of iteration, decoding each requested entry on
             access.
 
-            If keys is provided, only iterates through the specified messages. This is useful for processing a batch
+            If ``keys`` is provided, only iterates through the specified messages. This is useful for processing a batch
             of messages in a worker process.
 
         Args:
-            keys: Optional list of message keys to iterate. If None, iterates through all data messages in the archive.
+            keys: The message keys to iterate. If None, iterates through every data message in the archive.
 
         Yields:
             LogMessage instances containing the absolute timestamp and payload for each message.

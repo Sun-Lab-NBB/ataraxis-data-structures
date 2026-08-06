@@ -1,5 +1,7 @@
 """Provides assets for moving data between filesystem destinations and removing data from the host machine."""
 
+import os
+import stat
 import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -8,6 +10,7 @@ from ataraxis_time import PrecisionTimer, TimerPrecisions
 from ataraxis_base_utilities import console, resolve_worker_count, ensure_directory_exists
 
 from .checksum_tools import CHECKSUM_FILENAME, calculate_directory_checksum
+from .filesystem_tools import ABSENT_ENTRY_ERRNOS, walk_files, walk_directory
 
 _MAXIMUM_DELETION_ATTEMPTS: int = 5
 """The maximum number of times directory deletion is retried before giving up."""
@@ -31,16 +34,23 @@ def delete_directory(directory_path: Path) -> None:
 
     Args:
         directory_path: The path to the directory to delete.
+
+    Raises:
+        OSError: If the directory, or any directory beneath it, cannot be read, or if an entry inside it cannot be
+            unlinked.
     """
     if not directory_path.exists():
         return
 
-    # Classifies entries with symlink-aware predicates, since is_dir() and is_file() both resolve a symlink to its
-    # target. Without the is_symlink() test, a symlink to a directory would be recursed into and its target's files
-    # unlinked, outside the tree this call names.
-    entries = list(directory_path.iterdir())
-    files = [path for path in entries if path.is_symlink() or not path.is_dir()]
-    subdirectories = [path for path in entries if path.is_dir() and not path.is_symlink()]
+    # Classifies entries through lstat, which reports a symlink as a link rather than as its target.
+    files = []
+    subdirectories = []
+    for path in directory_path.iterdir():
+        _, is_directory = _classify_entry(path=path)
+        if is_directory:
+            subdirectories.append(path)
+        else:
+            files.append(path)
 
     with ThreadPoolExecutor() as executor:
         list(executor.map(Path.unlink, files))  # Forces completion of all tasks.
@@ -77,8 +87,8 @@ def transfer_directory(
         This function recreates the moved directory hierarchy on the destination if the hierarchy does not exist. This
         is done before copying the files.
 
-        The function performs a multithreaded copy operation when 'num_threads' is greater than 1 and a sequential
-        copy otherwise. The source data is removed after the copy only when 'remove_source' is enabled.
+        The function performs a multithreaded copy operation when ``num_threads`` is greater than 1 and a sequential
+        copy otherwise. The source data is removed after the copy only when ``remove_source`` is enabled.
 
         If the function is configured to verify the transferred data's integrity, it reuses the xxHash3-128 checksum
         stored in the source directory's ax_checksum.txt file when that file exists. Otherwise, it generates the
@@ -109,7 +119,12 @@ def transfer_directory(
 
     Raises:
         FileNotFoundError: If the source directory does not exist.
-        RuntimeError: If the source directory contains a symlink, if the destination holds unaccounted files while
+        OSError: If any directory inside the source or the destination tree cannot be read, or if the destination
+            path already exists as a file rather than as a directory. Also raised if a copied file cannot be read or
+            written, or if the source cannot be removed once ``remove_source`` is enabled. A discovery failure leaves
+            the destination untouched, since both trees are discovered before anything is written.
+        RuntimeError: If the source directory contains a symlink, if ``verify_integrity`` is enabled while the
+            source holds no file the checksum can cover, if the destination holds unaccounted files while
             ``reset_dirty_destination`` is disabled, or if the transferred files do not pass the xxHash3-128 checksum
             integrity verification.
     """
@@ -135,7 +150,20 @@ def transfer_directory(
         )
         console.error(message=message, error=RuntimeError)
 
-    ensure_directory_exists(path=destination)
+    # A verified transfer needs a digest over real data, and the checksum refuses a directory holding no file it can
+    # cover. Rejecting here keeps that refusal ahead of every destination write below, so a rejected transfer leaves
+    # the destination as it found it. The checksum file is discounted, since the digest excludes it either way.
+    if verify_integrity and all(source_file.name == CHECKSUM_FILENAME for source_file in file_list):
+        message = (
+            f"Unable to transfer the source directory {source} with integrity verification enabled, as the directory "
+            f"holds no file the checksum can cover. Disable the 'verify_integrity' flag to transfer a directory tree "
+            f"that stores no data."
+        )
+        console.error(message=message, error=RuntimeError)
+
+    # Declares the destination as a directory, since a destination whose own name carries a dot would otherwise read
+    # as a file path and leave only its parent created.
+    ensure_directory_exists(path=destination, is_file=False)
 
     # Reconciles the destination against the source before writing to it. The integrity check hashes the whole
     # destination tree, so a file the source does not account for fails verification even when every transferred byte
@@ -175,15 +203,15 @@ def transfer_directory(
     # files at the same time. I/O operations release the GIL, so threads suffice and Processes are unnecessary.
     if num_threads > 1:
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = {
+            futures = [
                 executor.submit(
                     _transfer_file,
                     source_file=file,
                     source_directory=source,
                     destination_directory=destination,
-                ): file
+                )
                 for file in file_list
-            }
+            ]
             if progress:  # pragma: no cover
                 with console.progress(
                     total=len(file_list),
@@ -213,8 +241,9 @@ def transfer_directory(
         with source.joinpath(CHECKSUM_FILENAME).open("r") as local_checksum:
             if destination_checksum != local_checksum.readline().strip():
                 message = (
-                    f"Checksum mismatch detected when transferring {Path(*source.parts[-6:])} to "
-                    f"{Path(*destination.parts[-6:])}! The data was likely corrupted in transmission."
+                    f"Unable to verify the integrity of the directory transferred from {Path(*source.parts[-6:])} to "
+                    f"{Path(*destination.parts[-6:])}. The destination checksum must match the source checksum, but "
+                    f"the two differ, which indicates that the data was corrupted in transmission."
                 )
                 console.error(message=message, error=RuntimeError)
 
@@ -235,20 +264,62 @@ def _collect_source_items(source: Path) -> tuple[list[Path], list[Path], list[Pa
         Every list is sorted by path depth so that parent directories precede their children and the file copy order
         is deterministic. Any item that is neither a directory nor a symlink is treated as a file.
 
-        Symlinks are reported separately rather than classified, because ``is_dir()`` and ``is_file()`` both resolve
-        a link to its target and would otherwise file it as whichever kind it points at.
+        Symlinks are reported separately, since a link stands for data living outside the tree the caller named.
 
     Args:
         source: The root directory whose contents are discovered.
 
     Returns:
         The subdirectories, files, and symlinks found anywhere under the source directory, each sorted by path depth.
+
+    Raises:
+        OSError: If the source directory does not exist, is not a directory, or cannot be read, if any directory
+            beneath it cannot be read, or if the metadata of an entry beneath it cannot be read.
     """
-    all_items = sorted(source.rglob("*"), key=lambda path: len(path.relative_to(source).parts))
-    symlinks = [item for item in all_items if item.is_symlink()]
-    subdirectories = [item for item in all_items if item.is_dir() and not item.is_symlink()]
-    files = [item for item in all_items if not item.is_dir() and not item.is_symlink()]
+    all_items = sorted(walk_directory(directory=source), key=lambda path: len(path.relative_to(source).parts))
+
+    symlinks: list[Path] = []
+    subdirectories: list[Path] = []
+    files: list[Path] = []
+    for item in all_items:
+        is_symlink, is_directory = _classify_entry(path=item)
+        if is_symlink:
+            symlinks.append(item)
+        elif is_directory:
+            subdirectories.append(item)
+        else:
+            files.append(item)
+
     return subdirectories, files, symlinks
+
+
+def _classify_entry(path: Path) -> tuple[bool, bool]:
+    """Determines whether the target filesystem entry is a symbolic link and whether it is a directory.
+
+    Notes:
+        One lstat call answers both questions. Since lstat reports a link rather than its target, a symbolic link
+        answers False to the directory question whatever it points at.
+
+        An entry whose metadata query fails with one of the ``ABSENT_ENTRY_ERRNOS`` answers False to both questions,
+        which covers an entry that disappears between its discovery and this call. Every other failure propagates,
+        since an entry that exists but cannot be read has an unknown kind rather than no kind.
+
+    Args:
+        path: The filesystem entry to classify.
+
+    Returns:
+        The first element is True when the entry is a symbolic link. The second is True when the entry is a directory.
+
+    Raises:
+        OSError: If the entry's metadata cannot be read for any reason other than the entry being absent.
+    """
+    try:
+        entry_mode = os.lstat(path).st_mode
+    except OSError as error:
+        if error.errno not in ABSENT_ENTRY_ERRNOS:
+            raise
+        return False, False
+    return stat.S_ISLNK(entry_mode), stat.S_ISDIR(entry_mode)
 
 
 def _find_unaccounted_destination_files(source: Path, destination: Path, source_files: list[Path]) -> list[Path]:
@@ -265,12 +336,16 @@ def _find_unaccounted_destination_files(source: Path, destination: Path, source_
 
     Returns:
         The unaccounted destination files, sorted by path.
+
+    Raises:
+        OSError: If the destination directory does not exist, is not a directory, or cannot be read, if any
+            directory beneath it cannot be read, or if the kind of an entry beneath it cannot be determined.
     """
     expected = {file_path.relative_to(source) for file_path in source_files}
     return sorted(
         path
-        for path in destination.rglob("*")
-        if path.is_file() and path.name != CHECKSUM_FILENAME and path.relative_to(destination) not in expected
+        for path in walk_files(directory=destination)
+        if path.name != CHECKSUM_FILENAME and path.relative_to(destination) not in expected
     )
 
 
@@ -292,8 +367,8 @@ def _transfer_file(source_file: Path, source_directory: Path, destination_direct
     """Copies the input file from the source directory to the destination directory while preserving the file metadata.
 
     Notes:
-        If the file is found under a hierarchy of subdirectories inside the input source_directory, that hierarchy will
-        be preserved in the destination directory.
+        If the file is found under a hierarchy of subdirectories inside the input ``source_directory``, that hierarchy
+        is preserved in the destination directory.
 
     Args:
         source_file: The file to be copied.

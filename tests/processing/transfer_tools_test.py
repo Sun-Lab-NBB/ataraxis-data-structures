@@ -1,5 +1,7 @@
 """Contains tests for the transfer_tools module provided by the processing package."""
 
+import os
+import errno
 from typing import Any
 from pathlib import Path
 
@@ -10,6 +12,7 @@ from ataraxis_data_structures import (
     transfer_directory,
     calculate_directory_checksum,
 )
+from ataraxis_data_structures.processing.transfer_tools import _classify_entry
 
 
 @pytest.fixture
@@ -358,6 +361,27 @@ def test_transfer_directory_to_existing_destination(sample_directory_structure: 
     assert (destination / "subdir1" / "file3.txt").exists()
 
 
+def test_transfer_directory_creates_a_dotted_destination(tmp_path: Path) -> None:
+    """Verifies that a destination whose own name carries a dot is created as a directory rather than skipped.
+
+    The source deliberately holds no subdirectory. Recreating the source hierarchy calls mkdir() with 'parents' set,
+    so a source that carries even one subdirectory creates the destination as a side effect and hides the defect. With
+    a flat source, the directory check is the only step that can create the destination, and leaving it to the suffix
+    heuristic creates the parent alone and fails the copy against a destination that does not exist.
+    """
+    source = tmp_path / "flat_source"
+    source.mkdir()
+    (source / "file1.txt").write_text("content1")
+    (source / "file2.txt").write_text("content2")
+    destination = tmp_path / "session_2026.08.05"
+
+    transfer_directory(source=source, destination=destination)
+
+    assert destination.is_dir()
+    assert (destination / "file1.txt").read_text() == "content1"
+    assert (destination / "file2.txt").read_text() == "content2"
+
+
 def test_transfer_directory_rejects_a_dirty_destination(sample_directory_structure: Path, tmp_path: Path) -> None:
     """Verifies that a destination holding unaccounted files is rejected rather than failing the integrity check."""
     source = sample_directory_structure
@@ -477,7 +501,7 @@ def test_transfer_directory_integrity_check_detects_corruption(
     # Verifies the error message contains expected information.
     # Normalizes whitespace since the error message may contain line breaks.
     error_message = str(exception_info.value).replace("\n", " ")
-    assert "Checksum mismatch detected" in error_message
+    assert "Unable to verify the integrity of the directory transferred" in error_message
     assert "corrupted in transmission" in error_message
 
     # Verifies both source and destination were checksummed.
@@ -522,7 +546,7 @@ def test_transfer_directory_checksum_path_truncation(tmp_path: Path, monkeypatch
 
     # Verifies the error message contains truncated paths.
     error_message = str(exception_info.value)
-    assert "Checksum mismatch detected" in error_message
+    assert "Unable to verify the integrity of the directory transferred" in error_message
 
     # Verifies the paths show the last 6 parts (e/f/source and v/u/dest).
     assert "e/f/source" in error_message or "e\\f\\source" in error_message  # Unix or Windows path separator.
@@ -693,3 +717,39 @@ def test_delete_directory_removes_entries_that_are_neither_files_nor_directories
     delete_directory(directory_path=root)
 
     assert not root.exists()
+
+
+def test_classify_entry_reports_each_entry_kind(tmp_path: Path) -> None:
+    """Verifies that _classify_entry separates symlinks, directories, and files by their link-level metadata."""
+    (tmp_path / "regular.txt").write_text("content")
+    (tmp_path / "subdirectory").mkdir()
+    (tmp_path / "link_to_file").symlink_to(tmp_path / "regular.txt")
+    (tmp_path / "link_to_directory").symlink_to(tmp_path / "subdirectory", target_is_directory=True)
+
+    assert _classify_entry(path=tmp_path / "regular.txt") == (False, False)
+    assert _classify_entry(path=tmp_path / "subdirectory") == (False, True)
+
+    # A link answers the directory question with False whatever it points at.
+    assert _classify_entry(path=tmp_path / "link_to_file") == (True, False)
+    assert _classify_entry(path=tmp_path / "link_to_directory") == (True, False)
+
+
+def test_classify_entry_reports_a_vanished_entry_as_a_plain_file(tmp_path: Path) -> None:
+    """Verifies that _classify_entry answers False to both questions when the entry no longer exists."""
+    assert _classify_entry(path=tmp_path / "never_created.bin") == (False, False)
+
+
+def test_classify_entry_propagates_an_unreadable_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that _classify_entry raises when the entry exists but its metadata cannot be read."""
+    target = tmp_path / "unreadable.bin"
+    target.write_text("content")
+
+    def _deny_metadata(_path: Path) -> os.stat_result:
+        raise PermissionError(errno.EACCES, "Permission denied")
+
+    monkeypatch.setattr(target=os, name="lstat", value=_deny_metadata)
+
+    # A propagated failure is what keeps an unreadable symlink from being filed as a plain file, which would carry it
+    # past the link rejection transfer_directory performs.
+    with pytest.raises(PermissionError):
+        _classify_entry(path=target)

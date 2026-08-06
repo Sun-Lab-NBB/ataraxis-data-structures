@@ -57,6 +57,20 @@ def test_data_logger_directory_creation(tmp_path: Path) -> None:
 
 
 @pytest.mark.xdist_group(name="group1")
+def test_data_logger_directory_creation_for_a_dotted_instance_name(tmp_path: Path) -> None:
+    """Verifies that an instance name carrying a dot still produces a real output directory.
+
+    The trailing path component reads as a file suffix, so the directory has to be declared as a directory explicitly.
+    Left to the suffix heuristic, only the parent is created and every log entry is written into a path that does not
+    exist.
+    """
+    logger = DataLogger(output_directory=tmp_path, instance_name="camera.1")
+
+    assert logger.output_directory == tmp_path / "camera.1_data_log"
+    assert logger.output_directory.is_dir()
+
+
+@pytest.mark.xdist_group(name="group1")
 def test_data_logger_start_stop(tmp_path: Path) -> None:
     """Verifies the start and stop functionality of the DataLogger."""
     logger = DataLogger(output_directory=tmp_path, instance_name="test_logger")
@@ -348,6 +362,34 @@ def test_log_package_data_large_timestamp() -> None:
     expected = bytes([255]) + (2**63 + 5).to_bytes(length=8, byteorder="little") + bytes([1])
     assert data.tobytes() == expected
     assert int(data[1:9].view(np.uint64)[0]) == 2**63 + 5
+
+
+@pytest.mark.parametrize("payload_dtype", [np.int32, np.int64, np.float64])
+def test_log_package_data_rejects_a_payload_of_another_datatype_kind(payload_dtype: Any) -> None:
+    """Verifies that LogPackage.data raises instead of reinterpreting a payload whose datatype belongs to another
+    kind.
+    """
+    package = LogPackage(
+        source_id=np.uint8(3),
+        acquisition_time=np.uint64(9),
+        serialized_data=np.array([1, 300, -2], dtype=payload_dtype),
+    )
+
+    with pytest.raises(TypeError):
+        _ = package.data
+
+
+def test_log_package_data_accepts_a_boolean_payload() -> None:
+    """Verifies that LogPackage.data serializes a boolean payload, which casts to bytes without losing information."""
+    package = LogPackage(
+        source_id=np.uint8(3),
+        acquisition_time=np.uint64(9),
+        serialized_data=np.array([True, False, True], dtype=np.bool_),
+    )
+
+    _, data = package.data
+
+    assert data[9:].tolist() == [1, 0, 1]
 
 
 def test_compare_arrays_raises_on_mismatched_entry() -> None:

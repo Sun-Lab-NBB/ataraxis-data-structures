@@ -67,7 +67,10 @@ state to prevent integration errors.
 | `/pyproject-style`      | Apply Ataraxis framework pyproject.toml conventions                            |
 | `/tox-config`           | Apply Ataraxis framework tox.ini conventions                                   |
 | `/api-docs`             | Apply Ataraxis framework Sphinx API documentation conventions                  |
+| `/audit-correctness`    | Audit source code for bugs, edge cases, races, and leaks                       |
 | `/audit-facts`          | Fact-check documentation against authoritative source code                     |
+| `/audit-performance`    | Audit source code for cost, speed, memory use, and dtype predictability        |
+| `/audit-project`        | Orchestrate the four audits and merge their findings into one report           |
 | `/audit-style`          | Audit files for style and convention compliance                                |
 | `/explore-dependencies` | Build an API snapshot of installed ataraxis dependencies                       |
 | `/pr`                   | Draft a style-compliant pull request summary                                   |
@@ -89,7 +92,7 @@ dependency for other Ataraxis framework projects.
 | `src/.../shared_memory/`                 | SharedMemoryArray for process-safe data sharing          |
 | `src/.../data_structures/`               | YamlConfig and ProcessingTracker classes                 |
 | `src/.../data_loggers/`                  | DataLogger and LogArchiveReader for serialized logging   |
-| `src/.../processing/`                    | Checksum, transfer, and interpolation utilities          |
+| `src/.../processing/`                    | Checksum, transfer, interpolation, and thread tools      |
 | `tests/`                                 | Test suite (mirrors source structure)                    |
 | `docs/`                                  | Sphinx API documentation source                          |
 
@@ -109,7 +112,8 @@ dependency for other Ataraxis framework projects.
 - **ProcessingTracker**: File-based pipeline state tracker using FileLock for multi-process coordination. Manages job
   states (SCHEDULED, RUNNING, SUCCEEDED, FAILED) with search and lifecycle features.
 - **Processing Utilities**: Directory checksums (xxHash3-128), parallel directory transfer with integrity verification,
-  and time-series interpolation (linear for continuous, last-known-value for discrete data).
+  time-series interpolation (linear for continuous, last-known-value for discrete data), and a context manager that
+  constrains the thread pools the numeric backends open inside worker processes.
 
 ### Core components
 
@@ -117,6 +121,7 @@ dependency for other Ataraxis framework projects.
 |------------------------------|------------------------------------------|------------------------------------------------------------|
 | SharedMemoryArray            | `shared_memory/shared_memory_array.py`   | Process-safe NumPy array in shared memory                  |
 | YamlConfig                   | `data_structures/yaml_config.py`         | Dataclass with YAML serialization                          |
+| YAML_EXCLUDE_METADATA        | `data_structures/yaml_config.py`         | Field metadata that excludes a field from YAML             |
 | ProcessingTracker            | `data_structures/processing_tracker.py`  | Pipeline state tracking with file locking                  |
 | JobState                     | `data_structures/processing_tracker.py`  | Dataclass for job metadata                                 |
 | ProcessingStatus             | `data_structures/processing_tracker.py`  | IntEnum (SCHEDULED, RUNNING, SUCCEEDED, FAILED)            |
@@ -129,6 +134,7 @@ dependency for other Ataraxis framework projects.
 | transfer_directory           | `processing/transfer_tools.py`           | Parallel directory copy with verification                  |
 | delete_directory             | `processing/transfer_tools.py`           | Parallel directory deletion                                |
 | interpolate_data             | `processing/interpolation.py`            | Time-series interpolation                                  |
+| limit_worker_threads         | `processing/parallel_tools.py`           | Thread-count limiter for parallel worker processes         |
 
 ### Code standards
 

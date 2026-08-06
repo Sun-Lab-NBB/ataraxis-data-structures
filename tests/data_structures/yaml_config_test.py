@@ -9,7 +9,7 @@ import yaml
 import pytest
 from ataraxis_base_utilities import error_format
 
-from ataraxis_data_structures import YAML_EXCLUDE_METADATA_KEY, YamlConfig
+from ataraxis_data_structures import YAML_EXCLUDE_METADATA, YamlConfig
 from ataraxis_data_structures.data_structures.yaml_config import _serialize_value, _collect_type_hooks
 
 
@@ -618,7 +618,7 @@ def test_excluded_field_round_trip(tmp_path: Path) -> None:
     @dataclass
     class LocatedConfig(YamlConfig):
         value: int = 0
-        source_path: Path = field(default=Path("/unset"), metadata={YAML_EXCLUDE_METADATA_KEY: True})
+        source_path: Path = field(default=Path("/unset"), metadata=YAML_EXCLUDE_METADATA)
 
         @classmethod
         def restore_excluded_fields(cls, data: dict[Any, Any], file_path: Path) -> dict[Any, Any]:

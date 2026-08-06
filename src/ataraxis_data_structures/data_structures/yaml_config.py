@@ -4,10 +4,11 @@ its data from a .yaml (YAML) file.
 
 import os
 from enum import Enum
-from types import UnionType
+from types import UnionType, MappingProxyType
 from typing import Any, Self, Union, get_args, get_origin, get_type_hints
 from pathlib import Path
 from tempfile import mkstemp
+from functools import lru_cache
 from dataclasses import fields, dataclass, is_dataclass
 from collections.abc import Mapping, Callable
 
@@ -15,17 +16,28 @@ import yaml
 from dacite import Config, from_dict
 from ataraxis_base_utilities import console, ensure_directory_exists
 
-YAML_EXCLUDE_METADATA_KEY: str = "yaml_exclude"
-"""The dataclass field metadata key that keeps a field out of the serialized document.
+_YAML_EXCLUDE_METADATA_KEY: str = "yaml_exclude"
+"""The dataclass field metadata key that keeps a field out of the serialized document."""
+
+YAML_EXCLUDE_METADATA: MappingProxyType[str, bool] = MappingProxyType({_YAML_EXCLUDE_METADATA_KEY: True})
+"""The dataclass field metadata that keeps a field out of the serialized document.
 
 Notes:
-    A field declared as ``field(metadata={YAML_EXCLUDE_METADATA_KEY: True})`` is skipped when the instance is written,
-    which suits a field describing where the instance lives rather than what it holds. A class excluding a field that
-    its constructor requires supplies the value back through ``restore_excluded_fields()``.
+    A field declared as ``field(metadata=YAML_EXCLUDE_METADATA)`` is skipped when the instance is written, which suits
+    a field describing where the instance lives rather than what it holds. A class excluding a field that its
+    constructor requires supplies the value back through ``restore_excluded_fields()``.
 """
 
 _MAPPING_ARGUMENT_COUNT: int = 2
 """The number of type arguments a mapping annotation carries, which is its key type followed by its value type."""
+
+_TYPE_HOOK_CACHE_SIZE: int = 256
+"""The number of dataclass type-hook tables the collector retains.
+
+Notes:
+    The cache holds a strong reference to every class it keys, so bounding it keeps a program that builds dataclasses
+    dynamically from retaining every class it ever built.
+"""
 
 _LIBYAML_AVAILABLE: bool = hasattr(yaml, "CSafeLoader")
 """Determines whether the PyYAML build provides the libyaml-backed parser and emitter. Reading and writing both
@@ -63,7 +75,7 @@ def _serialize_value(value: Any) -> Any:
         return {
             data_field.name: _serialize_value(value=getattr(value, data_field.name))
             for data_field in fields(value)
-            if not data_field.metadata.get(YAML_EXCLUDE_METADATA_KEY, False)
+            if not data_field.metadata.get(_YAML_EXCLUDE_METADATA_KEY, False)
         }
 
     if isinstance(value, dict):
@@ -140,6 +152,7 @@ def _make_mapping_key_hook(key_type: type) -> Callable[[Any], Any]:
     return _hook
 
 
+@lru_cache(maxsize=_TYPE_HOOK_CACHE_SIZE)
 def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
     """Builds a dacite ``type_hooks`` dictionary by introspecting the dataclass class hierarchy.
 
@@ -148,6 +161,10 @@ def _collect_type_hooks(cls: type) -> dict[Any, Callable[[Any], Any]]:
     deserialization.
 
     Notes:
+        The table depends on the input class alone, so it is built once and reused for every later call naming that
+        class. Every caller therefore receives the same mapping object, which dacite reads without modifying. A
+        caller that needs to modify the mapping copies it first.
+
         For union annotations containing Enum subclasses (e.g., ``str | Color`` or ``int | Priority``), a union-level
         hook is registered that tries each enum constructor before dacite's default left-to-right member iteration.
         This makes deserialization order-independent: ``str | Color`` and ``Color | str`` both correctly produce enum
@@ -280,7 +297,7 @@ class YamlConfig:
             file_path: The path to the .yaml file to write.
 
         Raises:
-            ValueError: If the file_path does not point to a file with a '.yaml' or '.yml' extension.
+            ValueError: If ``file_path`` does not point to a file with a '.yaml' or '.yml' extension.
         """
         # Defines YAML formatting options that keep YAML blocks readable when edited by the user.
         yaml_formatting = {
@@ -306,8 +323,9 @@ class YamlConfig:
             )
             console.error(message=message, error=ValueError)
 
-        # If necessary, creates the missing directory components of the file_path.
-        ensure_directory_exists(path=file_path)
+        # If necessary, creates the missing directory components of the file_path. The guard above accepts a .yaml or
+        # .yml path alone, so the path is always a file path and the directory to create is its parent.
+        ensure_directory_exists(path=file_path, is_file=True)
 
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
         # through a temporary file created in the destination's own directory, so the rename below stays inside one
@@ -338,7 +356,7 @@ class YamlConfig:
             This method exists to be replaced by subclasses. The implementation here excludes no field and returns
             the mapping untouched, which is correct for every class that serializes all of its fields.
 
-            A subclass marking a constructor-required field with ``YAML_EXCLUDE_METADATA_KEY`` overrides this method
+            A subclass marking a constructor-required field with ``YAML_EXCLUDE_METADATA`` overrides this method
             to supply that field's value. The written document carries no entry for such a field, so deserialization
             cannot build the instance without one. The path the document was read from is passed in, because a field
             excluded this way usually records where the instance lives.
@@ -374,6 +392,7 @@ class YamlConfig:
         Raises:
             ValueError: If the provided file path does not point to a .yaml or .yml file, or if the file does not
                 contain a top-level mapping.
+            FileNotFoundError: If no file exists at the provided file path.
         """
         # Ensures that file_path points to a .yaml / .yml file.
         if file_path.suffix not in {".yaml", ".yml"}:
@@ -383,10 +402,12 @@ class YamlConfig:
             )
             console.error(message=message, error=ValueError)
 
-        # Builds type_hooks from the class hierarchy to auto-convert str -> Path, raw value -> Enum, etc. The cast
-        # list converts YAML lists back to tuples at the field level. check_types=False allows union annotations
-        # such as ``Enum | str`` to accept either member.
-        type_hooks = _collect_type_hooks(cls=cls)
+        # Resolves the type_hooks for the class hierarchy to auto-convert str -> Path, raw value -> Enum, etc. The
+        # cast list converts YAML lists back to tuples at the field level. check_types=False allows union annotations
+        # such as ``Enum | str`` to accept either member. The classmethod's Self-bound 'cls' is widened to a plain
+        # type first, which is what the collector's hashable parameter declaration accepts.
+        config_class: type = cls
+        type_hooks = _collect_type_hooks(cls=config_class)
         class_config = Config(type_hooks=type_hooks, cast=[tuple], check_types=False)
 
         # Loads the data from the .yaml file. Both parsers build values through the same safe constructor, so they

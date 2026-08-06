@@ -11,6 +11,7 @@ import xxhash
 from ataraxis_base_utilities import console, resolve_worker_count
 
 from .parallel_tools import limit_worker_threads
+from .filesystem_tools import walk_files
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -50,8 +51,9 @@ def calculate_directory_checksum(
 
         The xxHash3 checksum is not suitable for security purposes and is only used to ensure data integrity.
 
-        The returned checksum accounts for both the contents of each file and the layout of the input directory
-        structure.
+        The returned checksum accounts for the contents of each file and for each file's path relative to the input
+        directory. A directory contributes only through the relative paths of the files stored beneath it, so a
+        directory with no file anywhere beneath it contributes nothing.
 
     Args:
         directory: The path to the directory for which to generate the checksum.
@@ -65,6 +67,14 @@ def calculate_directory_checksum(
 
     Returns:
         The xxHash3-128 checksum for the input directory as a hexadecimal string.
+
+    Raises:
+        ValueError: If the input directory holds no file for the checksum to cover.
+        OSError: If the directory does not exist, is not a directory, or cannot be read, if any directory beneath it
+            cannot be read, or if the kind of an entry beneath it cannot be determined. Also raised if a discovered
+            file cannot be opened, or if the checksum file cannot be written while ``save_checksum`` is enabled. The
+            digest covers the whole tree or the call fails, since a digest computed over the readable subset would
+            certify a subset as the whole.
     """
     if excluded_files is None:
         excluded_files = {CHECKSUM_FILENAME}
@@ -73,6 +83,15 @@ def calculate_directory_checksum(
         num_processes = resolve_worker_count()
 
     files = _discover_checksum_files(directory=directory, excluded_files=excluded_files)
+
+    # A digest over no file is the same value for every such directory, so it certifies nothing and silently reads as
+    # a successful verification. Refusing here keeps that value from reaching a caller that treats it as evidence.
+    if not files:
+        message = (
+            f"Unable to calculate the checksum for the {directory} directory. The directory must hold at least one "
+            f"file the checksum can cover, but it holds none."
+        )
+        console.error(message=message, error=ValueError)
 
     checksum = xxhash.xxh3_128()
 
@@ -83,7 +102,7 @@ def calculate_directory_checksum(
         # Binds base_directory so each submitted task only needs to supply the per-file path.
         process_file = partial(_calculate_file_checksum, base_directory=directory)
 
-        future_to_path = {executor.submit(process_file, file_path=file): file for file in files}
+        checksum_futures = [executor.submit(process_file, file_path=file) for file in files]
 
         results = []
         if progress:
@@ -92,13 +111,13 @@ def calculate_directory_checksum(
                 description=f"Calculating checksum for {directory.name}",
                 unit="file",
             ) as progress_bar:
-                for future in as_completed(future_to_path):
+                for future in as_completed(checksum_futures):
                     results.append(future.result())
                     progress_bar.update(n=1)
         else:
             # Skips progress tracking in batch mode to avoid its overhead and to keep batched contexts free of
             # terminal clutter.
-            results = [future.result() for future in as_completed(future_to_path)]
+            results = [future.result() for future in as_completed(checksum_futures)]
 
         # Sorts results for consistency, so that the combined directory checksum does not depend on completion order.
         for file_path, file_checksum in sorted(results):
@@ -155,10 +174,12 @@ def _discover_checksum_files(directory: Path, excluded_files: set[str]) -> list[
 
     Returns:
         The files found anywhere under the directory, excluding the omitted filenames, sorted by path.
+
+    Raises:
+        OSError: If the directory does not exist, is not a directory, or cannot be read, if any directory beneath it
+            cannot be read, or if the kind of an entry beneath it cannot be determined.
     """
-    return sorted(
-        path for path in directory.rglob("*") if path.is_file() and f"{path.stem}{path.suffix}" not in excluded_files
-    )
+    return sorted(path for path in walk_files(directory=directory) if path.name not in excluded_files)
 
 
 def _write_checksum_file(directory: Path, checksum: str) -> None:

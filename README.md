@@ -19,8 +19,7 @@ This library aggregates the classes and methods used by other Ataraxis and Solle
 This includes classes to manipulate the data, share (move) the data between different Python processes, and store the
 data in non-volatile memory (on disk). Generally, these classes either implement novel functionality or extend
 existing functionality to match the specific needs of other Ataraxis and Sollertia libraries. This library is part of
-the
-[Ataraxis](https://github.com/Sun-Lab-NBB/ataraxis) framework for AI-assisted scientific hardware control.
+the [Ataraxis](https://github.com/Sun-Lab-NBB/ataraxis) framework for AI-assisted scientific hardware control.
 
 ___
 
@@ -33,7 +32,8 @@ ___
   non-volatile memory.
 - Offers efficient batch processing of log archives with support for parallel workflows.
 - Includes a file-based processing pipeline tracker for coordinating multi-process and multi-host data processing jobs.
-- Provides utilities for data integrity verification, directory transfer, and time-series interpolation.
+- Provides utilities for data integrity verification, directory transfer, time-series interpolation, and worker thread
+  limiting.
 - Apache 2.0 License.
 
 ___
@@ -131,6 +131,49 @@ loaded_config = MyConfig.from_yaml(file_path=out_path)
 # Ensures that the loaded data matches the original MyConfig instance data.
 assert loaded_config.integer == config.integer
 assert loaded_config.string == config.string
+```
+
+#### Excluding Fields from the Document
+
+A dataclass field marked with the `YAML_EXCLUDE_METADATA` metadata is skipped when the instance is written,
+which suits a field that records where the instance lives rather than what it holds. The written document carries no
+entry for such a field, so a class whose constructor requires it overrides the `restore_excluded_fields()` class method
+to supply the value back. The `from_yaml()` method calls that override between reading the document and building the
+instance, so it belongs to the deserialization machinery rather than to the API a caller invokes.
+
+```python
+from ataraxis_data_structures import YAML_EXCLUDE_METADATA, YamlConfig
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+import tempfile
+import yaml
+
+
+@dataclass
+class LocatedConfig(YamlConfig):
+    value: int = 0
+    # The path records where the instance lives, so it is kept out of the document the instance writes.
+    source_path: Path = field(default=Path("/unset"), metadata=YAML_EXCLUDE_METADATA)
+
+    @classmethod
+    def restore_excluded_fields(cls, data: dict[Any, Any], file_path: Path) -> dict[Any, Any]:
+        """Reattaches the reconstructed instance to the file it was read from."""
+        return {**data, "source_path": file_path}
+
+
+tempdir = tempfile.TemporaryDirectory()  # Creates a temporary directory for illustration purposes.
+out_path = Path(tempdir.name).joinpath("located.yaml")
+LocatedConfig(value=7, source_path=Path("/the/writing/host/path")).to_yaml(file_path=out_path)
+
+# The writing host's path stays out of the document entirely.
+with out_path.open() as yaml_file:
+    assert yaml.safe_load(yaml_file) == {"value": 7}
+
+# The reader supplies the path from where it found the file, rather than from what the writer recorded.
+loaded = LocatedConfig.from_yaml(file_path=out_path)
+assert loaded.value == 7
+assert loaded.source_path == out_path
 ```
 
 ### SharedMemoryArray
@@ -271,7 +314,7 @@ buffer destroyed between the spawn and the worker's first access fails at that a
 ```python
 from multiprocessing import Process
 from ataraxis_base_utilities import console
-from ataraxis_time import PrecisionTimer
+from ataraxis_time import PrecisionTimer, TimerPrecisions
 import numpy as np
 from ataraxis_data_structures import SharedMemoryArray
 
@@ -307,17 +350,17 @@ if __name__ == "__main__":
     console.enable()  # Enables terminal printouts
 
     # Initializes a SharedMemoryArray. This process is connected to the buffer and owns its destruction.
-    sma = SharedMemoryArray.create_array("test_concurrent", np.zeros(5, dtype=np.int32))
+    sma = SharedMemoryArray.create_array(name="test_concurrent", prototype=np.zeros(shape=5, dtype=np.int32))
 
     # Generates multiple processes and uses each to repeatedly write and read data from different indices of the
     # same array.
-    processes = [Process(target=concurrent_worker, args=(sma, i)) for i in range(5)]
+    processes = [Process(target=concurrent_worker, args=(sma, index)) for index in range(5)]
     for p in processes:
         p.start()
 
     # Marks the beginning of the test runtime
     console.echo(f"Running the multiprocessing example on {len(processes)} processes...")
-    timer = PrecisionTimer("ms")
+    timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
     timer.reset()
 
     # For each of the array indices, increments the value of the index if it is odd. Child processes increment
@@ -415,14 +458,16 @@ if __name__ == "__main__":
     source_id = np.uint8(1)  # Has to be an uint8 type
     acquisition_time = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))  # Has to be an uint64 type
     data = np.array([1, 2, 3, 4, 5], dtype=np.uint8)  # Has to be an uint8 NumPy array
-    logger_queue.put(LogPackage(source_id, acquisition_time, data))
+    logger_queue.put(LogPackage(source_id=source_id, acquisition_time=acquisition_time, serialized_data=data))
 
     # The timer used to timestamp the log entries has to be precise enough to resolve two consecutive data
     # entries. Due to these constraints, it is recommended to use a nanosecond or microsecond timer, such as the
     # one offered by the ataraxis-time library.
     timestamp = np.uint64(get_timestamp(output_format=TimestampFormats.INTEGER))
     data = np.array([6, 7, 8, 9, 10], dtype=np.uint8)
-    logger_queue.put(LogPackage(source_id, timestamp, data))  # Same source id as the package above
+    logger_queue.put(  # Same source id as the package above
+        LogPackage(source_id=source_id, acquisition_time=timestamp, serialized_data=data)
+    )
 
     # Stops the data logger.
     logger.stop()
@@ -456,7 +501,13 @@ if __name__ == "__main__":
     # Generates and logs 255 data messages. This generates 255 unique .npy files under the logger's output
     # directory.
     for i in range(255):
-        logger_queue.put(LogPackage(np.uint8(1), np.uint64(i), np.array([i, i, i], dtype=np.uint8)))
+        logger_queue.put(
+            LogPackage(
+                source_id=np.uint8(1),
+                acquisition_time=np.uint64(i),
+                serialized_data=np.array([i, i, i], dtype=np.uint8),
+            )
+        )
 
     # Stops the data logger.
     logger.stop()
@@ -489,7 +540,7 @@ from ataraxis_data_structures import LogArchiveReader
 
 # Creates a reader for an existing archive
 archive_path = Path("/path/to/1_log.npz")
-reader = LogArchiveReader(archive_path)
+reader = LogArchiveReader(archive_path=archive_path)
 
 # The onset timestamp is automatically discovered (UTC epoch reference in microseconds)
 print(f"Onset timestamp: {reader.onset_timestamp_us}")
@@ -516,7 +567,7 @@ import numpy as np
 def process_batch(archive_path: Path, onset_us: np.uint64, keys: list[str]) -> int:
     """Worker function that processes a batch of messages."""
     # Creates a lightweight reader with pre-discovered onset (skips onset discovery)
-    reader = LogArchiveReader(archive_path, onset_us=onset_us)
+    reader = LogArchiveReader(archive_path=archive_path, onset_us=onset_us)
 
     processed = 0
     for message in reader.iter_messages(keys=keys):
@@ -529,13 +580,16 @@ if __name__ == "__main__":
     archive_path = Path("/path/to/1_log.npz")
 
     # Main process discovers onset and generates batches
-    reader = LogArchiveReader(archive_path)
+    reader = LogArchiveReader(archive_path=archive_path)
     onset_us = reader.onset_timestamp_us
     batches = reader.get_batches(workers=4, batch_multiplier=4)
 
     # Distributes batches to worker processes
     with ProcessPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(process_batch, archive_path, onset_us, batch) for batch in batches]
+        futures = [
+            executor.submit(process_batch, archive_path=archive_path, onset_us=onset_us, keys=batch)
+            for batch in batches
+        ]
         total_processed = sum(f.result() for f in futures)
 
     print(f"Processed {total_processed} messages")
@@ -549,7 +603,7 @@ For smaller archives, all messages can be read into memory at once:
 from pathlib import Path
 from ataraxis_data_structures import LogArchiveReader
 
-reader = LogArchiveReader(Path("/path/to/1_log.npz"))
+reader = LogArchiveReader(archive_path=Path("/path/to/1_log.npz"))
 
 # Returns a tuple of (timestamps_array, payloads_list)
 timestamps, payloads = reader.read_all_messages()
@@ -577,7 +631,7 @@ tracker = ProcessingTracker(file_path=Path("/path/to/tracker.yaml"))
 # Initializes jobs to be tracked (each job is a tuple of (job_name, specifier))
 # Specifiers differentiate instances of the same job (e.g., different data batches)
 job_ids = tracker.initialize_jobs(
-    [
+    jobs=[
         ("process_video", "session_001"),
         ("process_video", "session_002"),
         ("extract_frames", "session_001"),
@@ -622,20 +676,20 @@ from ataraxis_data_structures import ProcessingTracker, ProcessingStatus
 tracker = ProcessingTracker(file_path=Path("/path/to/tracker.yaml"))
 
 # Generates a job ID using the same name and specifier used during initialization
-job_id = ProcessingTracker.generate_job_id("process_video", "session_001")
+job_id = ProcessingTracker.generate_job_id(job_name="process_video", specifier="session_001")
 
 # Marks the job as started (optionally with an executor ID like a SLURM job ID)
-tracker.start_job(job_id, executor_id="slurm_12345")
+tracker.start_job(job_id=job_id, executor_id="slurm_12345")
 
 # Queries the current status
-status = tracker.get_job_status(job_id)
+status = tracker.get_job_status(job_id=job_id)
 print(f"Job status: {status.name}")  # Job status: RUNNING
 
 # Marks the job as completed successfully
-tracker.complete_job(job_id)
+tracker.complete_job(job_id=job_id)
 
 # Or, if the job failed:
-# tracker.fail_job(job_id, error_message="Out of memory")
+# tracker.fail_job(job_id=job_id, error_message="Out of memory")
 ```
 
 ***Note,*** when `start_job()` is called without an explicit `executor_id`, the identifier is resolved from the
@@ -667,8 +721,8 @@ for status, count in summary.items():
     print(f"{status.name}: {count}")
 
 # Gets all job IDs with a specific status
-failed_jobs = tracker.get_jobs_by_status(ProcessingStatus.FAILED)
-scheduled_jobs = tracker.get_jobs_by_status("SCHEDULED")  # String names also work
+failed_jobs = tracker.get_jobs_by_status(status=ProcessingStatus.FAILED)
+scheduled_jobs = tracker.get_jobs_by_status(status="SCHEDULED")  # String names also work
 
 # Searches for jobs by name or specifier patterns
 matches = tracker.find_jobs(job_name="process", specifier="session_001")
@@ -679,7 +733,7 @@ for job_id, (name, spec) in matches.items():
 all_matches = tracker.find_jobs()
 
 # Gets detailed job information
-job_info = tracker.get_job_info(job_id)
+job_info = tracker.get_job_info(job_id=job_id)
 print(f"Job: {job_info.job_name}, Status: {job_info.status}")
 print(f"Started at: {job_info.started_at}, Completed at: {job_info.completed_at}")
 
@@ -704,7 +758,7 @@ retried_ids = tracker.retry_failed_jobs()
 print(f"Reset {len(retried_ids)} failed jobs for retry")
 
 # Resets a specific subset of jobs back to SCHEDULED, preserving every other job's recorded state
-target_id = ProcessingTracker.generate_job_id("process_video", "session_001")
+target_id = ProcessingTracker.generate_job_id(job_name="process_video", specifier="session_001")
 reset_ids = tracker.reset_jobs(job_ids=[target_id])
 
 # Or reset the entire tracker
@@ -779,7 +833,7 @@ from pathlib import Path
 from ataraxis_data_structures import delete_directory
 
 # Deletes a directory and all its contents
-delete_directory(Path("/path/to/directory"))
+delete_directory(directory_path=Path("/path/to/directory"))
 ```
 
 #### Data Interpolation
@@ -816,6 +870,40 @@ interpolated_discrete = interpolate_data(
     is_discrete=True,
 )
 print(f"Discrete: {interpolated_discrete}")  # [1, 2, 3, 4]
+```
+
+#### Worker Thread Limiting
+
+The `limit_worker_threads()` context manager constrains the thread pools that NumPy's numeric backends open inside
+worker processes. Each backend reads its threading environment variable once, while it is being imported, so the value
+a spawned worker inherits from its parent is the only value that reaches it. Without the limit, a pool running one
+worker per core holds the square of the core count in threads while using one of them.
+
+The context has to enclose the pool's entire lifetime rather than its construction alone, because a pool creates each
+worker when work is first submitted to it. The previous values are restored on exit, including when the wrapped block
+raises, which keeps the limit from leaking into whatever the calling process does next.
+
+```python
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import get_context
+from ataraxis_data_structures import limit_worker_threads
+
+
+def double_value(value: int) -> int:
+    """Stands in for the numeric work a real worker process performs."""
+    return value * 2
+
+
+if __name__ == "__main__":
+    # The limit reaches each worker through the environment a spawned child inherits, so the context wraps the pool's
+    # whole lifetime rather than only its construction.
+    with (
+        limit_worker_threads(thread_count=1),
+        ProcessPoolExecutor(max_workers=2, mp_context=get_context("spawn")) as executor,
+    ):
+        results = list(executor.map(double_value, range(4)))
+
+    assert results == [0, 2, 4, 6]
 ```
 
 ___

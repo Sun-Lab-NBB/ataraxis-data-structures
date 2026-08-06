@@ -529,8 +529,8 @@ def test_create_array_errors() -> None:
     """
     # Tests with an invalid prototype type.
     message = (
-        f"Invalid 'prototype' argument type encountered when creating SharedMemoryArray object 'test_error'. "
-        f"Expected a NumPy array but instead encountered {type([1, 2, 3]).__name__}."
+        f"Unable to create the 'test_error' SharedMemoryArray object using the provided prototype. The "
+        f"'prototype' argument must be a NumPy array, but got {type([1, 2, 3]).__name__}."
     )
     with pytest.raises(TypeError, match=error_format(message)):
         SharedMemoryArray.create_array(name="test_error", prototype=[1, 2, 3])
@@ -671,7 +671,7 @@ def concurrent_worker(shared_memory_array: SharedMemoryArray, index: int) -> Non
     shared_memory_array.disconnect()
 
 
-@pytest.mark.xdist_group("cross_process")
+@pytest.mark.xdist_group(name="cross_process")
 def test_cross_process_read_write() -> None:
     """Verifies the ability of the SharedMemoryArray class to share data across processes.
 
@@ -686,6 +686,8 @@ def test_cross_process_read_write() -> None:
     process.start()
     process.join()
 
+    assert process.exitcode == 0
+
     # Finishes setting up the array in the local process, which is connected to the buffer since its creation.
 
     # Verifies that the data written by the other process is accessible from the main process.
@@ -695,7 +697,7 @@ def test_cross_process_read_write() -> None:
     shared_memory_array.destroy()
 
 
-@pytest.mark.xdist_group("cross_process")
+@pytest.mark.xdist_group(name="cross_process")
 def test_cross_process_auto_connect() -> None:
     """Verifies that the 'auto_connect' flag connects a child process without a connect() call of its own."""
     prototype = np.zeros(shape=3, dtype=np.int32)
@@ -717,8 +719,8 @@ def test_cross_process_auto_connect() -> None:
     shared_memory_array.destroy()
 
 
-@pytest.mark.xdist_group("cross_process")
-def test_cross_process_manual_connect_by_default() -> None:
+@pytest.mark.xdist_group(name="cross_process")
+def test_cross_process_manual_connect_when_disabled() -> None:
     """Verifies that a child process receives a disconnected instance when 'auto_connect' is disabled."""
     prototype = np.zeros(shape=3, dtype=np.int32)
     shared_memory_array = SharedMemoryArray.create_array(
@@ -737,7 +739,7 @@ def test_cross_process_manual_connect_by_default() -> None:
     shared_memory_array.destroy()
 
 
-@pytest.mark.xdist_group("cross_process")
+@pytest.mark.xdist_group(name="cross_process")
 def test_cross_process_concurrent_access() -> None:
     """Verifies the ability of the SharedMemoryArray class to handle concurrent access from multiple processes.
 
@@ -752,6 +754,11 @@ def test_cross_process_concurrent_access() -> None:
         process.start()
     for process in processes:
         process.join()
+
+    # Joins every process before reading the exit codes, so that a worker that fails does not leave its siblings
+    # unjoined.
+    for process in processes:
+        assert process.exitcode == 0
 
     # Finishes setting up the array in the local process, which is connected to the buffer since its creation.
 
