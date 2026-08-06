@@ -2,7 +2,6 @@
 
 import os
 import stat
-import errno
 import shutil
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,25 +10,13 @@ from ataraxis_time import PrecisionTimer, TimerPrecisions
 from ataraxis_base_utilities import console, resolve_worker_count, ensure_directory_exists
 
 from .checksum_tools import CHECKSUM_FILENAME, calculate_directory_checksum
+from .filesystem_tools import ABSENT_ENTRY_ERRNOS, walk_files, walk_directory
 
 _MAXIMUM_DELETION_ATTEMPTS: int = 5
 """The maximum number of times directory deletion is retried before giving up."""
 
 _DELETION_RETRY_DELAY_MILLISECONDS: int = 500
 """The delay in milliseconds between failed directory-deletion attempts."""
-
-_ABSENT_ENTRY_ERRNOS: frozenset[int] = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
-"""The metadata-query failures the entry classifier answers as an absent entry.
-
-Notes:
-    An entry that disappears between its discovery and its classification has to read as absent, since discovery and
-    classification are separate filesystem calls. ENOENT, ENOTDIR, and ELOOP each name a path component that does not
-    resolve, and EBADF joins them to absorb the spurious failure macOS stat raises.
-
-    Every other failure, a permission error above all, means the entry exists and its kind is unknown. Answering that
-    case as absent would file a symbolic link as a plain file, which loses the one property a caller distinguishing
-    links depends on.
-"""
 
 
 def delete_directory(directory_path: Path) -> None:
@@ -47,6 +34,10 @@ def delete_directory(directory_path: Path) -> None:
 
     Args:
         directory_path: The path to the directory to delete.
+
+    Raises:
+        OSError: If the directory, or any directory beneath it, cannot be read, or if an entry inside it cannot be
+            unlinked.
     """
     if not directory_path.exists():
         return
@@ -128,6 +119,9 @@ def transfer_directory(
 
     Raises:
         FileNotFoundError: If the source directory does not exist.
+        OSError: If any directory inside the source or the destination tree cannot be read, if a copied file cannot be
+            read or written, or if the source cannot be removed once ``remove_source`` is enabled. A discovery failure
+            leaves the destination untouched, since both trees are discovered before anything is written.
         RuntimeError: If the source directory contains a symlink, if the destination holds unaccounted files while
             ``reset_dirty_destination`` is disabled, or if the transferred files do not pass the xxHash3-128 checksum
             integrity verification.
@@ -264,8 +258,12 @@ def _collect_source_items(source: Path) -> tuple[list[Path], list[Path], list[Pa
 
     Returns:
         The subdirectories, files, and symlinks found anywhere under the source directory, each sorted by path depth.
+
+    Raises:
+        OSError: If the source directory does not exist, is not a directory, or cannot be read, if any directory
+            beneath it cannot be read, or if the metadata of an entry beneath it cannot be read.
     """
-    all_items = sorted(source.rglob("*"), key=lambda path: len(path.relative_to(source).parts))
+    all_items = sorted(walk_directory(directory=source), key=lambda path: len(path.relative_to(source).parts))
 
     symlinks: list[Path] = []
     subdirectories: list[Path] = []
@@ -289,7 +287,7 @@ def _classify_entry(path: Path) -> tuple[bool, bool]:
         One lstat call answers both questions. Since lstat reports a link rather than its target, a symbolic link
         answers False to the directory question whatever it points at.
 
-        An entry whose metadata query fails with one of the ``_ABSENT_ENTRY_ERRNOS`` answers False to both questions,
+        An entry whose metadata query fails with one of the ``ABSENT_ENTRY_ERRNOS`` answers False to both questions,
         which covers an entry that disappears between its discovery and this call. Every other failure propagates,
         since an entry that exists but cannot be read has an unknown kind rather than no kind.
 
@@ -305,7 +303,7 @@ def _classify_entry(path: Path) -> tuple[bool, bool]:
     try:
         entry_mode = os.lstat(path).st_mode
     except OSError as error:
-        if error.errno not in _ABSENT_ENTRY_ERRNOS:
+        if error.errno not in ABSENT_ENTRY_ERRNOS:
             raise
         return False, False
     return stat.S_ISLNK(entry_mode), stat.S_ISDIR(entry_mode)
@@ -325,12 +323,16 @@ def _find_unaccounted_destination_files(source: Path, destination: Path, source_
 
     Returns:
         The unaccounted destination files, sorted by path.
+
+    Raises:
+        OSError: If the destination directory does not exist, is not a directory, or cannot be read, if any
+            directory beneath it cannot be read, or if the kind of an entry beneath it cannot be determined.
     """
     expected = {file_path.relative_to(source) for file_path in source_files}
     return sorted(
         path
-        for path in destination.rglob("*")
-        if path.is_file() and path.name != CHECKSUM_FILENAME and path.relative_to(destination) not in expected
+        for path in walk_files(directory=destination)
+        if path.name != CHECKSUM_FILENAME and path.relative_to(destination) not in expected
     )
 
 

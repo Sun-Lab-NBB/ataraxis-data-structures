@@ -11,6 +11,7 @@ import xxhash
 from ataraxis_base_utilities import console, resolve_worker_count
 
 from .parallel_tools import limit_worker_threads
+from .filesystem_tools import walk_files
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -65,6 +66,13 @@ def calculate_directory_checksum(
 
     Returns:
         The xxHash3-128 checksum for the input directory as a hexadecimal string.
+
+    Raises:
+        OSError: If the directory does not exist, is not a directory, or cannot be read, if any directory beneath it
+            cannot be read, if the kind of an entry beneath it cannot be determined, if any discovered file cannot be
+            opened, or if the checksum file cannot be written while ``save_checksum`` is enabled. The digest covers
+            the whole tree or the call fails, since a digest computed over the readable subset would certify a subset
+            as the whole.
     """
     if excluded_files is None:
         excluded_files = {CHECKSUM_FILENAME}
@@ -155,10 +163,12 @@ def _discover_checksum_files(directory: Path, excluded_files: set[str]) -> list[
 
     Returns:
         The files found anywhere under the directory, excluding the omitted filenames, sorted by path.
+
+    Raises:
+        OSError: If the directory does not exist, is not a directory, or cannot be read, if any directory beneath it
+            cannot be read, or if the kind of an entry beneath it cannot be determined.
     """
-    return sorted(
-        path for path in directory.rglob("*") if path.is_file() and f"{path.stem}{path.suffix}" not in excluded_files
-    )
+    return sorted(path for path in walk_files(directory=directory) if path.name not in excluded_files)
 
 
 def _write_checksum_file(directory: Path, checksum: str) -> None:
