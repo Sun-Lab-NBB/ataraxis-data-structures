@@ -7,10 +7,17 @@ from pathlib import Path
 from collections.abc import Iterator
 
 import pytest
+from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import transfer_directory, calculate_directory_checksum
 from ataraxis_data_structures.processing.checksum_tools import _discover_checksum_files
-from ataraxis_data_structures.processing.filesystem_tools import walk_files, walk_directory
+from ataraxis_data_structures.processing.filesystem_tools import (
+    walk_files,
+    walk_directory,
+    resolve_unique_roots,
+    discover_marker_files,
+    discover_marker_roots,
+)
 
 _REQUIRES_ENFORCED_PERMISSIONS: pytest.MarkDecorator = pytest.mark.skipif(
     os.name != "posix" or os.geteuid() == 0,
@@ -327,3 +334,143 @@ class _RefusingEntry:
 
     def is_file(self) -> bool:
         raise PermissionError(self._error_number, "Injected failure", self.path)
+
+
+def test_discover_marker_files_reports_matches_at_any_depth(tmp_path: Path) -> None:
+    """Verifies that marker discovery reports every matching file in the tree, sorted by path."""
+    (tmp_path / "animal_2" / "session_b" / "raw_data").mkdir(parents=True)
+    (tmp_path / "animal_1" / "session_a" / "raw_data").mkdir(parents=True)
+    first = tmp_path / "animal_1" / "session_a" / "raw_data" / "session_data.yaml"
+    second = tmp_path / "animal_2" / "session_b" / "raw_data" / "session_data.yaml"
+    first.write_text("first")
+    second.write_text("second")
+    (tmp_path / "animal_1" / "other.yaml").write_text("other")
+
+    assert discover_marker_files(directory=tmp_path, marker_name="session_data.yaml") == [first, second]
+
+
+def test_discover_marker_files_omits_a_directory_carrying_the_marker_name(tmp_path: Path) -> None:
+    """Verifies that a directory named after the marker is not reported as a marker."""
+    (tmp_path / "session_data.yaml").mkdir()
+    (tmp_path / "nested").mkdir()
+    marker = tmp_path / "nested" / "session_data.yaml"
+    marker.write_text("payload")
+
+    assert discover_marker_files(directory=tmp_path, marker_name="session_data.yaml") == [marker]
+
+
+def test_discover_marker_files_reports_nothing_when_no_marker_matches(tmp_path: Path) -> None:
+    """Verifies that a tree holding no matching marker yields an empty result."""
+    (tmp_path / "data.txt").write_text("payload")
+
+    assert discover_marker_files(directory=tmp_path, marker_name="session_data.yaml") == []
+
+
+def test_discover_marker_files_raises_for_an_unreadable_subdirectory(unreadable_tree: Path) -> None:
+    """Verifies that marker discovery raises instead of silently omitting a subdirectory it cannot read."""
+    with pytest.raises(PermissionError):
+        discover_marker_files(directory=unreadable_tree, marker_name="hidden.txt")
+
+
+def test_discover_marker_roots_resolves_the_marker_parent_by_default(tmp_path: Path) -> None:
+    """Verifies that a marker written into the directory it describes resolves to that directory."""
+    owner = tmp_path / "dataset"
+    owner.mkdir()
+    (owner / "dataset.yaml").write_text("payload")
+
+    assert discover_marker_roots(directory=tmp_path, marker_name="dataset.yaml") == [owner]
+
+
+def test_discover_marker_roots_climbs_the_requested_number_of_levels(tmp_path: Path) -> None:
+    """Verifies that a marker nested below its owner resolves to the ancestor at the requested level."""
+    owner = tmp_path / "animal_1" / "session_a"
+    (owner / "raw_data").mkdir(parents=True)
+    (owner / "raw_data" / "session_data.yaml").write_text("payload")
+
+    assert discover_marker_roots(directory=tmp_path, marker_name="session_data.yaml", levels_up=1) == [owner]
+
+
+def test_discover_marker_roots_reports_one_entry_per_owning_directory(tmp_path: Path) -> None:
+    """Verifies that two markers resolving to the same owner contribute a single entry."""
+    owner = tmp_path / "session"
+    (owner / "raw_data").mkdir(parents=True)
+    (owner / "processed_data").mkdir()
+    (owner / "raw_data" / "marker.yaml").write_text("first")
+    (owner / "processed_data" / "marker.yaml").write_text("second")
+
+    assert discover_marker_roots(directory=tmp_path, marker_name="marker.yaml", levels_up=1) == [owner]
+
+
+def test_discover_marker_roots_rejects_a_negative_level_count(tmp_path: Path) -> None:
+    """Verifies that a negative level count is rejected."""
+    message = (
+        f"Unable to discover the roots of the 'marker.yaml' markers stored under '{tmp_path}'. The 'levels_up' "
+        f"argument must be greater than or equal to 0, but got -1."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        discover_marker_roots(directory=tmp_path, marker_name="marker.yaml", levels_up=-1)
+
+
+def test_discover_marker_roots_rejects_a_marker_without_the_requested_ancestor(tmp_path: Path) -> None:
+    """Verifies that a marker sitting too close to the filesystem root to have the requested ancestor is rejected."""
+    marker = tmp_path / "marker.yaml"
+    marker.write_text("payload")
+
+    with pytest.raises(ValueError, match="ancestor"):
+        discover_marker_roots(directory=tmp_path, marker_name="marker.yaml", levels_up=len(marker.parents))
+
+
+def test_resolve_unique_roots_truncates_each_path_at_its_distinguishing_component() -> None:
+    """Verifies that paths sharing a layout resolve to the ancestors naming what each one belongs to."""
+    first = Path("/data/animal_1/2026-01-01/raw_data/behavior_data_log")
+    second = Path("/data/animal_2/2026-02-02/raw_data/behavior_data_log")
+
+    assert resolve_unique_roots(paths=[first, second]) == (
+        Path("/data/animal_1/2026-01-01"),
+        Path("/data/animal_2/2026-02-02"),
+    )
+
+
+def test_resolve_unique_roots_resolves_a_lone_path_to_itself() -> None:
+    """Verifies that a path with no sibling to differ from resolves to its own final component."""
+    path = Path("/data/animal_1/raw_data")
+
+    assert resolve_unique_roots(paths=(path,)) == (path,)
+
+
+def test_resolve_unique_roots_reports_one_entry_per_distinct_root() -> None:
+    """Verifies that two paths resolving to the same ancestor contribute a single entry."""
+    first = Path("/data/recording_1/logs/camera")
+    second = Path("/data/recording_1/logs/microcontroller")
+
+    assert resolve_unique_roots(paths=[first, second]) == (first, second)
+
+
+def test_resolve_unique_roots_handles_paths_of_differing_depths() -> None:
+    """Verifies that resolution assumes no fixed depth for the structure shared below the distinguishing component."""
+    first = Path("/data/recording_1/deeply/nested/logs")
+    second = Path("/data/recording_2/logs")
+
+    # Each path truncates at its own deepest distinguishing component, so the two resolve at unequal depths.
+    assert resolve_unique_roots(paths=[first, second]) == (
+        Path("/data/recording_1/deeply/nested"),
+        Path("/data/recording_2"),
+    )
+
+
+def test_resolve_unique_roots_rejects_paths_sharing_every_component() -> None:
+    """Verifies that a path carrying no component the other paths lack is rejected."""
+    path = Path("/data/recording")
+
+    with pytest.raises(ValueError, match="shares all"):
+        resolve_unique_roots(paths=[path, path])
+
+
+def test_resolve_unique_roots_stops_at_the_filesystem_root() -> None:
+    """Verifies that a distinguishing component the upward walk cannot match terminates the walk at the root."""
+    # The absolute path is distinguished by its root component alone, which no ancestor carries as its name, so the
+    # walk climbs to the filesystem root rather than looping there.
+    absolute = Path("/shared")
+    relative = Path("relative/shared")
+
+    assert resolve_unique_roots(paths=[absolute, relative]) == (Path(absolute.parts[0]), Path("relative"))

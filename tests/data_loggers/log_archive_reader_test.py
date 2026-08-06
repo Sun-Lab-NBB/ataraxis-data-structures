@@ -7,9 +7,20 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 from ataraxis_time import TimestampFormats, TimestampPrecisions, get_timestamp
-from ataraxis_base_utilities import convert_scalar_to_bytes
+from ataraxis_base_utilities import error_format, convert_scalar_to_bytes
 
-from ataraxis_data_structures import DataLogger, LogMessage, LogPackage, LogArchiveReader, assemble_log_archives
+from ataraxis_data_structures import (
+    LOG_ARCHIVE_SUFFIX,
+    LOG_DIRECTORY_SUFFIX,
+    DataLogger,
+    LogMessage,
+    LogPackage,
+    LogArchiveReader,
+    find_log_archive,
+    assemble_log_archives,
+    discover_log_archives,
+    read_archive_message_count,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -494,3 +505,155 @@ def _create_test_archive(
     np.savez(file=archive_path, **arrays)
 
     return payloads
+
+
+class TestArchiveDiscovery:
+    """Contains tests for the module-level archive discovery and probing functions."""
+
+    def test_find_log_archive_locates_a_nested_archive(self, tmp_path: Path) -> None:
+        """Verifies that the search descends into subdirectories to resolve an archive from its source ID."""
+        nested = tmp_path / "session" / "raw_data" / "behavior_data_log"
+        nested.mkdir(parents=True)
+        archive_path = nested / f"7{LOG_ARCHIVE_SUFFIX}"
+        _create_test_archive(archive_path=archive_path, source_id=7, onset_us=1700000000000000, message_count=3)
+
+        assert find_log_archive(log_directory=tmp_path, source_id="7") == archive_path
+
+    def test_find_log_archive_rejects_a_missing_directory(self, tmp_path: Path) -> None:
+        """Verifies that a log directory that does not exist is rejected."""
+        missing = tmp_path / "never_created"
+        message = (
+            f"Unable to find the log archive of source '7' in '{missing}'. The path does not exist or is not a "
+            f"directory."
+        )
+        with pytest.raises(FileNotFoundError, match=error_format(message)):
+            find_log_archive(log_directory=missing, source_id="7")
+
+    def test_find_log_archive_rejects_a_directory_holding_no_matching_archive(self, tmp_path: Path) -> None:
+        """Verifies that a tree holding no archive for the requested source is rejected."""
+        message = (
+            f"Unable to find the log archive of source '7' in '{tmp_path}'. No file named '7{LOG_ARCHIVE_SUFFIX}' "
+            f"was found anywhere under the directory."
+        )
+        with pytest.raises(FileNotFoundError, match=error_format(message)):
+            find_log_archive(log_directory=tmp_path, source_id="7")
+
+    def test_find_log_archive_rejects_an_ambiguous_source(self, tmp_path: Path) -> None:
+        """Verifies that a tree holding one archive per logger for the same source ID is rejected as ambiguous."""
+        for logger_name in ("first_data_log", "second_data_log"):
+            directory = tmp_path / logger_name
+            directory.mkdir()
+            _create_test_archive(
+                archive_path=directory / f"7{LOG_ARCHIVE_SUFFIX}",
+                source_id=7,
+                onset_us=1700000000000000,
+                message_count=1,
+            )
+
+        with pytest.raises(ValueError, match="but 2 were found"):
+            find_log_archive(log_directory=tmp_path, source_id="7")
+
+    def test_discover_log_archives_maps_every_archive_to_its_source(self, tmp_path: Path) -> None:
+        """Verifies that discovery keys each archive stored directly in the directory by its source ID."""
+        for source_id in (3, 11):
+            _create_test_archive(
+                archive_path=tmp_path / f"{source_id}{LOG_ARCHIVE_SUFFIX}",
+                source_id=source_id,
+                onset_us=1700000000000000,
+                message_count=2,
+            )
+        nested = tmp_path / "nested"
+        nested.mkdir()
+        _create_test_archive(
+            archive_path=nested / f"5{LOG_ARCHIVE_SUFFIX}", source_id=5, onset_us=1700000000000000, message_count=2
+        )
+
+        discovered = discover_log_archives(log_directory=tmp_path)
+
+        # The nested archive belongs to a different logger, so it is absent from this logger's mapping.
+        assert discovered == {
+            "3": tmp_path / f"3{LOG_ARCHIVE_SUFFIX}",
+            "11": tmp_path / f"11{LOG_ARCHIVE_SUFFIX}",
+        }
+
+    def test_discover_log_archives_omits_a_directory_carrying_an_archive_name(self, tmp_path: Path) -> None:
+        """Verifies that a directory whose name matches the archive pattern contributes no entry."""
+        (tmp_path / f"7{LOG_ARCHIVE_SUFFIX}").mkdir()
+        _create_test_archive(
+            archive_path=tmp_path / f"3{LOG_ARCHIVE_SUFFIX}",
+            source_id=3,
+            onset_us=1700000000000000,
+            message_count=1,
+        )
+
+        assert discover_log_archives(log_directory=tmp_path) == {"3": tmp_path / f"3{LOG_ARCHIVE_SUFFIX}"}
+
+    def test_discover_log_archives_omits_a_file_naming_no_source(self, tmp_path: Path) -> None:
+        """Verifies that a file whose whole name is the archive suffix contributes no entry."""
+        (tmp_path / LOG_ARCHIVE_SUFFIX).write_bytes(b"")
+
+        assert discover_log_archives(log_directory=tmp_path) == {}
+
+    def test_discover_log_archives_rejects_a_missing_directory(self, tmp_path: Path) -> None:
+        """Verifies that a log directory that does not exist is rejected."""
+        missing = tmp_path / "never_created"
+        message = (
+            f"Unable to discover the log archives stored in '{missing}'. The path does not exist or is not a directory."
+        )
+        with pytest.raises(FileNotFoundError, match=error_format(message)):
+            discover_log_archives(log_directory=missing)
+
+    @pytest.mark.parametrize("message_count", [0, 1, 25])
+    def test_read_archive_message_count_matches_the_reader(self, tmp_path: Path, message_count: int) -> None:
+        """Verifies that the probe agrees with the count the reader derives from the same archive."""
+        archive_path = tmp_path / f"9{LOG_ARCHIVE_SUFFIX}"
+        _create_test_archive(
+            archive_path=archive_path, source_id=9, onset_us=1700000000000000, message_count=message_count
+        )
+
+        assert read_archive_message_count(archive_path=archive_path) == message_count
+        assert (
+            read_archive_message_count(archive_path=archive_path)
+            == LogArchiveReader(archive_path=archive_path).message_count
+        )
+
+    def test_read_archive_message_count_rejects_a_missing_archive(self, tmp_path: Path) -> None:
+        """Verifies that an archive path that does not resolve to a file is rejected."""
+        missing = tmp_path / "absent_log.npz"
+        message = (
+            f"Unable to read the message count of the log archive at '{missing}'. The path does not exist or is not "
+            f"a file."
+        )
+        with pytest.raises(FileNotFoundError, match=error_format(message)):
+            read_archive_message_count(archive_path=missing)
+
+    def test_data_logger_output_uses_the_exported_naming_constants(self, tmp_path: Path) -> None:
+        """Verifies that a logger names its output directory and its archives with the exported suffixes."""
+        logger = DataLogger(output_directory=tmp_path, instance_name="behavior")
+        output_directory = tmp_path / f"behavior{LOG_DIRECTORY_SUFFIX}"
+        assert output_directory.is_dir()
+
+        logger.start()
+        logger.input_queue.put(
+            LogPackage(
+                source_id=np.uint8(4),
+                acquisition_time=np.uint64(0),
+                serialized_data=convert_scalar_to_bytes(value=1700000000000000, dtype=np.dtype(np.uint64)),
+            )
+        )
+        logger.input_queue.put(
+            LogPackage(
+                source_id=np.uint8(4),
+                acquisition_time=np.uint64(1000),
+                serialized_data=np.array([1, 2], dtype=np.uint8),
+            )
+        )
+        logger.stop()
+        assemble_log_archives(
+            log_directory=output_directory, remove_sources=True, verify_integrity=False, verbose=False
+        )
+
+        archives = discover_log_archives(log_directory=output_directory)
+
+        assert archives == {"4": output_directory / f"4{LOG_ARCHIVE_SUFFIX}"}
+        assert read_archive_message_count(archive_path=archives["4"]) == 1

@@ -1,16 +1,19 @@
 """Provides assets for running data processing pipelines and tracking their progress."""
 
 import os
-from enum import IntEnum
-from typing import Any
+from enum import IntEnum, StrEnum
+from typing import Any, Self
 from pathlib import Path
+from contextlib import contextmanager
 from dataclasses import field, replace, dataclass
+from collections.abc import Mapping, Iterator
 
 import xxhash
 from filelock import FileLock
 from ataraxis_time import TimestampFormats, TimestampPrecisions, get_timestamp
 from ataraxis_base_utilities import LogLevel, console
 
+from ..processing import discover_marker_files
 from .yaml_config import YAML_EXCLUDE_METADATA, YamlConfig
 
 _SCHEDULER_EXECUTOR_SOURCES: tuple[tuple[str, tuple[str, ...], str | None], ...] = (
@@ -58,6 +61,27 @@ class ProcessingStatus(IntEnum):
     """Indicates the job has been completed successfully."""
     FAILED = 3
     """Indicates the job encountered a runtime error and was not completed."""
+
+
+class TrackerStatus(StrEnum):
+    """Defines the high-level progress labels that summarize the job registry of a ``ProcessingTracker`` instance.
+
+    Notes:
+        A label describes the pipeline the tracker follows, while a ``ProcessingStatus`` member describes one job
+        inside that pipeline.
+    """
+
+    NOT_STARTED = "not_started"
+    """Indicates every tracked job is still scheduled."""
+    IN_PROGRESS = "in_progress"
+    """Indicates the tracked jobs have mixed outcomes with none running and none failed, which also covers a tracker
+    holding no jobs at all."""
+    PROCESSING = "processing"
+    """Indicates at least one tracked job is currently running."""
+    COMPLETED = "completed"
+    """Indicates every tracked job succeeded."""
+    FAILED = "failed"
+    """Indicates at least one tracked job failed."""
 
 
 @dataclass(slots=True)
@@ -129,6 +153,30 @@ class ProcessingTracker(YamlConfig):
         """
         return {**data, "file_path": file_path}
 
+    @classmethod
+    def discover(cls, root_directory: Path, tracker_name: str) -> list[Self]:
+        """Discovers every processing tracker with the target filename stored anywhere under the root directory.
+
+        Notes:
+            Each returned instance is bound to the file it was discovered at and holds no job state until one of its
+            readers loads that file, so surveying a large tree costs one traversal rather than one read per tracker.
+
+        Args:
+            root_directory: The root directory whose tree is searched.
+            tracker_name: The exact filename every discovered tracker .yaml file carries.
+
+        Returns:
+            A tracker bound to every matching file found anywhere under the root directory, sorted by file path.
+
+        Raises:
+            OSError: If the root directory does not exist, is not a directory, or cannot be read, or if any directory
+                beneath it cannot be read.
+        """
+        return [
+            cls(file_path=tracker_path)
+            for tracker_path in discover_marker_files(directory=root_directory, marker_name=tracker_name)
+        ]
+
     @staticmethod
     def generate_job_id(job_name: str, specifier: str = "") -> str:
         """Generates a unique hexadecimal job identifier based on the job's name and optional specifier using the
@@ -160,6 +208,38 @@ class ProcessingTracker(YamlConfig):
 
         combined = f"{job_name}:{specifier}" if specifier else job_name
         return xxhash.xxh64(combined.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def resolve_status(summary: Mapping[str, int]) -> TrackerStatus:
+        """Resolves the high-level progress label that a tracker summary's job counts describe.
+
+        Notes:
+            Applies a fixed priority. A summary counting a failed job resolves to FAILED whatever else it counts, one
+            whose every job succeeded resolves to COMPLETED, one counting a running job resolves to PROCESSING, and
+            one whose every job is still scheduled resolves to NOT_STARTED. Every remaining case resolves to
+            IN_PROGRESS, which covers a summary counting no jobs at all, since the COMPLETED and NOT_STARTED branches
+            each require at least one counted job.
+
+            Counts aggregated across several trackers resolve the same way, so a caller reporting on a directory of
+            trackers labels the group with the same priority it labels each member.
+
+        Args:
+            summary: The job counts to resolve, carrying the 'total', 'succeeded', 'failed', 'running', and
+                'scheduled' keys that ``summarize()`` produces. An absent key counts as zero.
+
+        Returns:
+            The label matching the highest-priority condition the counts satisfy.
+        """
+        total = summary.get("total", 0)
+        if summary.get("failed", 0) > 0:
+            return TrackerStatus.FAILED
+        if total > 0 and summary.get("succeeded", 0) == total:
+            return TrackerStatus.COMPLETED
+        if summary.get("running", 0) > 0:
+            return TrackerStatus.PROCESSING
+        if total > 0 and summary.get("scheduled", 0) == total:
+            return TrackerStatus.NOT_STARTED
+        return TrackerStatus.IN_PROGRESS
 
     def initialize_jobs(self, jobs: list[tuple[str, str]]) -> list[str]:
         """Configures the tracker with the list of one or more jobs to be executed during the pipeline's runtime.
@@ -282,6 +362,49 @@ class ProcessingTracker(YamlConfig):
             self._save_state()
             return [job_id for job_id, _, _ in requested]
 
+    def resolve_job(self, job_id: str, universe: list[tuple[str, str]]) -> tuple[str, str]:
+        """Resolves the job that a hexadecimal identifier names within the pipeline's declared job universe.
+
+        Notes:
+            An invocation handed the identifier of the single job it is to run has to recover that job's name and
+            specifier before it is able to execute it. Resolving against the universe rather than against the
+            tracker's own registry lets the invocation reject an unknown identifier before the tracker holds any
+            entry for it, which keeps a mistyped identifier from registering a job the pipeline cannot produce.
+
+        Args:
+            job_id: The unique hexadecimal identifier of the job to resolve.
+            universe: The (job_name, specifier) tuples enumerating every job the pipeline could produce for its
+                current definition.
+
+        Returns:
+            The name and the specifier of the job the identifier names.
+
+        Raises:
+            ValueError: If the declared universe is empty, or if the identifier names no job within it.
+        """
+        if not universe:
+            message = (
+                f"Unable to resolve the job with ID '{job_id}' against the job universe of the processing tracker at "
+                f"'{self.file_path}'. The 'universe' argument must name at least one job, but an empty list was "
+                f"provided."
+            )
+            console.error(message=message, error=ValueError)
+
+        candidates = {
+            self.generate_job_id(job_name=job_name, specifier=specifier): (job_name, specifier)
+            for job_name, specifier in universe
+        }
+
+        if job_id not in candidates:
+            message = (
+                f"Unable to resolve the job with ID '{job_id}' against the job universe of the processing tracker at "
+                f"'{self.file_path}'. The identifier must name a job the pipeline could produce, but the universe "
+                f"holds only the jobs with IDs: {', '.join(sorted(candidates))}."
+            )
+            console.error(message=message, error=ValueError)
+
+        return candidates[job_id]
+
     def snapshot(self) -> dict[str, JobState]:
         """Returns a point-in-time copy of the tracker's complete job registry.
 
@@ -313,6 +436,47 @@ class ProcessingTracker(YamlConfig):
             # immutable scalar, so a per-entry replace() is a complete copy and is cheaper than a deep copy.
             return {job_id: replace(job_state) for job_id, job_state in self.jobs.items()}
 
+    def summarize(self) -> dict[str, Any]:
+        """Returns the tracker's job registry as per-job details, aggregate job counts, and a progress label.
+
+        Notes:
+            Reports every field ``JobState`` carries, so a consumer serializing the returned details preserves the
+            registry rather than a projection of it. A job that recorded no failure reason omits the 'error_message'
+            key instead of carrying it as an empty value.
+
+        Returns:
+            A dictionary carrying the per-job details under 'jobs', the tracked job total alongside the count of the
+            jobs holding each status under 'summary', and the label those counts resolve to under 'status'.
+
+        Raises:
+            TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+        """
+        registry = self.snapshot()
+
+        job_details: list[dict[str, Any]] = [
+            {
+                "job_id": job_id,
+                "job_name": job_state.job_name,
+                "specifier": job_state.specifier,
+                "status": job_state.status.name,
+                "executor_id": job_state.executor_id,
+                "started_at": job_state.started_at,
+                "completed_at": job_state.completed_at,
+                **({} if job_state.error_message is None else {"error_message": job_state.error_message}),
+            }
+            for job_id, job_state in registry.items()
+        ]
+
+        counts: dict[str, int] = {
+            "total": len(registry),
+            "succeeded": sum(1 for state in registry.values() if state.status == ProcessingStatus.SUCCEEDED),
+            "failed": sum(1 for state in registry.values() if state.status == ProcessingStatus.FAILED),
+            "running": sum(1 for state in registry.values() if state.status == ProcessingStatus.RUNNING),
+            "scheduled": sum(1 for state in registry.values() if state.status == ProcessingStatus.SCHEDULED),
+        }
+
+        return {"jobs": job_details, "summary": counts, "status": self.resolve_status(summary=counts)}
+
     def find_jobs(self, job_name: str | None = None, specifier: str | None = None) -> dict[str, tuple[str, str]]:
         """Searches for jobs matching the given name and/or specifier patterns.
 
@@ -342,6 +506,38 @@ class ProcessingTracker(YamlConfig):
                     matches[job_id] = (job_state.job_name, job_state.specifier)
 
             return matches
+
+    @contextmanager
+    def run_job(self, job_id: str, executor_id: str | None = None) -> Iterator[None]:
+        """Runs a single tracked job, recording its start, its completion, and its failure on the tracker.
+
+        Notes:
+            Owns the job's state transitions and leaves the work itself to the wrapped block. The guard spans both
+            the block and the completion call, so an ``Exception`` raised by either marks the job failed, records the
+            exception's message as the failure reason, and re-raises the exception unchanged.
+
+            A ``BaseException`` such as ``KeyboardInterrupt`` propagates with the job left running, since an
+            interrupted job did not fail on its own terms and its executor is the authority on what became of it.
+
+        Args:
+            job_id: The unique identifier of the job to run.
+            executor_id: An optional explicit identifier for the executor running the job. When None (default), the
+                identifier is resolved automatically from the runtime environment.
+
+        Yields:
+            None. The tracker holds the job in its running state for the duration of the block.
+
+        Raises:
+            TimeoutError: If the .LOCK file for the tracker .YAML file cannot be acquired within the timeout period.
+            ValueError: If the specified job ID is not found in the managed tracker file.
+        """
+        self.start_job(job_id=job_id, executor_id=executor_id)
+        try:
+            yield
+            self.complete_job(job_id=job_id)
+        except Exception as exception:
+            self.fail_job(job_id=job_id, error_message=str(exception))
+            raise
 
     def start_job(self, job_id: str, executor_id: str | None = None) -> None:
         """Marks the target job as running and records the identifier of the executor running it.

@@ -43,6 +43,22 @@ if TYPE_CHECKING:
     from numpy.typing import NDArray
 
 
+LOG_DIRECTORY_SUFFIX: str = "_data_log"
+"""The name suffix of the output directory each DataLogger instance creates for its log entries and archives.
+
+Notes:
+    Every directory is named ``{instance_name}{LOG_DIRECTORY_SUFFIX}`` after the logger instance that owns it, so a
+    consumer resolves a logger's output directory from the logger's name alone.
+"""
+
+LOG_ARCHIVE_SUFFIX: str = "_log.npz"
+"""The filename suffix of the .npz log archives ``assemble_log_archives()`` writes.
+
+Notes:
+    Every archive is named ``{source_id}{LOG_ARCHIVE_SUFFIX}`` after the source whose entries it holds, so a consumer
+    resolves an archive from a source ID alone.
+"""
+
 _MULTIPROCESSING_CONTEXT: SpawnContext = get_context("spawn")
 """The spawn-based multiprocessing context used to create the process pool that assembles log archives, ensuring
 identical cross-platform behavior on all supported platforms."""
@@ -167,7 +183,7 @@ class DataLogger:
         # If necessary, ensures that the output directory tree exists. The path is declared as a directory, since an
         # instance name carrying a dot would otherwise leave the final component reading as a file suffix, which would
         # create the parent alone and leave the logger writing into a directory that does not exist.
-        self._output_directory: Path = output_directory.joinpath(f"{self._name}_data_log")
+        self._output_directory: Path = output_directory.joinpath(f"{self._name}{LOG_DIRECTORY_SUFFIX}")
         ensure_directory_exists(path=self._output_directory, is_file=False)
 
         # Sets up the multiprocessing Queue to be shared by all logger and data source processes.
@@ -669,7 +685,7 @@ def _assemble_archive(
     Returns:
         The first element is the source ID code. The second is the path to the uncompressed .npz log archive.
     """
-    output_path = output_directory.joinpath(f"{source_id}_log.npz")
+    output_path = output_directory.joinpath(f"{source_id}{LOG_ARCHIVE_SUFFIX}")
 
     np.savez(file=output_path, allow_pickle=False, **source_data)
 
