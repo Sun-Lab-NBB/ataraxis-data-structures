@@ -1,0 +1,94 @@
+from typing import Any
+from pathlib import Path
+from threading import Lock, Thread
+from contextlib import contextmanager
+from dataclasses import dataclass
+from collections.abc import Generator
+from multiprocessing import Queue as MultiprocessingQueue
+from concurrent.futures import Future
+from multiprocessing.context import SpawnContext
+from multiprocessing.process import BaseProcess
+from multiprocessing.managers import SyncManager
+
+import numpy as np
+from numpy.typing import NDArray as NDArray
+
+from ..processing import limit_worker_threads as limit_worker_threads
+from ..shared_memory import SharedMemoryArray as SharedMemoryArray
+
+LOG_DIRECTORY_SUFFIX: str
+LOG_ARCHIVE_SUFFIX: str
+_MULTIPROCESSING_CONTEXT: SpawnContext
+_BATCH_OVERSCALE_FACTOR: int
+_SOURCE_ID_BYTE_SIZE: int
+_HEADER_BYTE_SIZE: int
+
+@dataclass(frozen=True, slots=True)
+class LogPackage:
+    source_id: np.uint8
+    acquisition_time: np.uint64
+    serialized_data: NDArray[np.uint8]
+    @property
+    def data(self) -> tuple[str, NDArray[np.uint8]]: ...
+
+class DataLogger:
+    _started: bool
+    _shutdown_lock: Lock
+    _multiprocessing_context: SpawnContext
+    _multiprocessing_manager: SyncManager
+    _thread_count: int
+    _poll_interval: int
+    _name: str
+    _output_directory: Path
+    _input_queue: MultiprocessingQueue
+    _terminator_array: SharedMemoryArray | None
+    _logger_process: BaseProcess | None
+    _watchdog_thread: Thread | None
+    def __init__(
+        self, output_directory: Path, instance_name: str, thread_count: int = 5, poll_interval: int = 5
+    ) -> None: ...
+    def __repr__(self) -> str: ...
+    def __del__(self) -> None: ...
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
+    @property
+    def input_queue(self) -> MultiprocessingQueue: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def alive(self) -> bool: ...
+    @property
+    def output_directory(self) -> Path: ...
+    def _watchdog(self) -> None: ...
+    @staticmethod
+    def _save_data(filename: Path, data: NDArray[np.uint8]) -> None: ...
+    @staticmethod
+    def _retire_completed_writes(pending_writes: list[Future[None]]) -> list[Future[None]]: ...
+    @staticmethod
+    def _log_cycle(
+        input_queue: MultiprocessingQueue,
+        terminator_array: SharedMemoryArray,
+        output_directory: Path,
+        thread_count: int,
+        poll_interval: int,
+    ) -> None: ...
+
+def assemble_log_archives(
+    log_directory: Path,
+    max_workers: int | None = None,
+    *,
+    remove_sources: bool = True,
+    memory_mapping: bool = True,
+    verbose: bool = False,
+    verify_integrity: bool = False,
+) -> None: ...
+@contextmanager
+def _progress_display(*, enabled: bool) -> Generator[None, None, None]: ...
+def _load_numpy_files(
+    file_paths: tuple[Path, ...], *, memory_map: bool = False
+) -> tuple[tuple[str, ...], tuple[NDArray[Any], ...]]: ...
+def _load_numpy_archive(file_path: Path) -> dict[str, NDArray[Any]]: ...
+def _assemble_archive(
+    output_directory: Path, source_id: int, source_data: dict[str, NDArray[Any]]
+) -> tuple[int, Path]: ...
+def _compare_arrays(source_id: int, stem: str, original_array: NDArray[Any], archived_array: NDArray[Any]) -> None: ...
