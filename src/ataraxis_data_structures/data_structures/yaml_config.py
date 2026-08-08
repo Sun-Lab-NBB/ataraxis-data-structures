@@ -4,17 +4,18 @@ serialized document.
 """
 
 import os
+import sys
 from enum import Enum
 from types import UnionType, MappingProxyType
 from typing import Any, Self, Union, get_args, get_origin, get_type_hints
 from pathlib import Path
-from tempfile import mkstemp
 from functools import lru_cache
 from dataclasses import fields, dataclass, is_dataclass
 from collections.abc import Mapping, Callable
 
 import yaml
 from dacite import Config, from_dict
+from ataraxis_time import PrecisionTimer, TimerPrecisions
 from ataraxis_base_utilities import console, ensure_directory_exists
 
 _YAML_EXCLUDE_METADATA_KEY: str = "yaml_exclude"
@@ -27,6 +28,27 @@ Notes:
     A field declared as ``field(metadata=YAML_EXCLUDE_METADATA)`` is skipped when the instance is written, which suits
     a field describing where the instance lives rather than what it holds. A class excluding a field that its
     constructor requires supplies the value back through ``restore_excluded_fields()``.
+"""
+
+_WRITE_PERMISSION_BITS: int = 0o666
+"""The permission bits requested for a written document, before the process umask narrows them.
+
+Notes:
+    Matches the bits the built-in open() requests, so a document this class writes carries the same permissions as
+    every other file the library produces. The umask supplies the narrowing, which keeps the decision with the host
+    rather than with this module.
+"""
+
+_RENAME_RETRY_COUNT: int = 5
+"""The maximum number of times publishing a written document is attempted before the failure propagates."""
+
+_RENAME_RETRY_DELAY_MILLISECONDS: int = 500
+"""The delay in milliseconds before the second attempt to publish a written document.
+
+Notes:
+    The delay doubles on each further attempt, which suits a holder that keeps the destination open for a duration
+    this module cannot predict. A scanner reading a small document releases it within the first delay, while one
+    working through a large directory takes longer than a fixed delay would allow for.
 """
 
 _MAPPING_ARGUMENT_COUNT: int = 2
@@ -45,6 +67,40 @@ _LIBYAML_AVAILABLE: bool = hasattr(yaml, "CSafeLoader")
 select them wherever they are available, since they carry values through the same safe constructor and the same
 representer as the pure-Python implementations while running about an order of magnitude faster. Builds without
 libyaml fall back to the pure-Python implementations."""
+
+
+def _publish_document(temporary_path: Path, file_path: Path) -> None:
+    """Renames the written temporary document over the destination path.
+
+    Notes:
+        Windows refuses the rename while another process holds the destination open without sharing its deletion,
+        which a scanner or an indexer does for as long as it takes to read the file. The attempt is repeated with a
+        doubling delay there, since the holder releases the file on its own. Every other platform replaces an open
+        destination without complaint and renames on the first attempt.
+
+    Args:
+        temporary_path: The path to the written temporary file.
+        file_path: The destination path the temporary file is renamed to.
+
+    Raises:
+        PermissionError: If the destination stays locked by another process for every attempt.
+    """
+    if sys.platform != "win32":
+        temporary_path.replace(target=file_path)
+        return
+
+    delay_timer = PrecisionTimer(precision=TimerPrecisions.MILLISECOND)
+    delay = _RENAME_RETRY_DELAY_MILLISECONDS
+    for attempt in range(_RENAME_RETRY_COUNT):
+        try:
+            temporary_path.replace(target=file_path)
+        except PermissionError:
+            if attempt == _RENAME_RETRY_COUNT - 1:
+                raise
+            delay_timer.delay(block=False, delay=delay, allow_sleep=True)
+            delay *= 2
+        else:
+            return
 
 
 def _serialize_value(value: Any) -> Any:
@@ -302,7 +358,8 @@ class YamlConfig:
             load, so annotate such a field concretely when the restored type matters.
 
             The file is written through a temporary file and renamed into place, so a process killed mid-write leaves
-            the previously saved file intact. Both reading and writing use UTF-8 regardless of the host locale.
+            the previously saved file intact. Both reading and writing use UTF-8 regardless of the host locale. The
+            written file carries the permissions the process umask allows, matching the built-in open().
 
         Args:
             file_path: The path to the .yaml file to write.
@@ -340,8 +397,11 @@ class YamlConfig:
         # Serializes the dataclass to a YAML-safe dict tree (Path -> str, Enum -> value, tuple -> list) and writes it
         # through a temporary file created in the destination's own directory, so the rename below stays inside one
         # filesystem and is therefore atomic. A writer killed mid-dump leaves the previous complete document in place,
-        # rather than the empty file that truncating the destination first would leave.
-        descriptor, temporary_path = mkstemp(dir=file_path.parent, prefix=f".{file_path.name}.", suffix=".tmp")
+        # rather than the empty file that truncating the destination first would leave. The temporary file is opened
+        # rather than drawn from mkstemp(), which hardcodes the 0o600 bits that suit a private scratch file and leave
+        # a published configuration file readable only by the account that wrote it.
+        temporary_path = file_path.with_name(f".{file_path.name}.{os.getpid()}.tmp")
+        descriptor = os.open(temporary_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, _WRITE_PERMISSION_BITS)
         try:
             with os.fdopen(fd=descriptor, mode="w", encoding="utf-8") as yaml_file:
                 yaml.dump(  # type: ignore[call-overload]
@@ -353,9 +413,9 @@ class YamlConfig:
                 # Forces the data out of the userspace and kernel buffers before the rename publishes the file.
                 yaml_file.flush()
                 os.fsync(yaml_file.fileno())
-            Path(temporary_path).replace(target=file_path)
+            _publish_document(temporary_path=temporary_path, file_path=file_path)
         except BaseException:
-            Path(temporary_path).unlink(missing_ok=True)
+            temporary_path.unlink(missing_ok=True)
             raise
 
     @classmethod

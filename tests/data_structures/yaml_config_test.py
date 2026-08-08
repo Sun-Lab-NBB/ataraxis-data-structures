@@ -1,5 +1,7 @@
 """Contains tests for classes and methods provided by the yaml_config.py module."""
 
+import os
+import sys
 from enum import IntEnum, StrEnum
 from typing import Any, Union, Optional
 from pathlib import Path
@@ -67,6 +69,29 @@ def test_yaml_config_to_yaml(tmp_path: Path, config_path: Path, expected_content
     with full_path.open(mode="r") as yaml_file:
         loaded_content = yaml.safe_load(yaml_file)
         assert loaded_content == expected_content, f"Expected {expected_content}, but got {loaded_content}"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows resolves file access through ACLs, not permission bits")
+def test_yaml_config_to_yaml_permissions(tmp_path: Path) -> None:
+    """Verifies that to_yaml() writes a document carrying the permissions the process umask allows."""
+
+    @dataclass
+    class TestConfig(YamlConfig):
+        value: int = 1
+
+    file_path = tmp_path / "config.yaml"
+    TestConfig().to_yaml(file_path=file_path)
+
+    # Reads the umask by setting it, since the platform exposes no way to query it without doing so.
+    umask = os.umask(0)
+    os.umask(umask)
+
+    assert file_path.stat().st_mode & 0o777 == 0o666 & ~umask
+
+    # A group-readable and world-readable document is what a shared acquisition directory depends on, so the common
+    # umask is asserted directly against the literal it produces.
+    if umask == 0o022:
+        assert file_path.stat().st_mode & 0o777 == 0o644
 
 
 def test_yaml_config_to_yaml_errors(tmp_path: Path) -> None:
