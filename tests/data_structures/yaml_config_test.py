@@ -12,7 +12,13 @@ import pytest
 from ataraxis_base_utilities import error_format
 
 from ataraxis_data_structures import YAML_EXCLUDE_METADATA, YamlConfig
-from ataraxis_data_structures.data_structures.yaml_config import _serialize_value, _collect_type_hooks
+from ataraxis_data_structures.data_structures import yaml_config
+from ataraxis_data_structures.data_structures.yaml_config import (
+    _RENAME_RETRY_COUNT,
+    _serialize_value,
+    _publish_document,
+    _collect_type_hooks,
+)
 
 
 class Color(StrEnum):
@@ -92,6 +98,58 @@ def test_yaml_config_to_yaml_permissions(tmp_path: Path) -> None:
     # umask is asserted directly against the literal it produces.
     if umask == 0o022:
         assert file_path.stat().st_mode & 0o777 == 0o644
+
+
+def test_publish_document_retries_locked_destination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that _publish_document() retries the rename while a Windows destination stays locked."""
+    source = tmp_path / "source.tmp"
+    source.write_text("payload")
+    destination = tmp_path / "destination.yaml"
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(yaml_config, "_RENAME_RETRY_DELAY_MILLISECONDS", 1)
+
+    original_replace = Path.replace
+    attempts: list[Path] = []
+    message = "The destination is held open by another process."
+
+    def flaky_replace(self: Path, target: Path) -> Path:
+        attempts.append(target)
+        if len(attempts) < 3:
+            raise PermissionError(message)
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+
+    _publish_document(temporary_path=source, file_path=destination)
+
+    assert len(attempts) == 3
+    assert destination.read_text() == "payload"
+    assert not source.exists()
+
+
+def test_publish_document_exhausts_retries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that _publish_document() propagates the failure when a Windows destination never unlocks."""
+    source = tmp_path / "source.tmp"
+    source.write_text("payload")
+    destination = tmp_path / "destination.yaml"
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(yaml_config, "_RENAME_RETRY_DELAY_MILLISECONDS", 1)
+
+    attempts: list[Path] = []
+    message = "The destination is held open by another process."
+
+    def locked_replace(self: Path, target: Path) -> Path:
+        attempts.append(target)
+        raise PermissionError(message)
+
+    monkeypatch.setattr(Path, "replace", locked_replace)
+
+    with pytest.raises(PermissionError):
+        _publish_document(temporary_path=source, file_path=destination)
+
+    assert len(attempts) == _RENAME_RETRY_COUNT
 
 
 def test_yaml_config_to_yaml_errors(tmp_path: Path) -> None:

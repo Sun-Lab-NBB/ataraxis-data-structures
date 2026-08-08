@@ -6,10 +6,14 @@ from collections.abc import Callable as Callable
 
 _YAML_EXCLUDE_METADATA_KEY: str
 YAML_EXCLUDE_METADATA: MappingProxyType[str, bool]
+_WRITE_PERMISSION_BITS: int
+_RENAME_RETRY_COUNT: int
+_RENAME_RETRY_DELAY_MILLISECONDS: int
 _MAPPING_ARGUMENT_COUNT: int
 _TYPE_HOOK_CACHE_SIZE: int
 _LIBYAML_AVAILABLE: bool
 
+def _publish_document(temporary_path: Path, file_path: Path) -> None: ...
 def _serialize_value(value: Any) -> Any: ...
 def _make_union_enum_hook(enum_types: list[type]) -> Callable[[Any], Any]: ...
 def _make_mapping_key_hook(key_type: type) -> Callable[[Any], Any]: ...
