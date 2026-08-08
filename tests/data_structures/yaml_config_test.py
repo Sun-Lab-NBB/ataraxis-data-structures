@@ -100,6 +100,31 @@ def test_yaml_config_to_yaml_permissions(tmp_path: Path) -> None:
         assert file_path.stat().st_mode & 0o777 == 0o644
 
 
+def test_publish_document_renames_on_posix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that _publish_document() publishes the document with a single rename on a non-Windows host."""
+    source = tmp_path / "source.tmp"
+    source.write_text("payload")
+    destination = tmp_path / "destination.yaml"
+
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    original_replace = Path.replace
+    attempts: list[Path] = []
+
+    def counting_replace(self: Path, target: Path) -> Path:
+        attempts.append(target)
+        return original_replace(self, target=target)
+
+    monkeypatch.setattr(Path, "replace", counting_replace)
+
+    _publish_document(temporary_path=source, file_path=destination)
+
+    # A single attempt is what separates this branch from the Windows one, which wraps the rename in a retry loop.
+    assert len(attempts) == 1
+    assert destination.read_text() == "payload"
+    assert not source.exists()
+
+
 def test_publish_document_retries_locked_destination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verifies that _publish_document() retries the rename while a Windows destination stays locked."""
     source = tmp_path / "source.tmp"
