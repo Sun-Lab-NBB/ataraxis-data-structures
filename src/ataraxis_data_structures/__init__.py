@@ -8,6 +8,8 @@ Authors: Ivan Kondratyev (Inkaros)
 """
 
 from .processing import (
+    atomic_write,
+    direct_write,
     delete_directory,
     interpolate_data,
     index_marker_files,
@@ -59,8 +61,10 @@ __all__ = [
     "TrackerStatus",
     "YamlConfig",
     "assemble_log_archives",
+    "atomic_write",
     "calculate_directory_checksum",
     "delete_directory",
+    "direct_write",
     "discover_log_archives",
     "discover_marker_files",
     "discover_marker_roots",

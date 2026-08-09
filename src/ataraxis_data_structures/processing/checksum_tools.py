@@ -10,6 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import xxhash
 from ataraxis_base_utilities import console, resolve_worker_count
 
+from .write_tools import atomic_write
 from .parallel_tools import limit_worker_threads, initialize_worker_threads
 from .filesystem_tools import walk_files
 
@@ -192,6 +193,8 @@ def _write_checksum_file(directory: Path, checksum: str) -> None:
         directory: The directory whose top level receives the ax_checksum.txt file.
         checksum: The hexadecimal checksum string to write.
     """
+    # Publishes the digest atomically, since regenerating it truncates the previous digest first and a writer killed
+    # partway would otherwise leave a truncated string that reads as a valid digest of different contents.
     checksum_path = directory.joinpath(CHECKSUM_FILENAME)
-    with checksum_path.open("w") as file:
+    with atomic_write(file_path=checksum_path) as file:
         file.write(checksum)

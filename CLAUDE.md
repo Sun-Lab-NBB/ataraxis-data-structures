@@ -134,6 +134,8 @@ dependency for other Ataraxis framework projects.
 | `calculate_directory_checksum`  | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                             |
 | `transfer_directory`            | `processing/transfer_tools.py`           | Parallel directory copy with verification                   |
 | `delete_directory`              | `processing/transfer_tools.py`           | Parallel directory deletion                                 |
+| `atomic_write`                  | `processing/write_tools.py`              | Replaces a file through a temporary sibling, published by rename |
+| `direct_write`                  | `processing/write_tools.py`              | Writes a file directly, for a destination nothing has open   |
 | `discover_marker_files`         | `processing/filesystem_tools.py`         | Finds every marker file with a given name                   |
 | `index_marker_files`            | `processing/filesystem_tools.py`         | Indexes many marker names in one depth-boundable pass       |
 | `discover_marker_roots`         | `processing/filesystem_tools.py`         | Finds the directories owning discovered markers             |
