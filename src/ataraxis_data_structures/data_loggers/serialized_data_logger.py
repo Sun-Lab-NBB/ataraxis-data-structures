@@ -29,7 +29,7 @@ from ataraxis_base_utilities import (
     ensure_directory_exists,
 )
 
-from ..processing import limit_worker_threads
+from ..processing import limit_worker_threads, initialize_worker_threads
 from ..shared_memory import SharedMemoryArray
 
 if TYPE_CHECKING:
@@ -505,11 +505,18 @@ def assemble_log_archives(
 
     # Initiates log processing. Since some steps of log processing are more efficiently executed via multithreading
     # and others via multiprocessing, uses both process and thread pool executors to efficiently process the data.
+    # The process pool is pinned from both sides. The environment limit reaches the backends that size their pool
+    # while they are being imported, and the initializer reaches numba, which latches its ceiling from an environment
+    # variable the limit deliberately leaves unset.
     with (
         _progress_display(enabled=verbose),
         limit_worker_threads(),
         console.temporarily_enabled(),
-        ProcessPoolExecutor(max_workers=max_workers, mp_context=_MULTIPROCESSING_CONTEXT) as process_executor,
+        ProcessPoolExecutor(
+            max_workers=max_workers,
+            mp_context=_MULTIPROCESSING_CONTEXT,
+            initializer=initialize_worker_threads,
+        ) as process_executor,
         ThreadPoolExecutor(max_workers=max_workers) as thread_executor,
     ):
         # PHASE 1: Loads source files in parallel batches.
