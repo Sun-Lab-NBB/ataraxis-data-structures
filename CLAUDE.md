@@ -128,12 +128,14 @@ dependency for other Ataraxis framework projects.
 | `LogMessage`                    | `data_loggers/log_archive_reader.py`     | Container for timestamp_us and payload                      |
 | `PARALLEL_PROCESSING_THRESHOLD` | `data_loggers/log_archive_reader.py`     | Message count below which `get_batches()` returns one batch |
 | `find_log_archive`              | `data_loggers/log_archive_reader.py`     | Resolves one source's archive anywhere under a tree         |
+| `find_log_archives`             | `data_loggers/log_archive_reader.py`     | Resolves many sources' archives in one pass over a tree     |
 | `discover_log_archives`         | `data_loggers/log_archive_reader.py`     | Maps source IDs to archives in one logger directory         |
 | `read_archive_message_count`    | `data_loggers/log_archive_reader.py`     | Counts archive messages without decoding                    |
 | `calculate_directory_checksum`  | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                             |
 | `transfer_directory`            | `processing/transfer_tools.py`           | Parallel directory copy with verification                   |
 | `delete_directory`              | `processing/transfer_tools.py`           | Parallel directory deletion                                 |
 | `discover_marker_files`         | `processing/filesystem_tools.py`         | Finds every marker file with a given name                   |
+| `index_marker_files`            | `processing/filesystem_tools.py`         | Indexes many marker names in one depth-boundable pass       |
 | `discover_marker_roots`         | `processing/filesystem_tools.py`         | Finds the directories owning discovered markers             |
 | `resolve_unique_roots`          | `processing/filesystem_tools.py`         | Truncates paths at their distinguishing component           |
 | `interpolate_data`              | `processing/interpolation.py`            | Time-series interpolation                                   |

@@ -5,6 +5,7 @@ from .log_archive_reader import (
     LogMessage,
     LogArchiveReader,
     find_log_archive,
+    find_log_archives,
     discover_log_archives,
     read_archive_message_count,
 )
@@ -27,5 +28,6 @@ __all__ = [
     "assemble_log_archives",
     "discover_log_archives",
     "find_log_archive",
+    "find_log_archives",
     "read_archive_message_count",
 ]
