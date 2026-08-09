@@ -1,5 +1,5 @@
 """Provides utilities for data integrity verification, directory transfer and deletion, data asset discovery, atomic
-file writing, data interpolation, and worker thread limiting.
+and direct file writing, data interpolation, and worker thread limiting.
 """
 
 from .write_tools import atomic_write, direct_write

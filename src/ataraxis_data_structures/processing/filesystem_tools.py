@@ -118,22 +118,20 @@ def index_marker_files(
     """Indexes every marker file carrying one of the target names, in a single pass over the target directory.
 
     Notes:
-        One traversal answers every requested name, so resolving several names costs the same walk as resolving one.
-
         Every requested name is present in the result, mapping to an empty tuple when the tree holds no file carrying
-        it. A caller therefore reads its own names back without guarding each lookup.
+        it.
 
         The depth bound counts the entries a directory holds as one level, so a bound of one keeps the traversal to
         the target directory's own entries. Leaving the bound unset searches the whole tree.
 
     Args:
         directory: The root directory whose tree is searched.
-        marker_names: The exact filenames to index. Each one becomes a key of the result.
+        marker_names: The exact filenames to index.
         max_depth: The number of directory levels to descend, or None to descend without a bound.
 
     Returns:
-        The paths to every matching file found anywhere under the root directory, sorted by path, keyed by the marker
-        name each one carries.
+        The paths to every matching file found under the root directory within the requested depth bound, sorted by
+        path, keyed by the marker name each one carries.
 
     Raises:
         OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
@@ -261,7 +259,7 @@ def reports_absent_entry(error: OSError) -> bool:
 
 
 def _scan_tree(directory: Path, max_depth: int | None = None) -> Iterator[os.DirEntry[str]]:
-    """Scans the target directory and every directory beneath it, collecting the entries each scan returns.
+    """Scans the target directory and every directory beneath it within the depth bound, collecting their entries.
 
     Notes:
         A directory the process is unable to read raises instead of contributing nothing to the result. The pathlib
@@ -282,7 +280,7 @@ def _scan_tree(directory: Path, max_depth: int | None = None) -> Iterator[os.Dir
         max_depth: The number of directory levels to descend, or None to descend without a bound.
 
     Yields:
-        The scan entry for everything found anywhere under the root directory, in an unspecified order.
+        The scan entry for everything found under the root directory within the depth bound, in an unspecified order.
 
     Raises:
         OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
