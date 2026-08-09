@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import xxhash
 from ataraxis_base_utilities import console, resolve_worker_count
 
-from .parallel_tools import limit_worker_threads
+from .parallel_tools import limit_worker_threads, initialize_worker_threads
 from .filesystem_tools import walk_files
 
 if TYPE_CHECKING:
@@ -92,9 +92,16 @@ def calculate_directory_checksum(
 
     checksum = xxhash.xxh3_128()
 
+    # Pins the workers from both sides. The environment limit reaches the backends that size their pool while they are
+    # being imported, and the initializer reaches numba, which latches its ceiling from an environment variable the
+    # limit deliberately leaves unset.
     with (
         limit_worker_threads(),
-        ProcessPoolExecutor(max_workers=num_processes, mp_context=_MULTIPROCESSING_CONTEXT) as executor,
+        ProcessPoolExecutor(
+            max_workers=num_processes,
+            mp_context=_MULTIPROCESSING_CONTEXT,
+            initializer=initialize_worker_threads,
+        ) as executor,
     ):
         # Binds base_directory so each submitted task only needs to supply the per-file path.
         process_file = partial(_calculate_file_checksum, base_directory=directory)
