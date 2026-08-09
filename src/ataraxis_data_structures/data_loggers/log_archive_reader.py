@@ -12,12 +12,12 @@ from dataclasses import dataclass
 import numpy as np
 from ataraxis_base_utilities import console, resolve_worker_count
 
-from ..processing import discover_marker_files
+from ..processing import index_marker_files, discover_marker_files
 from .serialized_data_logger import LOG_ARCHIVE_SUFFIX
 
 if TYPE_CHECKING:
     from pathlib import Path
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
 
     from numpy.typing import NDArray
 
@@ -100,6 +100,68 @@ def find_log_archive(log_directory: Path, source_id: str) -> Path:
         console.error(message=message, error=ValueError)
 
     return matches[0]
+
+
+def find_log_archives(log_directory: Path, source_ids: Iterable[str]) -> dict[str, Path]:
+    """Searches for the log archive of every target source under the log directory, in a single pass.
+
+    Notes:
+        One traversal resolves every requested source, so a caller resolving several sources pays the same walk as a
+        caller resolving one.
+
+        A source that resolves to no archive, or to several, fails the whole call, so a caller receives either every
+        requested archive or none of them.
+
+    Args:
+        log_directory: The root directory whose tree is searched.
+        source_ids: The identifiers of the sources whose archives are resolved, each matching the archive filename
+            ahead of the log archive suffix.
+
+    Returns:
+        The path to the discovered archive of each requested source, keyed by that source identifier.
+
+    Raises:
+        FileNotFoundError: If the log directory does not exist, is not a directory, or holds no archive for any
+            requested source.
+        OSError: If any directory beneath the log directory cannot be read.
+        ValueError: If the log directory holds more than one archive for any requested source.
+    """
+    if not log_directory.is_dir():
+        message = (
+            f"Unable to find the log archives of the requested sources in '{log_directory}'. The path does not exist "
+            f"or is not a directory."
+        )
+        console.error(message=message, error=FileNotFoundError)
+
+    # Preserves the requested order while collapsing a repeated source into the single lookup it resolves to.
+    archive_names = {f"{source_id}{LOG_ARCHIVE_SUFFIX}": source_id for source_id in dict.fromkeys(source_ids)}
+    if not archive_names:
+        return {}
+
+    index = index_marker_files(directory=log_directory, marker_names=archive_names.keys())
+
+    archives: dict[str, Path] = {}
+    for archive_name, source_id in archive_names.items():
+        matches = index[archive_name]
+
+        if not matches:
+            message = (
+                f"Unable to find the log archive of source '{source_id}' in '{log_directory}'. No file named "
+                f"'{archive_name}' was found anywhere under the directory."
+            )
+            console.error(message=message, error=FileNotFoundError)
+
+        if len(matches) > 1:
+            message = (
+                f"Unable to find the log archive of source '{source_id}' in '{log_directory}'. Exactly one file named "
+                f"'{archive_name}' must exist under the directory, but {len(matches)} were found: "
+                f"{[str(match) for match in matches]}."
+            )
+            console.error(message=message, error=ValueError)
+
+        archives[source_id] = matches[0]
+
+    return archives
 
 
 def discover_log_archives(log_directory: Path) -> dict[str, Path]:

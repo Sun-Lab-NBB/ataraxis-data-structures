@@ -17,6 +17,7 @@ from ataraxis_data_structures import (
     LogPackage,
     LogArchiveReader,
     find_log_archive,
+    find_log_archives,
     assemble_log_archives,
     discover_log_archives,
     read_archive_message_count,
@@ -475,6 +476,71 @@ class TestArchiveDiscovery:
 
         with pytest.raises(ValueError, match="but 2 were found"):
             find_log_archive(log_directory=tmp_path, source_id="7")
+
+    def test_find_log_archives_resolves_every_source_in_one_pass(self, tmp_path: Path) -> None:
+        """Verifies that the plural search resolves each requested source to the archive stored under the tree."""
+        expected = {}
+        for source_id in (7, 9):
+            nested = tmp_path / f"logger_{source_id}" / "raw_data"
+            nested.mkdir(parents=True)
+            archive_path = nested / f"{source_id}{LOG_ARCHIVE_SUFFIX}"
+            _create_test_archive(
+                archive_path=archive_path, source_id=source_id, onset_us=1700000000000000, message_count=2
+            )
+            expected[str(source_id)] = archive_path
+
+        assert find_log_archives(log_directory=tmp_path, source_ids=("7", "9")) == expected
+
+    def test_find_log_archives_collapses_a_repeated_source(self, tmp_path: Path) -> None:
+        """Verifies that naming one source several times resolves it once."""
+        archive_path = tmp_path / f"7{LOG_ARCHIVE_SUFFIX}"
+        _create_test_archive(archive_path=archive_path, source_id=7, onset_us=1700000000000000, message_count=1)
+
+        assert find_log_archives(log_directory=tmp_path, source_ids=("7", "7")) == {"7": archive_path}
+
+    def test_find_log_archives_resolves_nothing_for_an_empty_request(self, tmp_path: Path) -> None:
+        """Verifies that requesting no source yields no archive."""
+        assert find_log_archives(log_directory=tmp_path, source_ids=()) == {}
+
+    def test_find_log_archives_rejects_a_missing_directory(self, tmp_path: Path) -> None:
+        """Verifies that a log directory that does not exist is rejected."""
+        missing = tmp_path / "never_created"
+        message = (
+            f"Unable to find the log archives of the requested sources in '{missing}'. The path does not exist or is "
+            f"not a directory."
+        )
+        with pytest.raises(FileNotFoundError, match=error_format(message)):
+            find_log_archives(log_directory=missing, source_ids=("7",))
+
+    def test_find_log_archives_rejects_a_source_holding_no_archive(self, tmp_path: Path) -> None:
+        """Verifies that a source the tree holds no archive for is rejected."""
+        _create_test_archive(
+            archive_path=tmp_path / f"7{LOG_ARCHIVE_SUFFIX}",
+            source_id=7,
+            onset_us=1700000000000000,
+            message_count=1,
+        )
+        message = (
+            f"Unable to find the log archive of source '9' in '{tmp_path}'. No file named '9{LOG_ARCHIVE_SUFFIX}' "
+            f"was found anywhere under the directory."
+        )
+        with pytest.raises(FileNotFoundError, match=error_format(message)):
+            find_log_archives(log_directory=tmp_path, source_ids=("7", "9"))
+
+    def test_find_log_archives_rejects_an_ambiguous_source(self, tmp_path: Path) -> None:
+        """Verifies that a source resolving to one archive per logger is rejected as ambiguous."""
+        for logger_name in ("first_data_log", "second_data_log"):
+            directory = tmp_path / logger_name
+            directory.mkdir()
+            _create_test_archive(
+                archive_path=directory / f"7{LOG_ARCHIVE_SUFFIX}",
+                source_id=7,
+                onset_us=1700000000000000,
+                message_count=1,
+            )
+
+        with pytest.raises(ValueError, match="but 2 were found"):
+            find_log_archives(log_directory=tmp_path, source_ids=("7",))
 
     def test_discover_log_archives_maps_every_archive_to_its_source(self, tmp_path: Path) -> None:
         """Verifies that discovery keys each archive stored directly in the directory by its source ID."""

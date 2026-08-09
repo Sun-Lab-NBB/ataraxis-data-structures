@@ -10,7 +10,7 @@ from pathlib import Path
 from ataraxis_base_utilities import console
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
 
 _ABSENT_ENTRY_ERRNOS: frozenset[int] = frozenset({errno.ENOENT, errno.ENOTDIR, errno.EBADF, errno.ELOOP})
 """The metadata-query error numbers that answer as an absent entry rather than propagating.
@@ -107,6 +107,60 @@ def discover_marker_files(directory: Path, marker_name: str) -> list[Path]:
         for entry in _scan_tree(directory=directory)
         if entry.name == marker_name and _resolves_to_file(entry=entry)
     )
+
+
+def index_marker_files(
+    directory: Path,
+    marker_names: Iterable[str],
+    *,
+    max_depth: int | None = None,
+) -> dict[str, tuple[Path, ...]]:
+    """Indexes every marker file carrying one of the target names, in a single pass over the target directory.
+
+    Notes:
+        One traversal answers every requested name, so resolving several names costs the same walk as resolving one.
+
+        Every requested name is present in the result, mapping to an empty tuple when the tree holds no file carrying
+        it. A caller therefore reads its own names back without guarding each lookup.
+
+        The depth bound counts the entries a directory holds as one level, so a bound of one keeps the traversal to
+        the target directory's own entries. Leaving the bound unset searches the whole tree.
+
+    Args:
+        directory: The root directory whose tree is searched.
+        marker_names: The exact filenames to index. Each one becomes a key of the result.
+        max_depth: The number of directory levels to descend, or None to descend without a bound.
+
+    Returns:
+        The paths to every matching file found anywhere under the root directory, sorted by path, keyed by the marker
+        name each one carries.
+
+    Raises:
+        OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
+            it cannot be read, or if the kind of an entry carrying a marker name cannot be determined.
+        ValueError: If no marker name is requested, or if the requested depth bound is less than one.
+    """
+    targets = frozenset(marker_names)
+    if not targets:
+        message = (
+            f"Unable to index the marker files stored under '{directory}'. The 'marker_names' argument must name at "
+            f"least one marker file, but it named none."
+        )
+        console.error(message=message, error=ValueError)
+
+    if max_depth is not None and max_depth < 1:
+        message = (
+            f"Unable to index the marker files stored under '{directory}'. The 'max_depth' argument must be greater "
+            f"than or equal to 1 when it is provided, but got {max_depth}."
+        )
+        console.error(message=message, error=ValueError)
+
+    discovered: dict[str, list[Path]] = {name: [] for name in targets}
+    for entry in _scan_tree(directory=directory, max_depth=max_depth):
+        if entry.name in targets and _resolves_to_file(entry=entry):
+            discovered[entry.name].append(Path(entry.path))
+
+    return {name: tuple(sorted(paths)) for name, paths in discovered.items()}
 
 
 def discover_marker_roots(directory: Path, marker_name: str, levels_up: int = 0) -> list[Path]:
@@ -206,7 +260,7 @@ def reports_absent_entry(error: OSError) -> bool:
     return error.errno in _ABSENT_ENTRY_ERRNOS or getattr(error, "winerror", None) in _ABSENT_ENTRY_WINERRORS
 
 
-def _scan_tree(directory: Path) -> Iterator[os.DirEntry[str]]:
+def _scan_tree(directory: Path, max_depth: int | None = None) -> Iterator[os.DirEntry[str]]:
     """Scans the target directory and every directory beneath it, collecting the entries each scan returns.
 
     Notes:
@@ -220,8 +274,12 @@ def _scan_tree(directory: Path) -> Iterator[os.DirEntry[str]]:
         Entries are yielded as each scan produces them, so a caller keeping only the entries it selects never holds
         the whole tree at once.
 
+        The depth bound counts the entries a directory holds as one level, so a bound of one keeps the scan to the
+        target directory's own entries.
+
     Args:
         directory: The root directory whose tree is scanned.
+        max_depth: The number of directory levels to descend, or None to descend without a bound.
 
     Yields:
         The scan entry for everything found anywhere under the root directory, in an unspecified order.
@@ -230,14 +288,15 @@ def _scan_tree(directory: Path) -> Iterator[os.DirEntry[str]]:
         OSError: If the root directory does not exist, is not a directory, or cannot be read, if any directory beneath
             it cannot be read, or if the kind of an entry carrying the marker name cannot be determined.
     """
-    pending: list[Path] = [directory]
+    pending: list[tuple[Path, int]] = [(directory, 1)]
 
     while pending:
-        with os.scandir(pending.pop()) as scan:
+        current, depth = pending.pop()
+        with os.scandir(current) as scan:
             for entry in scan:
                 yield entry
-                if entry.is_dir(follow_symlinks=False):
-                    pending.append(Path(entry.path))
+                if entry.is_dir(follow_symlinks=False) and (max_depth is None or depth < max_depth):
+                    pending.append((Path(entry.path), depth + 1))
 
 
 def _resolves_to_file(entry: os.DirEntry[str]) -> bool:

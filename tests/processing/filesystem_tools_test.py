@@ -14,6 +14,7 @@ from ataraxis_data_structures.processing.checksum_tools import _discover_checksu
 from ataraxis_data_structures.processing.filesystem_tools import (
     walk_files,
     walk_directory,
+    index_marker_files,
     resolve_unique_roots,
     discover_marker_files,
     discover_marker_roots,
@@ -355,6 +356,102 @@ def test_discover_marker_files_raises_for_an_unreadable_subdirectory(unreadable_
     """Verifies that marker discovery raises instead of silently omitting a subdirectory it cannot read."""
     with pytest.raises(PermissionError):
         discover_marker_files(directory=unreadable_tree, marker_name="hidden.txt")
+
+
+def test_index_marker_files_resolves_every_name_in_one_pass(tmp_path: Path) -> None:
+    """Verifies that indexing reports the matches of every requested name, each sorted by path."""
+    (tmp_path / "animal_2" / "raw_data").mkdir(parents=True)
+    (tmp_path / "animal_1" / "raw_data").mkdir(parents=True)
+    first = tmp_path / "animal_1" / "raw_data" / "session_data.yaml"
+    second = tmp_path / "animal_2" / "raw_data" / "session_data.yaml"
+    tracker = tmp_path / "animal_1" / "tracker.yaml"
+    for marker in (first, second, tracker):
+        marker.write_text("payload")
+
+    index = index_marker_files(directory=tmp_path, marker_names=("session_data.yaml", "tracker.yaml"))
+
+    assert index == {"session_data.yaml": (first, second), "tracker.yaml": (tracker,)}
+
+
+def test_index_marker_files_reports_every_requested_name(tmp_path: Path) -> None:
+    """Verifies that a requested name the tree does not hold maps to an empty tuple rather than being absent."""
+    (tmp_path / "present.yaml").write_text("payload")
+
+    index = index_marker_files(directory=tmp_path, marker_names=("present.yaml", "absent.yaml"))
+
+    assert index["absent.yaml"] == ()
+    assert set(index) == {"present.yaml", "absent.yaml"}
+
+
+def test_index_marker_files_reports_matches_as_tuples(tmp_path: Path) -> None:
+    """Verifies that every match group is an immutable tuple."""
+    (tmp_path / "session_data.yaml").write_text("payload")
+
+    index = index_marker_files(directory=tmp_path, marker_names=("session_data.yaml",))
+
+    assert isinstance(index["session_data.yaml"], tuple)
+
+
+def test_index_marker_files_omits_a_directory_carrying_a_marker_name(tmp_path: Path) -> None:
+    """Verifies that a directory named after a requested marker is not reported as a marker."""
+    (tmp_path / "session_data.yaml").mkdir()
+    (tmp_path / "nested").mkdir()
+    marker = tmp_path / "nested" / "session_data.yaml"
+    marker.write_text("payload")
+
+    assert index_marker_files(directory=tmp_path, marker_names=("session_data.yaml",)) == {
+        "session_data.yaml": (marker,)
+    }
+
+
+def test_index_marker_files_bounds_the_search_to_the_requested_depth(tmp_path: Path) -> None:
+    """Verifies that a depth bound of one keeps the search to the directory's own entries."""
+    shallow = tmp_path / "session_data.yaml"
+    shallow.write_text("shallow")
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "session_data.yaml").write_text("deep")
+
+    index = index_marker_files(directory=tmp_path, marker_names=("session_data.yaml",), max_depth=1)
+
+    assert index == {"session_data.yaml": (shallow,)}
+
+
+def test_index_marker_files_descends_one_level_per_requested_depth(tmp_path: Path) -> None:
+    """Verifies that a depth bound of two reaches the entries of the directory's own subdirectories."""
+    (tmp_path / "nested" / "deeper").mkdir(parents=True)
+    reachable = tmp_path / "nested" / "session_data.yaml"
+    reachable.write_text("reachable")
+    (tmp_path / "nested" / "deeper" / "session_data.yaml").write_text("unreachable")
+
+    index = index_marker_files(directory=tmp_path, marker_names=("session_data.yaml",), max_depth=2)
+
+    assert index == {"session_data.yaml": (reachable,)}
+
+
+def test_index_marker_files_rejects_an_empty_name_set(tmp_path: Path) -> None:
+    """Verifies that indexing without naming a marker is rejected."""
+    message = (
+        f"Unable to index the marker files stored under '{tmp_path}'. The 'marker_names' argument must name at "
+        f"least one marker file, but it named none."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        index_marker_files(directory=tmp_path, marker_names=())
+
+
+def test_index_marker_files_rejects_a_depth_bound_below_one(tmp_path: Path) -> None:
+    """Verifies that a depth bound that reaches no entry is rejected."""
+    message = (
+        f"Unable to index the marker files stored under '{tmp_path}'. The 'max_depth' argument must be greater "
+        f"than or equal to 1 when it is provided, but got 0."
+    )
+    with pytest.raises(ValueError, match=error_format(message)):
+        index_marker_files(directory=tmp_path, marker_names=("session_data.yaml",), max_depth=0)
+
+
+def test_index_marker_files_raises_for_an_unreadable_subdirectory(unreadable_tree: Path) -> None:
+    """Verifies that indexing raises instead of silently omitting a subdirectory it cannot read."""
+    with pytest.raises(PermissionError):
+        index_marker_files(directory=unreadable_tree, marker_names=("hidden.txt",))
 
 
 def test_discover_marker_roots_resolves_the_marker_parent_by_default(tmp_path: Path) -> None:
