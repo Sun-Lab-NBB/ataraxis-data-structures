@@ -84,7 +84,7 @@ dependency for other Ataraxis framework projects.
 | `src/.../shared_memory/`        | SharedMemoryArray for process-safe data sharing                |
 | `src/.../data_structures/`      | YamlConfig and ProcessingTracker classes                       |
 | `src/.../data_loggers/`         | DataLogger and LogArchiveReader for serialized logging         |
-| `src/.../processing/`           | Checksum, transfer, discovery, interpolation, and thread tools |
+| `src/.../processing/`           | Checksum, transfer, discovery, write, interpolation, threading |
 | `tests/`                        | Test suite (mirrors source structure)                          |
 | `docs/`                         | Sphinx API documentation source                                |
 
@@ -104,9 +104,9 @@ dependency for other Ataraxis framework projects.
 - **ProcessingTracker**: File-based pipeline state tracker using FileLock for multi-process coordination. Manages job
   states (SCHEDULED, RUNNING, SUCCEEDED, FAILED) with search and lifecycle features.
 - **Processing Utilities**: Directory checksums (xxHash3-128), parallel directory transfer with integrity verification,
-  and data asset discovery that locates marker files and the directories owning them. Also covers time-series
-  interpolation (linear for continuous, last-known-value for discrete data) and a context manager that constrains the
-  thread pools the numeric backends open inside worker processes.
+  and data asset discovery that locates marker files and the directories owning them. Also covers atomic and direct
+  file writing, time-series interpolation (linear for continuous, last-known-value for discrete data) and a context
+  manager that constrains the thread pools the numeric backends open inside worker processes.
 
 ### Core components
 
@@ -134,8 +134,8 @@ dependency for other Ataraxis framework projects.
 | `calculate_directory_checksum`  | `processing/checksum_tools.py`           | xxHash3-128 directory checksums                             |
 | `transfer_directory`            | `processing/transfer_tools.py`           | Parallel directory copy with verification                   |
 | `delete_directory`              | `processing/transfer_tools.py`           | Parallel directory deletion                                 |
-| `atomic_write`                  | `processing/write_tools.py`              | Replaces a file through a temporary sibling, published by rename |
-| `direct_write`                  | `processing/write_tools.py`              | Writes a file directly, for a destination nothing has open   |
+| `atomic_write`                  | `processing/write_tools.py`              | Replaces a file through a temporary sibling and a rename    |
+| `direct_write`                  | `processing/write_tools.py`              | Writes a file directly, for a destination nothing has open  |
 | `discover_marker_files`         | `processing/filesystem_tools.py`         | Finds every marker file with a given name                   |
 | `index_marker_files`            | `processing/filesystem_tools.py`         | Indexes many marker names in one depth-boundable pass       |
 | `discover_marker_roots`         | `processing/filesystem_tools.py`         | Finds the directories owning discovered markers             |
@@ -199,4 +199,6 @@ component-specific steps.
 - Use `ataraxis-time` for precision timestamps in logging contexts
 - Every multiprocessing primitive uses an explicit spawn context (`get_context("spawn")`) for identical cross-platform
   behavior, covering SharedMemoryArray, the DataLogger process, and the `ProcessPoolExecutor` pools in
-  `calculate_directory_checksum` and `assemble_log_archives`. Pass `mp_context` whenever adding a pool.
+  `calculate_directory_checksum` and `assemble_log_archives`. Pass `mp_context` whenever adding a pool, and pass
+  `initializer=initialize_worker_threads` alongside it, since the environment limit reaches every numeric backend
+  except numba, which latches its ceiling while it is imported and is pinned through its own runtime setter.

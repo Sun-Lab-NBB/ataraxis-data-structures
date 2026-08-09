@@ -202,7 +202,7 @@ def test_publish_file_renames_on_posix(tmp_path: Path, monkeypatch: pytest.Monke
     source.write_text("payload")
     destination = tmp_path / "destination.txt"
 
-    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(target=sys, name="platform", value="linux")
 
     original_replace = Path.replace
     attempts: list[Path] = []
@@ -211,7 +211,7 @@ def test_publish_file_renames_on_posix(tmp_path: Path, monkeypatch: pytest.Monke
         attempts.append(target)
         return original_replace(self, target=target)
 
-    monkeypatch.setattr(Path, "replace", counting_replace)
+    monkeypatch.setattr(target=Path, name="replace", value=counting_replace)
 
     _publish_file(temporary_path=source, file_path=destination)
 
@@ -227,8 +227,8 @@ def test_publish_file_retries_locked_destination(tmp_path: Path, monkeypatch: py
     source.write_text("payload")
     destination = tmp_path / "destination.txt"
 
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(write_tools, "_RENAME_RETRY_DELAY_MILLISECONDS", 1)
+    monkeypatch.setattr(target=sys, name="platform", value="win32")
+    monkeypatch.setattr(target=write_tools, name="_RENAME_RETRY_DELAY_MILLISECONDS", value=1)
 
     original_replace = Path.replace
     attempts: list[Path] = []
@@ -238,9 +238,9 @@ def test_publish_file_retries_locked_destination(tmp_path: Path, monkeypatch: py
         attempts.append(target)
         if len(attempts) < 3:
             raise PermissionError(message)
-        return original_replace(self, target)
+        return original_replace(self, target=target)
 
-    monkeypatch.setattr(Path, "replace", flaky_replace)
+    monkeypatch.setattr(target=Path, name="replace", value=flaky_replace)
 
     _publish_file(temporary_path=source, file_path=destination)
 
@@ -255,8 +255,8 @@ def test_publish_file_exhausts_retries(tmp_path: Path, monkeypatch: pytest.Monke
     source.write_text("payload")
     destination = tmp_path / "destination.txt"
 
-    monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(write_tools, "_RENAME_RETRY_DELAY_MILLISECONDS", 1)
+    monkeypatch.setattr(target=sys, name="platform", value="win32")
+    monkeypatch.setattr(target=write_tools, name="_RENAME_RETRY_DELAY_MILLISECONDS", value=1)
 
     attempts: list[Path] = []
     message = "The destination is held open by another process."
@@ -265,7 +265,7 @@ def test_publish_file_exhausts_retries(tmp_path: Path, monkeypatch: pytest.Monke
         attempts.append(target)
         raise PermissionError(message)
 
-    monkeypatch.setattr(Path, "replace", locked_replace)
+    monkeypatch.setattr(target=Path, name="replace", value=locked_replace)
 
     with pytest.raises(PermissionError):
         _publish_file(temporary_path=source, file_path=destination)

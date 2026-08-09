@@ -505,9 +505,9 @@ def assemble_log_archives(
 
     # Initiates log processing. Since some steps of log processing are more efficiently executed via multithreading
     # and others via multiprocessing, uses both process and thread pool executors to efficiently process the data.
-    # The process pool is pinned from both sides. The environment limit reaches the backends that size their pool
-    # while they are being imported, and the initializer reaches numba, which latches its ceiling from an environment
-    # variable the limit deliberately leaves unset.
+    # Pins the process pool from both sides. The environment limit reaches the backends that size their pool while they
+    # are being imported, and the initializer reaches numba, which latches its ceiling from an environment variable the
+    # limit deliberately leaves unset.
     with (
         _progress_display(enabled=verbose),
         limit_worker_threads(),

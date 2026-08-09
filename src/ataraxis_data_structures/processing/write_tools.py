@@ -21,8 +21,8 @@ _WRITE_PERMISSION_BITS: int = 0o666
 
 Notes:
     Matches the bits the built-in open() requests, so a file written this way carries the same permissions as every
-    other file the library produces. The umask supplies the narrowing, which keeps the decision with the host rather
-    than with this module.
+    other file the library creates from scratch. The umask supplies the narrowing, which keeps the decision with the
+    host rather than with this module.
 """
 
 _RENAME_RETRY_COUNT: int = 5
@@ -43,9 +43,8 @@ def atomic_write(file_path: Path, *, binary: bool = False) -> Generator[IO[Any],
     """Opens a temporary file that replaces the target path in one step once the caller finishes writing to it.
 
     Notes:
-        Suits a destination that already exists and that another process may read, which covers a processing tracker,
-        a configuration document, and a checksum. A file nothing has opened yet is written through ``direct_write()``
-        instead, which costs one open() against the temporary file, the flush, and the rename this function pays.
+        Suits a destination that already exists and that another process may read. A file nothing has opened yet is
+        written through ``direct_write()`` instead, which pays neither the flush nor the rename this function pays.
 
         A reader of the target path observes either the previous file or the complete new one, never a partial write.
         Writing the destination directly instead truncates it first, so a writer killed mid-write leaves a truncated
@@ -60,7 +59,8 @@ def atomic_write(file_path: Path, *, binary: bool = False) -> Generator[IO[Any],
         chmod() after this context exits.
 
         The contents reach the disk before the rename publishes them, so a host losing power immediately afterwards
-        still finds the complete file. A caller writing a large number of small files pays that flush per file.
+        finds a complete file rather than a partial one. The rename itself is not synced, so the file that survives
+        such a loss may be the previous one. A caller writing a large number of small files pays that flush per file.
 
         A failure anywhere inside the context removes the temporary file and propagates, leaving the destination as it
         was.
@@ -84,7 +84,7 @@ def atomic_write(file_path: Path, *, binary: bool = False) -> Generator[IO[Any],
 
     # Opens the temporary file rather than drawing it from mkstemp(), which hardcodes the 0o600 bits that suit a
     # private scratch file and leave a published file readable only by the account that wrote it.
-    descriptor = os.open(temporary_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, _WRITE_PERMISSION_BITS)
+    descriptor = os.open(path=temporary_path, flags=os.O_CREAT | os.O_EXCL | os.O_WRONLY, mode=_WRITE_PERMISSION_BITS)
     try:
         with os.fdopen(fd=descriptor, mode="wb" if binary else "w", encoding=None if binary else "utf-8") as file:
             yield file
@@ -103,13 +103,12 @@ def direct_write(file_path: Path, *, binary: bool = False) -> Generator[IO[Any],
     """Opens the target path for writing, replacing whatever it already holds.
 
     Notes:
-        Suits a file the caller creates rather than replaces, which covers every output written once into a fresh
-        directory and every acquisition path writing a large number of files. A destination another process may read
-        while the write runs is written through ``atomic_write()`` instead.
+        Suits a file the caller creates rather than replaces. A destination another process may read while the write
+        runs is written through ``atomic_write()`` instead.
 
-        Costs one open() and leaves the contents in the operating system's buffers, so a path writing a file per
-        record pays neither the second open() and rename that publishing through a temporary file costs, nor the
-        flush to disk that a durable write costs.
+        Costs one open() and leaves the contents in the operating system's buffers. A path writing a file per record
+        therefore pays neither the rename that publishing through a temporary file costs, nor the flush to disk that
+        a durable write costs.
 
         A reader opening the path while this context is open observes a partially written file, and a writer killed
         partway leaves one behind. Both are acceptable for a file whose absence or truncation the caller detects
