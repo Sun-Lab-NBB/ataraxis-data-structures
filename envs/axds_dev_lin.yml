@@ -25,7 +25,7 @@ dependencies:
   - openssl=3.6.3=h35e630c_1
   - packaging=26.3=pyhc364b38_0
   - pip=26.2.1=pyh145f28c_0
-  - platformdirs=4.11.0=pyhcf101f3_0
+  - platformdirs=4.11.1=pyhcf101f3_0
   - pluggy=1.6.0=pyhf9edf01_1
   - pyproject-api=1.11.0=pyhcf101f3_0
   - python=3.14.6=habeac84_101_cp314
@@ -38,8 +38,8 @@ dependencies:
   - tox-uv=1.36.0=pyhcf101f3_0
   - typing_extensions=4.16.0=pyhcf101f3_0
   - tzdata=2026c=h151e31d_0
-  - uv=0.12.2=h2112641_0
-  - virtualenv=21.7.1=pyhcf101f3_0
+  - uv=0.12.3=h2112641_0
+  - virtualenv=21.7.2=pyhcf101f3_0
   - zstd=1.5.7=hb78ec9c_6
   - pip:
     - GitPython==3.1.46
@@ -51,7 +51,7 @@ dependencies:
     - Sphinx==9.1.0
     - accessible-pygments==0.0.5
     - alabaster==1.0.0
-    - ast_serialize==0.7.0
+    - ast_serialize==0.8.0
     - ataraxis-automation==9.0.2
     - ataraxis-base-utilities==7.0.0
     - ataraxis-time==7.0.0
@@ -86,7 +86,7 @@ dependencies:
     - jeepney==0.9.0
     - junitparser==5.0.1
     - keyring==25.7.0
-    - librt==0.14.0
+    - librt==0.15.0
     - llvmlite==0.48.0
     - loguru==0.7.3
     - markdown-it-py==4.2.0
@@ -109,10 +109,10 @@ dependencies:
     - rfc3986==2.0.0
     - rich==15.0.0
     - roman-numerals==4.1.0
-    - ruff==0.16.1
+    - ruff==0.16.2
     - smmap==5.0.2
     - snowballstemmer==3.1.1
-    - soupsieve==2.9.1
+    - soupsieve==2.9.2
     - sphinx-autodoc-typehints==3.13.2
     - sphinx-basic-ng==1.0.0b2
     - sphinx-click==6.2.0
@@ -127,6 +127,6 @@ dependencies:
     - twine==7.0.0
     - types-PyYAML==6.0.12.20260724
     - urllib3==2.7.0
-    - uv==0.12.2
+    - uv==0.12.3
     - xxhash==3.8.1
 

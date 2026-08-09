@@ -1,0 +1,59 @@
+from typing import Any
+from weakref import WeakValueDictionary
+from contextlib import contextmanager
+from collections.abc import Generator
+from multiprocessing import synchronize as synchronize
+from multiprocessing.context import SpawnContext
+from multiprocessing.shared_memory import SharedMemory
+
+import numpy as np
+from numpy.typing import NDArray as NDArray
+
+_MULTIPROCESSING_CONTEXT: SpawnContext
+_BUFFER_OWNERS: WeakValueDictionary[str, SharedMemoryArray]
+
+class SharedMemoryArray:
+    _name: str
+    _shape: tuple[int, ...]
+    _datatype: np.dtype[Any]
+    _buffer: SharedMemory | None
+    _lock: synchronize.Lock
+    _array: NDArray[Any] | None
+    _connected: bool
+    _destroy_buffer: bool
+    _auto_connect: bool
+    def __init__(
+        self,
+        name: str,
+        shape: tuple[int, ...],
+        datatype: np.dtype[Any],
+        buffer: SharedMemory,
+        *,
+        auto_connect: bool = True,
+    ) -> None: ...
+    def __repr__(self) -> str: ...
+    def __del__(self) -> None: ...
+    def __getstate__(self) -> dict[str, Any]: ...
+    def __setstate__(self, state: dict[str, Any]) -> None: ...
+    def __getitem__(self, index: int | slice) -> Any: ...
+    def __setitem__(self, index: int | slice, value: Any) -> None: ...
+    @classmethod
+    def create_array(
+        cls, name: str, prototype: NDArray[Any], *, exists_ok: bool = False, auto_connect: bool = True
+    ) -> SharedMemoryArray: ...
+    def connect(self) -> None: ...
+    def disconnect(self) -> None: ...
+    def destroy(self) -> None: ...
+    @contextmanager
+    def array(self, *, with_lock: bool = True) -> Generator[NDArray[Any], None, None]: ...
+    @property
+    def datatype(self) -> np.dtype[Any]: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def shape(self) -> tuple[int, ...]: ...
+    @property
+    def is_connected(self) -> bool: ...
+    @classmethod
+    def _revoke_buffer_ownership(cls, name: str) -> None: ...
+    def _bind_array(self) -> None: ...
