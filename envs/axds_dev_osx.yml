@@ -9,7 +9,6 @@ dependencies:
   - distlib=0.4.3=pyhcf101f3_0
   - filelock=3.32.2=pyhd8ed1ab_0
   - icu=78.3=hc7cc350_2
-  - importlib-metadata=9.0.0=pyhcf101f3_0
   - libcxx=22.1.8=h55c6f16_0
   - libexpat=2.8.1=hf6b4638_1
   - libffi=3.5.2=hcf2aa1b_0
@@ -21,7 +20,7 @@ dependencies:
   - openssl=3.6.3=hd24854e_1
   - packaging=26.3=pyhc364b38_0
   - pip=26.2.1=pyh145f28c_0
-  - platformdirs=4.11.0=pyhcf101f3_0
+  - platformdirs=4.11.1=pyhcf101f3_0
   - pluggy=1.6.0=pyhf9edf01_1
   - pyproject-api=1.11.0=pyhcf101f3_0
   - python=3.14.6=h156bc91_101_cp314
@@ -29,15 +28,13 @@ dependencies:
   - python_abi=3.14=8_cp314
   - readline=8.3=h46df422_0
   - tk=8.6.13=hd3d0363_3
-  - tomli=2.4.1=pyhcf101f3_0
   - tomli-w=1.2.0=pyhd8ed1ab_0
   - tox=4.58.0=pyhcf101f3_0
   - tox-uv=1.36.0=pyhcf101f3_0
   - typing_extensions=4.16.0=pyhcf101f3_0
   - tzdata=2026c=h151e31d_0
-  - uv=0.12.2=h11277c2_0
-  - virtualenv=21.7.1=pyhcf101f3_0
-  - zipp=4.1.0=pyhcf101f3_0
+  - uv=0.12.3=h11277c2_0
+  - virtualenv=21.7.3=pyhcf101f3_0
   - zstd=1.5.7=hbf9d68e_6
   - pip:
     - Jinja2==3.1.6
@@ -47,7 +44,7 @@ dependencies:
     - Sphinx==9.1.0
     - accessible-pygments==0.0.5
     - alabaster==1.0.0
-    - ast_serialize==0.7.0
+    - ast_serialize==0.8.0
     - ataraxis-automation==9.0.2
     - ataraxis-base-utilities==7.0.0
     - ataraxis-time==7.0.0
@@ -77,7 +74,7 @@ dependencies:
     - jaraco.functools==4.6.0
     - junitparser==5.0.1
     - keyring==25.7.0
-    - librt==0.14.0
+    - librt==0.15.0
     - llvmlite==0.48.0
     - loguru==0.7.3
     - markdown-it-py==4.2.0
@@ -99,9 +96,9 @@ dependencies:
     - rfc3986==2.0.0
     - rich==15.0.0
     - roman-numerals==4.1.0
-    - ruff==0.16.1
+    - ruff==0.16.2
     - snowballstemmer==3.1.1
-    - soupsieve==2.9.1
+    - soupsieve==2.9.2
     - sphinx-autodoc-typehints==3.13.2
     - sphinx-basic-ng==1.0.0b2
     - sphinx-click==6.2.0
@@ -116,6 +113,6 @@ dependencies:
     - twine==7.0.0
     - types-PyYAML==6.0.12.20260724
     - urllib3==2.7.0
-    - uv==0.12.2
+    - uv==0.12.3
     - xxhash==3.8.1
 
