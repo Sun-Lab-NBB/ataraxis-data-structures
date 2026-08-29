@@ -26,12 +26,14 @@ _RESIZABLE_THREAD_VARIABLES: tuple[str, ...] = (
 """The threading-layer environment variables whose backends accept a different width after the process has loaded them.
 
 Notes:
-    The BLAS backends NumPy is built against and the numexpr evaluator size their pool from their variable while they
-    are being imported, and each of them also exposes a runtime setter that ``threadpool_limits`` drives, so a worker
-    that starts at one thread still runs a job at the width the job was allocated. The OpenCV core pool exposes a
-    setter of its own, and the OpenCV FFmpeg decoder and the tifffile image decoder read their variable the first time
-    a capture opens or a decode asks for a default width, so a worker that writes the value as it starts still reaches
-    all three.
+    The BLAS backends that NumPy links size their pool from their variable while they are being imported. OpenBLAS,
+    MKL, BLIS, and FlexiBLAS each expose a runtime setter that ``threadpool_limits`` drives, so a worker that starts
+    at one thread still runs a job at the width the job was allocated. The numexpr evaluator and the OpenCV core pool
+    each carry a runtime setter of their own.
+
+    The OpenCV FFmpeg decoder and the tifffile image decoder read their variable the first time a capture opens or a
+    decode asks for a default width. A worker that writes the value as it starts therefore reaches every backend in
+    this group.
 """
 
 _IMPORT_LATCHED_THREAD_VARIABLES: tuple[str, ...] = (
@@ -39,13 +41,13 @@ _IMPORT_LATCHED_THREAD_VARIABLES: tuple[str, ...] = (
     "DUCC0_NUM_THREADS",
     "POLARS_MAX_THREADS",
 )
-"""The threading-layer environment variables that at least one backend fixes its pool width from as it loads, with no
-setter this library is able to reach afterward.
+"""The threading-layer environment variables that at least one backend reads once as it loads, fixing a pool width that
+no later call can change.
 
 Notes:
-    The transform backend SciPy builds on reads ``DUCC0_NUM_THREADS``, falling back to ``OMP_NUM_THREADS``, and treats
-    the value it read as the widest pool it will ever open. A transform handed a larger worker count runs at the
-    latched width instead, and neither that worker count nor ``threadpool_limits`` raises it. ``OMP_NUM_THREADS``
+    The transform backend that SciPy vendors reads ``DUCC0_NUM_THREADS``, falling back to ``OMP_NUM_THREADS``, and
+    treats the value it read as the widest pool it will ever open. A transform handed a larger worker count runs at
+    the latched width, and neither that worker count nor ``threadpool_limits`` raises it. ``OMP_NUM_THREADS``
     stays here for that reason, even though ``threadpool_limits`` also resizes the OpenMP runtimes that read it, since
     the narrower behavior is the one that governs. polars builds its pool as it is imported and is not one of the
     pools ``threadpool_limits`` manages.
@@ -94,8 +96,8 @@ def limit_worker_threads(
             the widest count any job the pool runs raises itself to. Defaults to the value of ``thread_count``.
         additional_thread_variables: The threading-layer environment variables to write alongside the ones this module
             already knows, each mapped to the width it takes. Naming a variable this module already writes replaces
-            the width that variable would otherwise take. Whether a given backend reads its variable while loading or
-            afterward decides which of the two counts the caller pairs it with.
+            the width that variable would otherwise take. The caller pairs each entry with ``thread_count`` or with
+            ``maximum_thread_count``, according to whether that backend reads its variable while loading or afterward.
 
     Raises:
         ValueError: If the requested thread count is less than one. If the requested maximum thread count is less than
@@ -149,8 +151,8 @@ def initialize_worker_threads(
             ``thread_count``.
         additional_thread_variables: The threading-layer environment variables to write alongside the ones this module
             already knows, each mapped to the width it takes. Naming a variable this module already writes replaces
-            the width that variable would otherwise take. Whether a given backend reads its variable while loading or
-            afterward decides which of the two counts the caller pairs it with.
+            the width that variable would otherwise take. The caller pairs each entry with ``thread_count`` or with
+            ``maximum_thread_count``, according to whether that backend reads its variable while loading or afterward.
 
     Raises:
         ValueError: If the requested thread count is less than one. If the requested maximum thread count is less than

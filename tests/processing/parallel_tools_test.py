@@ -245,8 +245,8 @@ def test_initialize_worker_threads_pins_every_variable(monkeypatch: pytest.Monke
 def test_initialize_worker_threads_holds_the_import_latched_backends_at_the_maximum(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Verifies that the worker initializer keeps the latched backends at the maximum instead of narrowing them to the
-    per-worker count it inherited them above.
+    """Verifies that the worker initializer holds the latched backends at the maximum when it inherits a width above
+    the per-worker count.
     """
     for variable in _ALL_THREAD_VARIABLES:
         monkeypatch.setenv(variable, "8")
